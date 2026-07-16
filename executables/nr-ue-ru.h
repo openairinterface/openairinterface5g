@@ -8,15 +8,10 @@
 #include "PHY/defs_nr_UE.h"
 #include "radio/COMMON/common_lib.h"
 
-int nrue_get_cell_count(void);
-const nrUE_cell_params_t *nrue_get_cell(int cell_id);
-NR_DL_FRAME_PARMS *nrue_get_cell_fp(int cell_id);
-void nrue_set_cell(int cell_id, const nrUE_cell_params_t *cell);
 void nrue_set_cell_params(configmodule_interface_t *cfg);
 int nrue_get_band(const PHY_VARS_NR_UE *UE);
 int nrue_get_ru_count(void);
-const nrUE_RU_params_t *nrue_get_ru(int ru_id);
-void nrue_set_ru_cell_id(int ru_id, int cell_id);
+nrUE_RU_params_t *nrue_get_ru(int ru_id);
 void nrue_set_ru_params(configmodule_interface_t *cfg);
 
 void nrue_init_openair0(void);

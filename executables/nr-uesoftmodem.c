@@ -164,11 +164,10 @@ static void set_UE_options(int CC_id, PHY_VARS_NR_UE *UE, int ru_id)
         UE->UE_fo_compensation, UE->UE_scan_carrier, UE->no_timing_correction, UE->chest_freq, UE->chest_time);
 }
 
-static void set_fp_options(int cell_id, int ru_id)
+static void set_fp_options(int ru_id, int cell_id)
 {
-  NR_DL_FRAME_PARMS *fp = nrue_get_cell_fp(cell_id);
   const nrUE_RU_params_t *RU = nrue_get_ru(ru_id);
-
+  NR_DL_FRAME_PARMS *fp = RU->cell[cell_id].fp;
   // Set FP variables
   fp->nb_antennas_rx = RU->nb_rx;
   fp->nb_antennas_tx = RU->nb_tx;
@@ -284,7 +283,7 @@ int main(int argc, char **argv)
              get_nrUE_params()->reconfig_file,
              get_nrUE_params()->rbconfig_file,
              get_nrUE_params()->ue_capability_rx2tx,
-             nrue_get_cell(0)->numerology);
+             nrue_get_ru(0)->cell[0].numerology);
 
   // start time manager with some reasonable default for the running mode
   // (may be overwritten in configuration file or command line)
@@ -302,54 +301,33 @@ int main(int argc, char **argv)
                                         : TIME_SOURCE_REALTIME);
 
   // initialize per-cell frame parameters
-  for (int cell_id = 0; cell_id < nrue_get_cell_count(); cell_id++) {
-    int ru_id = nrue_get_cell(cell_id)->ru_id;
-    AssertFatal(ru_id >= 0 && ru_id < nrue_get_ru_count(),
-                "Invalid ru_id (%d) for cell %d. Should be >= 0 and < %d\n",
-                ru_id,
-                cell_id,
-                nrue_get_ru_count());
-    AssertFatal(nrue_get_ru(ru_id)->used_by_cell == -1,
-                "RU %d is already used by cell %d and therefore cannot also be used by cell %d\n",
-                ru_id,
-                nrue_get_ru(ru_id)->used_by_cell,
-                cell_id);
-    nrue_set_ru_cell_id(ru_id, cell_id);
-
-    set_fp_options(cell_id, ru_id);
-    if (IS_SA_MODE(get_softmodem_params()) || get_softmodem_params()->sl_mode)
-      nr_init_frame_parms_ue_sa(nrue_get_cell_fp(cell_id), nrue_get_cell(cell_id));
+  for (int ru_id = 0; ru_id < nrue_get_ru_count(); ru_id++) {
+    nrUE_RU_params_t *ru = nrue_get_ru(ru_id);
+    for (int i = 0; i < ru->nb_cells; i++) {
+      if (!ru->cell[i].active) // skip RUs that have no cell definition
+        continue;
+      set_fp_options(ru_id, i);
+      if (IS_SA_MODE(get_softmodem_params()) || get_softmodem_params()->sl_mode)
+        nr_init_frame_parms_ue_sa(ru->cell[i].fp, ru->cell + i);
+    }
   }
 
-  int cell_id = 0;
+  int ru_id = 0;
   for (int inst = 0; inst < NB_UE_INST; inst++) {
     position_t position = {0};
     get_position_coordinates(inst, &position);
 
     NR_UE_MAC_INST_t *mac = get_mac_inst(inst);
-
     for (int CC_id = 0; CC_id < MAX_NUM_CCs; CC_id++) {
       PHY_VARS_NR_UE *UE_CC = nrPHY_vars_UE_g[inst][CC_id];
       UE_CC->position = position;
 
-      AssertFatal(cell_id >= 0 && cell_id < nrue_get_cell_count(),
-                  "There are not enough cell definitions for all UEs! NB_UE_INST = %d, MAX_NUM_CCs = %d, nrue_cell_count = %d\n",
-                  NB_UE_INST,
-                  MAX_NUM_CCs,
-                  nrue_get_cell_count());
-      nrUE_cell_params_t cell = *nrue_get_cell(cell_id);
-
-      AssertFatal(cell.used_by_ue == -1 || get_nrUE_params()->use_ue_fd,
-                  "Cell %d is already used by UE %d and cannot also be used by UE %d as cells map 1:1 to RUs and RU sharing is not implemented\n",
-                  cell_id,
-                  cell.used_by_ue,
-                  inst);
-      cell.used_by_ue = inst;
-
-      set_UE_options(CC_id, UE_CC, cell.ru_id);
+      // fixme: it seems implicit mapping
+      AssertFatal(ru_id < nrue_get_ru_count(), " more UEs than ru+cell definitions in the config file\n");
+      set_UE_options(CC_id, UE_CC, ru_id);
       init_nr_ue_phy_cpu_stats(&UE_CC->phy_cpu_stats);
-
-      NR_DL_FRAME_PARMS *fp = nrue_get_cell_fp(cell_id);
+      nrUE_RU_params_t *ru = nrue_get_ru(ru_id);
+      NR_DL_FRAME_PARMS *fp = ru->cell[0].fp;
       if (!IS_SA_MODE(get_softmodem_params()) && !get_softmodem_params()->sl_mode) {
         do {
           notifiedFIFO_elt_t *elt = pollNotifiedFIFO(&mac->input_nf);
@@ -362,19 +340,18 @@ int main(int argc, char **argv)
         fapi_nr_config_request_t *nrUE_config = &UE_CC->nrUE_config;
         nr_init_frame_parms_ue(fp, nrUE_config, mac->nr_band);
 
-        cell.band = mac->nr_band;
-        cell.rf_frequency = fp->dl_CarrierFreq;
-        cell.rf_freq_offset = fp->ul_CarrierFreq - fp->dl_CarrierFreq;
-        cell.numerology = fp->numerology_index;
-        cell.N_RB_DL = fp->N_RB_DL;
-        cell.ssb_start = fp->ssb_start_subcarrier;
+        ru->cell[0].band = mac->nr_band;
+        ru->cell[0].rf_frequency = fp->dl_CarrierFreq;
+        ru->cell[0].rf_freq_offset = fp->ul_CarrierFreq - fp->dl_CarrierFreq;
+        ru->cell[0].numerology = fp->numerology_index;
+        ru->cell[0].N_RB_DL = fp->N_RB_DL;
+        ru->cell[0].ssb_start = fp->ssb_start_subcarrier;
       }
-      nrue_set_cell(cell_id, &cell);
 
       UE_CC->frame_parms = *fp;
-      mac->nr_band = cell.band;
-      mac->ssb_start_subcarrier = cell.ssb_start;
-      mac->dl_frequency = cell.rf_frequency;
+      mac->nr_band = ru->cell[0].band;
+      mac->ssb_start_subcarrier = ru->cell[0].ssb_start;
+      mac->dl_frequency = ru->cell[0].rf_frequency;
 
       UE_CC->sl_mode = get_softmodem_params()->sl_mode;
       init_nr_ue_vars(UE_CC, inst);
@@ -400,10 +377,10 @@ int main(int argc, char **argv)
         sl_ue_phy_init(UE_CC);
       }
 
-      // FD-UE instances share one physical device/cell by design (see nr-ue-fd.c);
-      // every other mode connects each UE/carrier to its own cell.
+      // FD-UE instances share one physical device by design (see nr-ue-fd.c);
+      // every other mode initially connects each UE and carrier to its own RU.
       if (!get_nrUE_params()->use_ue_fd)
-        cell_id++;
+        ru_id++;
     }
   }
 

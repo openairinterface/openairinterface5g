@@ -248,6 +248,18 @@ typedef struct UE_NR_SCAN_INFO_s {
 } UE_NR_SCAN_INFO_t;
 
 typedef struct {
+  bool active;
+  int band;
+  uint64_t rf_frequency;
+  int64_t rf_freq_offset;
+  int numerology;
+  int N_RB_DL;
+  int ssb_start;
+  int used_by_ue;
+  NR_DL_FRAME_PARMS *fp;
+} nrUE_cell_params_t;
+
+typedef struct {
   unsigned int nb_tx;
   unsigned int nb_rx;
   unsigned int att_tx;
@@ -261,19 +273,9 @@ typedef struct {
   double tune_offset;
   uint64_t if_frequency;
   int if_freq_offset;
-  int used_by_cell;
+  int nb_cells;
+  nrUE_cell_params_t *cell;
 } nrUE_RU_params_t;
-
-typedef struct {
-  int ru_id;
-  int band;
-  uint64_t rf_frequency;
-  int64_t rf_freq_offset;
-  int numerology;
-  int N_RB_DL;
-  int ssb_start;
-  int used_by_ue;
-} nrUE_cell_params_t;
 
 typedef struct UE_nr_rxtx_proc_s UE_nr_rxtx_proc_t;
 
