@@ -313,6 +313,9 @@ void term_nr_ue_signal(PHY_VARS_NR_UE *ue)
   const NR_DL_FRAME_PARMS* fp = &ue->frame_parms;
   phy_term_nr_top();
 
+  free_and_zero(ue->measurements.rx_spatial_power);
+  free_and_zero(ue->measurements.rx_spatial_power_dB);
+
   NR_UE_COMMON* common_vars = &ue->common_vars;
 
   for (int i = 0; i < fp->nb_antennas_tx; i++) {
@@ -343,6 +346,8 @@ void term_nr_ue_signal(PHY_VARS_NR_UE *ue)
     {
       for (int j=0; j<fp->nb_antennas_rx; j++)
       {
+        int ret = pthread_mutex_destroy(&ue->prs_vars[idx]->prs_resource[k].prs_meas[j]->dl_toa_mtx);
+        AssertFatal(ret == 0, "mutex destroy failed with %d\n", ret);
         free_and_zero(ue->prs_vars[idx]->prs_resource[k].prs_meas[j]);
       }
       free_and_zero(ue->prs_vars[idx]->prs_resource[k].prs_meas);
@@ -373,6 +378,8 @@ void free_nr_ue_dl_harq(NR_DL_UE_HARQ_t harq_list[2][NR_MAX_HARQ_PROCESSES], int
       free_and_zero(harq_list[j][i].c);
 #endif
       free_and_zero(harq_list[j][i].d);
+      int ret = pthread_mutex_destroy(&harq_list[j][i].abort_decode.mutex_failure);
+      AssertFatal(ret == 0, "mutex destroy failed with %d\n", ret);
     }
   }
 }

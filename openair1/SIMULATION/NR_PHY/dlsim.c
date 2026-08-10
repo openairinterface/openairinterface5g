@@ -987,7 +987,6 @@ int main(int argc, char **argv)
   nr_ue_phy_config_request(&UE_mac->phy_config);
   int ret = 1;
   initNamedTpool(gNBthreads, &gNB->threadPool, true, "gNB-tpool");
-  initNotifiedFIFO(&gNB->L1_tx_out);
 
   // Buffers to store internal memory of slot process
   int rx_size = (((14 * UE->frame_parms.N_RB_DL * 12 * sizeof(int32_t)) + 15) >> 4) << 4;
@@ -1452,7 +1451,6 @@ int main(int argc, char **argv)
         printStatIndent(&UE->phy_cpu_stats.cpu_time_stats[i], UE->phy_cpu_stats.cpu_time_stats[i].meas_name);
       }
     }
-
     if (n_trials == 1) {
       unsigned int op_format = 1;
       unsigned int dec = 1;
@@ -1512,6 +1510,9 @@ int main(int argc, char **argv)
 
   } // NSR
 
+  abortTpool(&nrUE_params.Tpool);
+  abortTpool(&gNB->threadPool);
+
   free(Sched_INFO);
 
   free_channel_desc_scm(gNB2UE);
@@ -1535,6 +1536,8 @@ int main(int argc, char **argv)
                           &h_final_output_pinned,
                           &h_channel_coeffs,
                           &d_channel_coeffs_gpu);
+#else
+  free_and_zero(h_tx_sig_pinned);
 #endif
 
   free(s_interleaved);
@@ -1550,10 +1553,15 @@ int main(int argc, char **argv)
   free(UE->phy_sim_pdsch_dl_ch_estimates);
   free(UE->phy_sim_pdsch_dl_ch_estimates_ext);
   free(UE->phy_sim_dlsch_b);
+  term_nr_ue_transport(UE);
+  free_nr_ue_phy_cpu_stats(&UE->phy_cpu_stats);
+  term_nr_ue_signal(UE);
   free(UE);
   free(nrPHY_vars_UE_g[0]);
   free(nrPHY_vars_UE_g);
 
+  free_MIB_NR(mib);
+  ASN_STRUCT_FREE(asn_DEF_NR_UE_NR_Capability, UE_Capability_nr);
   free_nrLDPC_coding_interface(&gNB->nrLDPC_coding_interface);
 
   if (output_fd)

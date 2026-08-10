@@ -500,6 +500,8 @@ int main(int argc, char **argv)
     printf("\n");
   }
 
+  abortTpool(&nrUE_params.Tpool);
+
   free_nr_ue_ul_harq(UE->ul_harq_processes, NR_MAX_HARQ_PROCESSES, UE->frame_parms.N_RB_UL, UE->frame_parms.nb_antennas_tx);
 
   free_config_request(&gNB->gNB_config);
