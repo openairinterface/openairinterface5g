@@ -63,6 +63,66 @@ static const double default_amp_lin[] = {1};
 // (worst case, half-sample delay), i.e. below -20 dB for L = 11
 #define CHANNEL_SINC_TAIL 11
 
+static void allocate_tap_correlation_matrices(channel_desc_t *desc, const struct complexd *matrix)
+{
+  const int n_links = desc->nb_tx * desc->nb_rx;
+  const size_t matrix_entries = n_links * n_links;
+
+  desc->R_sqrt = calloc(desc->nb_taps, sizeof(*desc->R_sqrt));
+  for (int tap = 0; tap < desc->nb_taps; ++tap) {
+    desc->R_sqrt[tap] = calloc(matrix_entries, sizeof(**desc->R_sqrt));
+    if (matrix != NULL) {
+      memcpy(desc->R_sqrt[tap], matrix, matrix_entries * sizeof(**desc->R_sqrt));
+    } else {
+      for (int link = 0; link < n_links; ++link)
+        desc->R_sqrt[tap][link * n_links + link].r = 1.0;
+    }
+  }
+}
+
+/* SCM correlation data contains one matrix per cluster of three subpaths. Expand
+ * it here so all consumers can address correlation matrices directly by tap. */
+static void allocate_clustered_tap_correlation_matrices(channel_desc_t *desc, const struct complexd *cluster_matrices)
+{
+  const int n_links = desc->nb_tx * desc->nb_rx;
+  const size_t matrix_entries = n_links * n_links;
+  int cluster = 0;
+  int subpath = 0;
+
+  desc->R_sqrt = calloc(desc->nb_taps, sizeof(*desc->R_sqrt));
+  for (int tap = 0; tap < desc->nb_taps; ++tap) {
+    desc->R_sqrt[tap] = calloc(matrix_entries, sizeof(**desc->R_sqrt));
+    if (cluster_matrices != NULL) {
+      memcpy(desc->R_sqrt[tap], cluster_matrices + cluster * matrix_entries, matrix_entries * sizeof(**desc->R_sqrt));
+    } else {
+      for (int link = 0; link < n_links; ++link)
+        desc->R_sqrt[tap][link * n_links + link].r = 1.0;
+    }
+
+    if (++subpath == 3) {
+      subpath = 0;
+      ++cluster;
+    }
+  }
+}
+
+static void apply_correlation_matrix(const channel_desc_t *desc,
+                                     const int tap,
+                                     const struct complexd anew[desc->nb_tx][desc->nb_rx],
+                                     struct complexd acorr[desc->nb_tx][desc->nb_rx])
+{
+  const int n_links = desc->nb_tx * desc->nb_rx;
+  for (int txa = 0; txa < desc->nb_tx; txa++)
+    for (int rxa = 0; rxa < desc->nb_rx; rxa++) {
+      const struct complexd *r_row = &desc->R_sqrt[tap][(txa * desc->nb_rx + rxa) * n_links];
+      for (int txa2 = 0; txa2 < desc->nb_tx; txa2++)
+        for (int rxa2 = 0; rxa2 < desc->nb_rx; rxa2++) {
+          const cd_t tmp = cdMul(anew[txa][rxa], r_row[rxa2 + txa2 * desc->nb_rx]);
+          csum(acorr[txa2][rxa2], tmp, acorr[txa2][rxa2]);
+        }
+    }
+}
+
 // Tap powers from linear values, normalized to a total power of 1
 static void init_amps_lin(channel_desc_t *chan_desc, const double *amps_lin)
 {
@@ -135,21 +195,7 @@ static void fill_channel_desc(channel_desc_t *chan_desc, struct complexd *R_sqrt
 
   LOG_D(OCM, "[CHANNEL] Doing R_sqrt ...\n");
 
-  if (R_sqrt == NULL) {
-    chan_desc->R_sqrt = calloc(nb_taps, sizeof(struct complexd *));
-    chan_desc->free_flags |= CHANMODEL_FREE_RSQRT_NTAPS;
-    for (int i = 0; i < nb_taps; i++) {
-      chan_desc->R_sqrt[i] = calloc(nb_tx * nb_rx * nb_tx * nb_rx, sizeof(struct complexd));
-      for (int j = 0; j < nb_tx * nb_rx * nb_tx * nb_rx; j += nb_tx * nb_rx + 1)
-        chan_desc->R_sqrt[i][j] = (cd_t){1.0, 0.0};
-    }
-  } else {
-    chan_desc->R_sqrt = calloc(nb_taps, sizeof(struct complexd *));
-    for (int i = 0; i < nb_taps; i++) {
-      /* all chan_desc share the same R_sqrt, coming from caller */
-      chan_desc->R_sqrt[i] = R_sqrt;
-    }
-  }
+  allocate_tap_correlation_matrices(chan_desc, R_sqrt);
 
   for (int i = 0; i < nb_taps; i++) {
     for (int j = 0; j < nb_tx * nb_rx * nb_tx * nb_rx; j += nb_tx * nb_rx + 1) {
@@ -480,15 +526,12 @@ static void tdlModel(const int tdl_paths,
       correlation_matrix = &R44_high[0][0];
   }
 
-  chan_desc->R_sqrt = calloc(matrix_size, sizeof(*chan_desc->R_sqrt));
-  for (int row = 0; row < matrix_size; row++) {
-    chan_desc->R_sqrt[row] = calloc(matrix_size, sizeof(**chan_desc->R_sqrt));
-    if (correlation_matrix == NULL) {
-      // TS 38.104 - Table G.2.3.1.2-4: MIMO correlation matrices for low correlation
-      chan_desc->R_sqrt[row][row].r = 1.0;
-    } else {
-      for (int col = 0; col < matrix_size; col++) {
-        chan_desc->R_sqrt[row][col].r = correlation_matrix[row * matrix_size + col];
+  allocate_tap_correlation_matrices(chan_desc, NULL);
+  if (correlation_matrix != NULL) {
+    for (int tap = 0; tap < chan_desc->nb_taps; ++tap) {
+      for (int row = 0; row < matrix_size; ++row) {
+        for (int col = 0; col < matrix_size; ++col)
+          chan_desc->R_sqrt[tap][row * matrix_size + col].r = correlation_matrix[row * matrix_size + col];
       }
     }
   }
@@ -541,6 +584,7 @@ double get_normalization_ch_factor(channel_desc_t *desc)
 
   for (uint n = 1; n <= N_average; n++) {
     struct complexd a[desc->nb_taps][desc->nb_tx][desc->nb_rx];
+    memset(a, 0, sizeof(a));
     for (uint l = 0; l < desc->nb_taps; l++) {
       const double coeff = sqrt(desc->ricean_factor * desc->amps[l] / 2);
       struct complexd anew[desc->nb_tx][desc->nb_rx];
@@ -556,19 +600,7 @@ double get_normalization_ch_factor(channel_desc_t *desc)
       }
 
       // Apply correlation matrix
-      struct complexd acorr[desc->nb_tx][desc->nb_rx];
-      bzero(acorr, sizeof(acorr));
-      for (int aatx = 0; aatx < desc->nb_tx; aatx++) {
-        for (int aarx = 0; aarx < desc->nb_rx; aarx++) {
-          for (int aatx2 = 0; aatx2 < desc->nb_tx; aatx2++) {
-            for (int aarx2 = 0; aarx2 < desc->nb_rx; aarx2++) {
-              const cd_t tmp = cdMul(anew[aatx][aarx], desc->R_sqrt[aarx + aatx * desc->nb_rx][aarx2 + aatx2 * desc->nb_rx]);
-              csum(acorr[aatx2][aarx2], tmp, acorr[aatx2][aarx2]);
-            }
-          }
-        }
-      }
-      memcpy(a[l], acorr, sizeof(acorr));
+      apply_correlation_matrix(desc, l, anew, a[l]);
     } // for (int l = 0; l < (int)desc->nb_taps; l++)
 
     for (int aarx = 0; aarx < desc->nb_rx; aarx++) {
@@ -620,7 +652,6 @@ channel_desc_t *new_channel_desc_scm(uint8_t nb_tx,
                 max_chan);
   }
 
-  struct complexd *R_sqrt_ptr2;
   chan_desc->modelid                    = channel_model;
   chan_desc->nb_tx                      = nb_tx;
   chan_desc->nb_rx                      = nb_rx;
@@ -660,26 +691,17 @@ channel_desc_t *new_channel_desc_scm(uint8_t nb_tx,
       chan_desc->ricean_factor = 1;
       chan_desc->aoa = 0;
       chan_desc->random_aoa = 0;
-      chan_desc->R_sqrt = calloc(6, sizeof(struct complexd **));
 
-      if (nb_tx == 2 && nb_rx == 2) {
-        for (int i = 0; i < 6; i++)
-          chan_desc->R_sqrt[i] = (struct complexd *)R22_sqrt[i];
-      } else if (nb_tx == 2 && nb_rx == 1) {
-        for (int i = 0; i < 6; i++)
-          chan_desc->R_sqrt[i] = (struct complexd *)R21_sqrt[i];
-      } else if (nb_tx == 1 && nb_rx == 2) {
-        for (int i = 0; i < 6; i++)
-          chan_desc->R_sqrt[i] = (struct complexd *)R12_sqrt[i];
-      } else {
-        chan_desc->free_flags |= CHANMODEL_FREE_RSQRT_6;
-        for (int i = 0; i < 6; i++) {
-          chan_desc->R_sqrt[i] = calloc(nb_tx * nb_rx * nb_tx * nb_rx, sizeof(struct complexd));
-          for (int j = 0; j < nb_tx * nb_rx * nb_tx * nb_rx; j += nb_tx * nb_rx + 1)
-            chan_desc->R_sqrt[i][j] = (cd_t){1.0, 0.0};
-          LOG_W(OCM, "correlation matrix not implemented for nb_tx==%d and nb_rx==%d, using identity\n", nb_tx, nb_rx);
-        }
-      }
+      const struct complexd *correlation_matrices = NULL;
+      if (nb_tx == 2 && nb_rx == 2)
+        correlation_matrices = (const struct complexd *)&R22_sqrt[0][0];
+      else if (nb_tx == 2 && nb_rx == 1)
+        correlation_matrices = (const struct complexd *)&R21_sqrt[0][0];
+      else if (nb_tx == 1 && nb_rx == 2)
+        correlation_matrices = (const struct complexd *)&R12_sqrt[0][0];
+      else
+        LOG_W(OCM, "correlation matrix not implemented for nb_tx==%d and nb_rx==%d, using identity\n", nb_tx, nb_rx);
+      allocate_clustered_tap_correlation_matrices(chan_desc, correlation_matrices);
     } break;
 
     case SCM_D: {
@@ -693,27 +715,16 @@ channel_desc_t *new_channel_desc_scm(uint8_t nb_tx,
       chan_desc->aoa = 0;
       chan_desc->random_aoa = 0;
 
-      chan_desc->R_sqrt = malloc(6 * sizeof(struct complexd **));
-
-      if (nb_tx == 2 && nb_rx == 2) {
-        for (int i = 0; i < 6; i++)
-          chan_desc->R_sqrt[i] = (struct complexd *)R22_sqrt[i];
-      } else if (nb_tx == 2 && nb_rx == 1) {
-        for (int i = 0; i < 6; i++)
-          chan_desc->R_sqrt[i] = (struct complexd *)R21_sqrt[i];
-      } else if (nb_tx == 1 && nb_rx == 2) {
-        for (int i = 0; i < 6; i++)
-          chan_desc->R_sqrt[i] = (struct complexd *)R12_sqrt[i];
-      } else {
-        chan_desc->free_flags |= CHANMODEL_FREE_RSQRT_6;
-
-        for (int i = 0; i < 6; i++) {
-          chan_desc->R_sqrt[i] = calloc(nb_tx * nb_rx * nb_tx * nb_rx, sizeof(struct complexd));
-          for (int j = 0; j < nb_tx * nb_rx * nb_tx * nb_rx; j += nb_tx * nb_rx + 1)
-            chan_desc->R_sqrt[i][j] = (cd_t){1.0, 0.0};
-          LOG_W(OCM, "correlation matrix not implemented for nb_tx==%d and nb_rx==%d, using identity\n", nb_tx, nb_rx);
-        }
-      }
+      const struct complexd *correlation_matrices = NULL;
+      if (nb_tx == 2 && nb_rx == 2)
+        correlation_matrices = (const struct complexd *)&R22_sqrt[0][0];
+      else if (nb_tx == 2 && nb_rx == 1)
+        correlation_matrices = (const struct complexd *)&R21_sqrt[0][0];
+      else if (nb_tx == 1 && nb_rx == 2)
+        correlation_matrices = (const struct complexd *)&R12_sqrt[0][0];
+      else
+        LOG_W(OCM, "correlation matrix not implemented for nb_tx==%d and nb_rx==%d, using identity\n", nb_tx, nb_rx);
+      allocate_clustered_tap_correlation_matrices(chan_desc, correlation_matrices);
     } break;
       /*  tapped delay line (TDL)  channel model from TR 38.901 Section 7.7.2 */
 #define tdl_m(MoDel)                                                                    \
@@ -762,19 +773,12 @@ channel_desc_t *new_channel_desc_scm(uint8_t nb_tx,
       chan_desc->aoa = 0;
       chan_desc->random_aoa = 0;
 
-      chan_desc->R_sqrt = malloc(6 * sizeof(struct complexd **));
-      if (nb_tx == 2 && nb_rx == 2) {
-        for (int i = 0; i < 6; i++)
-          chan_desc->R_sqrt[i] = (struct complexd *)R22_sqrt[i];
-      } else {
-        chan_desc->free_flags |= CHANMODEL_FREE_RSQRT_6;
-        for (int i = 0; i < 6; i++) {
-          chan_desc->R_sqrt[i] = calloc(nb_tx * nb_rx * nb_tx * nb_rx, sizeof(struct complexd));
-          for (int j = 0; j < nb_tx * nb_rx * nb_tx * nb_rx; j += nb_tx * nb_rx + 1)
-            chan_desc->R_sqrt[i][j] = (cd_t){1.0, 0.0};
-          LOG_W(OCM, "correlation matrix only implemented for nb_tx==2 and nb_rx==2, using identity\n");
-        }
-      }
+      const struct complexd *correlation_matrices = NULL;
+      if (nb_tx == 2 && nb_rx == 2)
+        correlation_matrices = (const struct complexd *)&R22_sqrt[0][0];
+      else
+        LOG_W(OCM, "correlation matrix only implemented for nb_tx==2 and nb_rx==2, using identity\n");
+      allocate_clustered_tap_correlation_matrices(chan_desc, correlation_matrices);
     } break;
 
     case EPA_low:
@@ -786,12 +790,11 @@ channel_desc_t *new_channel_desc_scm(uint8_t nb_tx,
       chan_desc->ricean_factor = 1;
       chan_desc->aoa = 0;
       chan_desc->random_aoa = 0;
-      if (nb_tx == 2 && nb_rx == 2) {
-        chan_desc->R_sqrt = malloc(chan_desc->nb_taps * sizeof(struct complexd **));
-        for (int i = 0; i < chan_desc->nb_taps; i++)
-          chan_desc->R_sqrt[i] = R_sqrt_22_EPA_low;
-      } else {
-        printf("Correlation matrices are implemented for 2 x 2 only");
+      if (nb_tx == 2 && nb_rx == 2)
+        allocate_tap_correlation_matrices(chan_desc, R_sqrt_22_EPA_low);
+      else {
+        LOG_W(OCM, "correlation matrix only implemented for nb_tx==2 and nb_rx==2, using identity\n");
+        allocate_tap_correlation_matrices(chan_desc, NULL);
       }
       break;
 
@@ -805,12 +808,11 @@ channel_desc_t *new_channel_desc_scm(uint8_t nb_tx,
       chan_desc->aoa = 0;
       chan_desc->random_aoa = 0;
 
-      if (nb_tx == 2 && nb_rx == 2) {
-        chan_desc->R_sqrt = malloc(chan_desc->nb_taps * sizeof(struct complexd **));
-        for (int i = 0; i < chan_desc->nb_taps; i++)
-          chan_desc->R_sqrt[i] = R_sqrt_22_EPA_high;
-      } else {
-        printf("Correlation matrices are implemented for 2 x 2 only");
+      if (nb_tx == 2 && nb_rx == 2)
+        allocate_tap_correlation_matrices(chan_desc, R_sqrt_22_EPA_high);
+      else {
+        LOG_W(OCM, "correlation matrix only implemented for nb_tx==2 and nb_rx==2, using identity\n");
+        allocate_tap_correlation_matrices(chan_desc, NULL);
       }
     } break;
 
@@ -823,13 +825,11 @@ channel_desc_t *new_channel_desc_scm(uint8_t nb_tx,
       chan_desc->ricean_factor = 1;
       chan_desc->aoa = 0;
       chan_desc->random_aoa = 0;
-
-      if (nb_tx == 2 && nb_rx == 2) {
-        chan_desc->R_sqrt = malloc(chan_desc->nb_taps * sizeof(struct complexd **));
-        for (int i = 0; i < chan_desc->nb_taps; i++)
-          chan_desc->R_sqrt[i] = R_sqrt_22_EPA_medium;
-      } else {
-        printf("Correlation matrices are implemented for 2 x 2 only");
+      if (nb_tx == 2 && nb_rx == 2)
+        allocate_tap_correlation_matrices(chan_desc, R_sqrt_22_EPA_medium);
+      else {
+        LOG_W(OCM, "correlation matrix only implemented for nb_tx==2 and nb_rx==2, using identity\n");
+        allocate_tap_correlation_matrices(chan_desc, NULL);
       }
     } break;
 
@@ -842,20 +842,12 @@ channel_desc_t *new_channel_desc_scm(uint8_t nb_tx,
       chan_desc->ricean_factor = 1;
       chan_desc->aoa = 0;
       chan_desc->random_aoa = 0;
-
-      chan_desc->R_sqrt = malloc(6 * sizeof(struct complexd **));
-      if (nb_tx == 2 && nb_rx == 2) {
-        for (int i = 0; i < 6; i++)
-          chan_desc->R_sqrt[i] = (struct complexd *)R22_sqrt[i];
-      } else {
-        chan_desc->free_flags |= CHANMODEL_FREE_RSQRT_6;
-        for (int i = 0; i < 6; i++) {
-          chan_desc->R_sqrt[i] = calloc(nb_tx * nb_rx * nb_tx * nb_rx, sizeof(struct complexd));
-          for (int j = 0; j < nb_tx * nb_rx * nb_tx * nb_rx; j += nb_tx * nb_rx + 1)
-            chan_desc->R_sqrt[i][j] = (cd_t){1.0, 0.0};
-          LOG_W(OCM, "correlation matrix only implemented for nb_tx==2 and nb_rx==2, using identity\n");
-        }
-      }
+      const struct complexd *correlation_matrices = NULL;
+      if (nb_tx == 2 && nb_rx == 2)
+        correlation_matrices = (const struct complexd *)&R22_sqrt[0][0];
+      else
+        LOG_W(OCM, "correlation matrix only implemented for nb_tx==2 and nb_rx==2, using identity\n");
+      allocate_clustered_tap_correlation_matrices(chan_desc, correlation_matrices);
     } break;
 
     case ETU: {
@@ -867,20 +859,12 @@ channel_desc_t *new_channel_desc_scm(uint8_t nb_tx,
       chan_desc->ricean_factor = 1;
       chan_desc->aoa = 0;
       chan_desc->random_aoa = 0;
-
-      chan_desc->R_sqrt = malloc(6 * sizeof(struct complexd **));
-      if (nb_tx == 2 && nb_rx == 2) {
-        for (int i = 0; i < 6; i++)
-          chan_desc->R_sqrt[i] = (struct complexd *)R22_sqrt[i];
-      } else {
-        chan_desc->free_flags |= CHANMODEL_FREE_RSQRT_6;
-        for (int i = 0; i < 6; i++) {
-          chan_desc->R_sqrt[i] = calloc(nb_tx * nb_rx * nb_tx * nb_rx, sizeof(struct complexd));
-          for (int j = 0; j < nb_tx * nb_rx * nb_tx * nb_rx; j += nb_tx * nb_rx + 1)
-            chan_desc->R_sqrt[i][j] = (cd_t){1.0, 0.0};
-          LOG_W(OCM, "correlation matrix only implemented for nb_tx==2 and nb_rx==2, using identity\n");
-        }
-      }
+      const struct complexd *correlation_matrices = NULL;
+      if (nb_tx == 2 && nb_rx == 2)
+        correlation_matrices = (const struct complexd *)&R22_sqrt[0][0];
+      else
+        LOG_W(OCM, "correlation matrix only implemented for nb_tx==2 and nb_rx==2, using identity\n");
+      allocate_clustered_tap_correlation_matrices(chan_desc, correlation_matrices);
     } break;
 
     case MBSFN: {
@@ -892,15 +876,7 @@ channel_desc_t *new_channel_desc_scm(uint8_t nb_tx,
       chan_desc->ricean_factor = 1;
       chan_desc->aoa = 0;
       chan_desc->random_aoa = 0;
-
-      chan_desc->R_sqrt = malloc(6 * sizeof(struct complexd **));
-      chan_desc->free_flags |= CHANMODEL_FREE_RSQRT_6;
-      for (int i = 0; i < 6; i++) {
-        chan_desc->R_sqrt[i] = calloc(nb_tx * nb_rx * nb_tx * nb_rx, sizeof(struct complexd));
-        for (int j = 0; j < nb_tx * nb_rx * nb_tx * nb_rx; j += nb_tx * nb_rx + 1)
-          chan_desc->R_sqrt[i][j] = (cd_t){1.0, 0.0};
-        LOG_W(OCM, "correlation matrix only implemented for nb_tx==2 and nb_rx==2, using identity\n");
-      }
+      allocate_tap_correlation_matrices(chan_desc, NULL);
     } break;
 
     case Rayleigh8:
@@ -935,35 +911,33 @@ channel_desc_t *new_channel_desc_scm(uint8_t nb_tx,
       fill_channel_desc(chan_desc, NULL, 0);
       break;
 
-    case Rayleigh1_corr:
+    case Rayleigh1_corr: {
       chan_desc->ricean_factor = 1;
       chan_desc->aoa = .03;
       chan_desc->max_Doppler = 0;
-
-      if ((nb_tx == 2) && (nb_rx == 1)) {
+      struct complexd *R_sqrt_ptr2 = NULL;
+      if ((nb_tx == 2 && nb_rx == 1) || (nb_tx == 1 && nb_rx == 2)) {
         R_sqrt_ptr2 = R_sqrt_21_corr;
-      } else if ((nb_tx == 2) && (nb_rx == 2)) {
+      } else if (nb_tx == 2 && nb_rx == 2) {
         R_sqrt_ptr2 = R_sqrt_22_corr;
-      } else
-        R_sqrt_ptr2 = NULL;
+      }
       chan_desc->nb_taps = 1;
       fill_channel_desc(chan_desc, R_sqrt_ptr2, 0);
-      break;
+    } break;
 
-    case Rayleigh1_anticorr:
+    case Rayleigh1_anticorr: {
       chan_desc->ricean_factor = 1;
       chan_desc->aoa = .03;
       chan_desc->max_Doppler = 0;
-
-      if (nb_tx == 2 && nb_rx == 1) { // check this
+      struct complexd *R_sqrt_ptr2 = NULL;
+      if ((nb_tx == 2 && nb_rx == 1) || (nb_tx == 1 && nb_rx == 2)) {
         R_sqrt_ptr2 = R_sqrt_21_anticorr;
       } else if (nb_tx == 2 && nb_rx == 2) {
         R_sqrt_ptr2 = R_sqrt_22_anticorr;
-      } else
-        R_sqrt_ptr2 = NULL;
+      }
       chan_desc->nb_taps = 1;
       fill_channel_desc(chan_desc, R_sqrt_ptr2, 0);
-      break;
+    } break;
 
     case Rice1:
       chan_desc->ricean_factor = 0.1;
@@ -994,99 +968,88 @@ channel_desc_t *new_channel_desc_scm(uint8_t nb_tx,
       printf("TS_SHIFT: ricean_factor %f\n", chan_desc->ricean_factor);
       break;
 
-    case Rice1_corr:
+    case Rice1_corr: {
       chan_desc->ricean_factor = 0.1;
       chan_desc->aoa = .03;
       chan_desc->max_Doppler = 0;
-
-      if (nb_tx == 2 && nb_rx == 1) {
+      struct complexd *R_sqrt_ptr2 = NULL;
+      if ((nb_tx == 2 && nb_rx == 1) || (nb_tx == 1 && nb_rx == 2)) {
         R_sqrt_ptr2 = R_sqrt_21_corr;
       } else if (nb_tx == 2 && nb_rx == 2) {
         R_sqrt_ptr2 = R_sqrt_22_corr;
-      } else
-        R_sqrt_ptr2 = NULL;
+      }
       chan_desc->nb_taps = 1;
       fill_channel_desc(chan_desc, R_sqrt_ptr2, 1);
-      break;
+    } break;
 
-    case Rice1_anticorr:
+    case Rice1_anticorr: {
       chan_desc->ricean_factor = 0.1;
       chan_desc->aoa = .03;
       chan_desc->max_Doppler = 0;
-
-      if (nb_tx == 2 && nb_rx == 1) {
+      struct complexd *R_sqrt_ptr2 = NULL;
+      if ((nb_tx == 2 && nb_rx == 1) || (nb_tx == 1 && nb_rx == 2)) {
         R_sqrt_ptr2 = R_sqrt_21_anticorr;
       } else if (nb_tx == 2 && nb_rx == 2) {
         R_sqrt_ptr2 = R_sqrt_22_anticorr;
-      } else
-        R_sqrt_ptr2 = NULL;
+      }
       chan_desc->nb_taps = 1;
       fill_channel_desc(chan_desc, R_sqrt_ptr2, 1);
-      break;
+    } break;
 
-    case Rayleigh1_orthogonal:
+    case Rayleigh1_orthogonal: {
       chan_desc->ricean_factor = 1;
       chan_desc->aoa = 0.03;
       chan_desc->max_Doppler = 0;
-
+      struct complexd *R_sqrt_ptr2 = NULL;
       if (nb_tx == 2 && nb_rx == 2)
         R_sqrt_ptr2 = R_sqrt_22_orthogonal;
-      else
-        R_sqrt_ptr2 = NULL;
       chan_desc->nb_taps = 1;
       fill_channel_desc(chan_desc, R_sqrt_ptr2, 0);
-      break;
+    } break;
 
-    case Rayleigh1_orth_eff_ch_TM4_prec_real:
+    case Rayleigh1_orth_eff_ch_TM4_prec_real: {
       chan_desc->ricean_factor = 1;
       chan_desc->aoa = 0.03;
       chan_desc->max_Doppler = 0;
-
+      struct complexd *R_sqrt_ptr2 = NULL;
       if (nb_tx == 2 && nb_rx == 2)
         R_sqrt_ptr2 = R_sqrt_22_orth_eff_ch_TM4_prec_real;
-      else
-        R_sqrt_ptr2 = NULL;
       chan_desc->nb_taps = 1;
       fill_channel_desc(chan_desc, R_sqrt_ptr2, 1);
-      break;
+    } break;
 
-    case Rayleigh1_orth_eff_ch_TM4_prec_imag:
+    case Rayleigh1_orth_eff_ch_TM4_prec_imag: {
       chan_desc->ricean_factor = 1;
       chan_desc->aoa = 0.03;
       chan_desc->max_Doppler = 0;
-
+      struct complexd *R_sqrt_ptr2 = NULL;
       if (nb_tx == 2 && nb_rx == 2)
         R_sqrt_ptr2 = R_sqrt_22_orth_eff_ch_TM4_prec_imag;
-      else
-        R_sqrt_ptr2 = NULL;
       chan_desc->nb_taps = 1;
       fill_channel_desc(chan_desc, R_sqrt_ptr2, 0);
-      break;
+    } break;
 
-    case Rayleigh8_orth_eff_ch_TM4_prec_real:
+    case Rayleigh8_orth_eff_ch_TM4_prec_real: {
+      struct complexd *R_sqrt_ptr2 = NULL;
       if (nb_tx == 2 && nb_rx == 2)
         R_sqrt_ptr2 = R_sqrt_22_orth_eff_ch_TM4_prec_real;
-      else
-        R_sqrt_ptr2 = NULL;
       chan_desc->ricean_factor = 1;
       chan_desc->aoa = .03;
       chan_desc->max_Doppler = 0;
       chan_desc->nb_taps = 8;
       fill_channel_desc(chan_desc, R_sqrt_ptr2, 0);
-      break;
+    } break;
 
-    case Rayleigh8_orth_eff_ch_TM4_prec_imag:
+    case Rayleigh8_orth_eff_ch_TM4_prec_imag: {
       chan_desc->ricean_factor = 1;
       chan_desc->aoa = .03;
       chan_desc->max_Doppler = 0;
-
+      struct complexd *R_sqrt_ptr2 = NULL;
       if (nb_tx == 2 && nb_rx == 2)
         R_sqrt_ptr2 = R_sqrt_22_orth_eff_ch_TM4_prec_imag;
-      else
-        R_sqrt_ptr2 = NULL;
       chan_desc->nb_taps = 8;
       fill_channel_desc(chan_desc, R_sqrt_ptr2, 0);
-      break;
+    } break;
 
     case SAT_LEO_TRANS:
     case SAT_LEO_REGEN:
@@ -1140,13 +1103,8 @@ void free_channel_desc_scm(channel_desc_t *ch) {
   free(ch->amps);
   free(ch->delays);
 
-  if(ch->free_flags&CHANMODEL_FREE_RSQRT_6)
-    for (int i = 0; i<6; i++)
-      free(ch->R_sqrt[i]);
-
-  if(ch->free_flags&CHANMODEL_FREE_RSQRT_NTAPS)
-    for (int i = 0; i<ch->nb_taps; i++)
-      free(ch->R_sqrt[i]);
+  for (int i = 0; i < ch->nb_taps; ++i)
+    free(ch->R_sqrt[i]);
 
   free(ch->R_sqrt);
   free(ch->Doppler_phase_cur);
@@ -1232,35 +1190,13 @@ int random_channel(channel_desc_t *desc, uint8_t abstraction_flag)
     } // aarx
 
     // apply correlation matrix
-    // compute acorr = R_sqrt[i] * anew
     struct complexd acorr[desc->nb_tx][desc->nb_rx];
-    bzero(acorr, sizeof(acorr));
-    if (desc->modelid >= TDL_A && desc->modelid <= TDL_E) {
-      for (int aatx = 0; aatx < desc->nb_tx; aatx++) {
-        for (int aarx = 0; aarx < desc->nb_rx; aarx++) {
-          for (int aatx2 = 0; aatx2 < desc->nb_tx; aatx2++) {
-            for (int aarx2 = 0; aarx2 < desc->nb_rx; aarx2++) {
-              const cd_t tmp = cdMul(anew[aatx][aarx], desc->R_sqrt[aarx + aatx * desc->nb_rx][aarx2 + aatx2 * desc->nb_rx]);
-              csum(acorr[aatx2][aarx2], tmp, acorr[aatx2][aarx2]);
-            }
-          }
-        }
-      }
-    } else {
-      for (int aatx = 0; aatx < desc->nb_tx; aatx++) {
-        for (int aarx = 0; aarx < desc->nb_rx; aarx++) {
-          const cd_t tmp = cdMul(desc->R_sqrt[i / 3][0], anew[aatx][aarx]);
-          csum(acorr[aatx][aarx], tmp, acorr[aatx][aarx]);
-        }
-      }
-    }
+    memset(acorr, 0, sizeof(acorr));
+    // Apply the tap-specific correlation matrix.
+    apply_correlation_matrix(desc, i, anew, acorr);
 
     if (desc->first_run==1) {
-      for (int aatx = 0; aatx < desc->nb_tx; aatx++) {
-        for (int aarx = 0; aarx < desc->nb_rx; aarx++) {
-          a[i][aatx][aarx] = acorr[aatx][aarx];
-        }
-      }
+      memcpy(a[i], acorr, sizeof(acorr));
     } else {
       // a = alpha*acorr+beta*a
       // a = beta*a
