@@ -22,6 +22,7 @@ int nr_mac_get_cell_phy_id(gNB_MAC_INST *mac, nr_cell_sched_t *cell);
 nr_cell_sched_t *nr_mac_get_cell_by_idx(gNB_MAC_INST *mac, uint16_t idx);
 nr_cell_sched_t *nr_mac_get_cell_by_phy_id(gNB_MAC_INST *mac, uint16_t phy_id);
 nr_cell_sched_t *nr_mac_get_cell_by_cgi(gNB_MAC_INST *mac, plmn_id_t plmn, uint64_t nr_cellid);
+f1ap_served_cell_info_t * get_f1ap_cell_info_by_cgi(const f1ap_setup_req_t *req, plmn_id_t plmn, uint64_t nr_cellid);
 
 nr_cell_sched_t *nr_mac_cell_alloc(gNB_MAC_INST *mac, NR_ServingCellConfigCommon_t *scc);
 void seq_arr_cell_free(void *cell);

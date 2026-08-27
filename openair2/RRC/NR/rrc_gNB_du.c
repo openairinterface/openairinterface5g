@@ -699,9 +699,6 @@ void rrc_gNB_process_f1_setup_req(f1ap_setup_req_t *req, sctp_assoc_t assoc_id)
   if (rrc->node_name != NULL)
     resp.gNB_CU_name = strdup(rrc->node_name);
 
-  if (req->num_cells_available > 1) {
-    LOG_W(NR_RRC, "Received F1 Setup Request with %u cells, only one cell is supported\n", req->num_cells_available);
-  }
   for (int i = 0; i < req->num_cells_available; i++) {
     f1ap_served_cell_info_t *cell_info = &req->cell[i].info;
     if (!rrc_gNB_plmn_matches(rrc, cell_info)) {

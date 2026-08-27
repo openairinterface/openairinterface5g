@@ -43,6 +43,18 @@ nr_cell_sched_t *nr_mac_get_cell_by_cgi(gNB_MAC_INST *mac, plmn_id_t plmn, uint6
   return NULL;
 }
 
+f1ap_served_cell_info_t *get_f1ap_cell_info_by_cgi(const f1ap_setup_req_t *req, plmn_id_t plmn, uint64_t nr_cellid)
+{
+  for (int i = 0; i < req->num_cells_available; ++i) {
+    f1ap_served_cell_info_t *f1ap_cell = &req->cell[i].info;
+    if (f1ap_cell->nr_cellid == nr_cellid && f1ap_cell->plmn.mcc == plmn.mcc && f1ap_cell->plmn.mnc == plmn.mnc
+        && f1ap_cell->plmn.mnc_digit_length == plmn.mnc_digit_length) {
+      return f1ap_cell;
+    }
+  }
+  return NULL;
+}
+
 nr_cell_sched_t *nr_mac_cell_alloc(gNB_MAC_INST *mac, NR_ServingCellConfigCommon_t *scc)
 {
   nr_cell_sched_t new_cell = {0};

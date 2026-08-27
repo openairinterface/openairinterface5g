@@ -4252,17 +4252,17 @@ void send_initial_ul_rrc_message(int rnti, const uint8_t *sdu, sdu_size_t sdu_le
     encoded_len = encode_cellGroupConfig(UE->CellGroup, du2cu, sizeof(du2cu));
 
   DevAssert(mac->f1_config.setup_req != NULL);
-  AssertFatal(mac->f1_config.setup_req->num_cells_available == 1, "can handle only one cell\n");
-  const f1ap_initial_ul_rrc_message_t ul_rrc_msg = {
-    .plmn = mac->f1_config.setup_req->cell[0].info.plmn,
-    .nr_cellid = mac->f1_config.setup_req->cell[0].info.nr_cellid,
-    .gNB_DU_ue_id = rnti,
-    .crnti = rnti,
-    .rrc_container = (uint8_t *) sdu,
-    .rrc_container_length = sdu_len,
-    .du2cu_rrc_container = encoded_len ? (uint8_t *) du2cu : NULL,
-    .du2cu_rrc_container_length = encoded_len
-  };
+  const f1ap_served_cell_info_t *cell_info =
+      get_f1ap_cell_info_by_cgi(mac->f1_config.setup_req, UE->pcell->plmn, UE->pcell->nr_cellid);
+  AssertFatal(cell_info != NULL, "UE serving cell (cellid %lu) not found in F1 setup request\n", UE->pcell->nr_cellid);
+  const f1ap_initial_ul_rrc_message_t ul_rrc_msg = {.plmn = cell_info->plmn,
+                                                    .nr_cellid = cell_info->nr_cellid,
+                                                    .gNB_DU_ue_id = rnti,
+                                                    .crnti = rnti,
+                                                    .rrc_container = (uint8_t *)sdu,
+                                                    .rrc_container_length = sdu_len,
+                                                    .du2cu_rrc_container = encoded_len ? (uint8_t *)du2cu : NULL,
+                                                    .du2cu_rrc_container_length = encoded_len};
   mac->mac_rrc.initial_ul_rrc_message_transfer(0, &ul_rrc_msg);
 }
 
