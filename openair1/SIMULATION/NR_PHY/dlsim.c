@@ -1282,12 +1282,15 @@ int main(int argc, char **argv)
 #endif		
           start_meas(&pipeline_stats);
           random_channel(gNB2UE, 0);
-          int num_links = gNB2UE->nb_tx * gNB2UE->nb_rx;
-          for (int link = 0; link < num_links; link++) {
-            for (int l = 0; l < gNB2UE->channel_length; l++) {
-              int idx = link * gNB2UE->channel_length + l;
-              ((float2 *)h_channel_coeffs)[idx].x = (float)gNB2UE->ch[link][l].r;
-              ((float2 *)h_channel_coeffs)[idx].y = (float)gNB2UE->ch[link][l].i;
+          allocCast3D(ch, struct complexd, gNB2UE->ch, gNB2UE->nb_tx, gNB2UE->nb_rx, gNB2UE->channel_length, false);
+          float2 *h = (float2 *)h_channel_coeffs;
+          for (int aatx = 0; aatx < gNB2UE->nb_tx; aatx++) {
+            for (int aarx = 0; aarx < gNB2UE->nb_rx; aarx++) {
+              for (int l = 0; l < gNB2UE->channel_length; l++) {
+                int idx = (aatx * gNB2UE->nb_rx + aarx) * gNB2UE->channel_length + l;
+                h[idx].x = (float)ch[aatx][aarx][l].r;
+                h[idx].y = (float)ch[aatx][aarx][l].i;
+              }
             }
           }
           run_channel_pipeline_cuda(UE->common_vars.rxdata,

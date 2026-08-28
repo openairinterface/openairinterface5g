@@ -99,6 +99,8 @@ int freq_channel(channel_desc_t *desc,uint16_t nb_rb,int16_t n_samples,int scs) 
   d=(n_samples_max-1)/(n_samples-1);
   //  printf("no_samples=%d, n_samples_max=%d, d=%d,nb_taps %d\n",n_samples,n_samples_max,d,desc->nb_taps);
   start_meas(&desc->interp_freq);
+  allocCast3D(chF, struct complexd, desc->chF, desc->nb_tx, desc->nb_rx, desc->channelF_len, false);
+  allocCast3D(a, struct complexd, desc->a, desc->nb_taps, desc->nb_tx, desc->nb_rx, true);
 
   for (f=-n_samples_max/2,f2=-n_samples/2; f<n_samples_max/2; f+=d,f2++) {
     clut = cos_lut[n_samples_max/2+f];
@@ -106,15 +108,15 @@ int freq_channel(channel_desc_t *desc,uint16_t nb_rb,int16_t n_samples,int scs) 
 
     for (aarx=0; aarx<desc->nb_rx; aarx++) {
       for (aatx=0; aatx<desc->nb_tx; aatx++) {
-        AssertFatal(n_samples/2+f2 < (2+(275*12)),"reading past chF %d (n_samples %d, f2 %d)\n",n_samples/2+f2,n_samples,f2);
-        desc->chF[aarx+(aatx*desc->nb_rx)][n_samples/2+f2].r=0.0;
-        desc->chF[aarx+(aatx*desc->nb_rx)][n_samples/2+f2].i=0.0;
-
+        AssertFatal(n_samples / 2 + f2 < desc->channelF_len,
+                    "reading past chF %d (n_samples %d, f2 %d)\n",
+                    n_samples / 2 + f2,
+                    n_samples,
+                    f2);
+        chF[aatx][aarx][n_samples / 2 + f2] = (struct complexd){};
         for (l=0; l<(int)desc->nb_taps; l++) {
-          desc->chF[aarx+(aatx*desc->nb_rx)][n_samples/2+f2].r+=(desc->a[l][aarx+(aatx*desc->nb_rx)].r*clut[l]+
-              desc->a[l][aarx+(aatx*desc->nb_rx)].i*slut[l]);
-          desc->chF[aarx+(aatx*desc->nb_rx)][n_samples/2+f2].i+=(-desc->a[l][aarx+(aatx*desc->nb_rx)].r*slut[l]+
-              desc->a[l][aarx+(aatx*desc->nb_rx)].i*clut[l]);
+          chF[aatx][aarx][n_samples / 2 + f2].r += a[l][aatx][aarx].r * clut[l] + a[l][aatx][aarx].i * slut[l];
+          chF[aatx][aarx][n_samples / 2 + f2].i += -a[l][aatx][aarx].r * slut[l] + a[l][aatx][aarx].i * clut[l];
         }
       }
     }
@@ -122,6 +124,23 @@ int freq_channel(channel_desc_t *desc,uint16_t nb_rb,int16_t n_samples,int scs) 
 
   stop_meas(&desc->interp_freq);
   return(0);
+}
+
+/* Frequency response of an optional interferer (NULL when absent), with the dimensions of the useful link */
+static struct complexd *interferer_chF(const channel_desc_t *desc, channel_desc_t *desc_i)
+{
+  if (!desc_i)
+    return NULL;
+  AssertFatal(desc_i->nb_tx == desc->nb_tx && desc_i->nb_rx == desc->nb_rx && desc_i->channelF_len == desc->channelF_len,
+              "interferer channel %dx%d (%d) differs from useful channel %dx%d (%d)\n",
+              desc_i->nb_tx,
+              desc_i->nb_rx,
+              desc_i->channelF_len,
+              desc->nb_tx,
+              desc->nb_rx,
+              desc->channelF_len);
+  allocCast3D(chF, struct complexd, desc_i->chF, desc_i->nb_tx, desc_i->nb_rx, desc_i->channelF_len, false);
+  return &chF[0][0][0];
 }
 
 double compute_pbch_sinr(channel_desc_t *desc,
@@ -138,32 +157,30 @@ double compute_pbch_sinr(channel_desc_t *desc,
   struct complexd S_i2;
   avg_sinr=0.0;
 
+  allocCast3D(chF, struct complexd, desc->chF, desc->nb_tx, desc->nb_rx, desc->channelF_len, false);
+  struct complexd(*chF1)[desc->nb_rx][desc->channelF_len] = (void *)interferer_chF(desc, desc_i1);
+  struct complexd(*chF2)[desc->nb_rx][desc->channelF_len] = (void *)interferer_chF(desc, desc_i2);
+
   //  printf("nb_rb %d\n",nb_rb);
   for (f=(nb_rb-6); f<(nb_rb+6); f++) {
     S = 0.0;
     S_i1.r =0.0;
     S_i1.i =0.0;
     S_i2.r =0.0;
-    S_i2.i =0.0;
-
+    S_i2.i = 0.0;
     for (aarx=0; aarx<desc->nb_rx; aarx++) {
       for (aatx=0; aatx<desc->nb_tx; aatx++) {
-        S    += (desc->chF[aarx+(aatx*desc->nb_rx)][f].r*desc->chF[aarx+(aatx*desc->nb_rx)][f].r +
-                 desc->chF[aarx+(aatx*desc->nb_rx)][f].i*desc->chF[aarx+(aatx*desc->nb_rx)][f].i);
-        //  printf("%d %d chF[%d] => (%f,%f)\n",aarx,aatx,f,desc->chF[aarx+(aatx*desc->nb_rx)][f].x,desc->chF[aarx+(aatx*desc->nb_rx)][f].y);
+        S += squaredMod(chF[aatx][aarx][f]);
+        //  printf("%d %d chF[%d] => (%f,%f)\n",aarx,aatx,f,chF[aatx][aarx][f].x,chF[aatx][aarx][f].y);
 
         if (desc_i1) {
-          S_i1.r += (desc->chF[aarx+(aatx*desc->nb_rx)][f].r*desc_i1->chF[aarx+(aatx*desc->nb_rx)][f].r +
-                     desc->chF[aarx+(aatx*desc->nb_rx)][f].i*desc_i1->chF[aarx+(aatx*desc->nb_rx)][f].i);
-          S_i1.i += (desc->chF[aarx+(aatx*desc->nb_rx)][f].r*desc_i1->chF[aarx+(aatx*desc->nb_rx)][f].i -
-                     desc->chF[aarx+(aatx*desc->nb_rx)][f].i*desc_i1->chF[aarx+(aatx*desc->nb_rx)][f].r);
+          S_i1.r += chF[aatx][aarx][f].r * chF1[aatx][aarx][f].r + chF[aatx][aarx][f].i * chF1[aatx][aarx][f].i;
+          S_i1.i += chF[aatx][aarx][f].r * chF1[aatx][aarx][f].i - chF[aatx][aarx][f].i * chF1[aatx][aarx][f].r;
         }
 
         if (desc_i2) {
-          S_i2.r += (desc->chF[aarx+(aatx*desc->nb_rx)][f].r*desc_i2->chF[aarx+(aatx*desc->nb_rx)][f].r +
-                     desc->chF[aarx+(aatx*desc->nb_rx)][f].i*desc_i2->chF[aarx+(aatx*desc->nb_rx)][f].i);
-          S_i2.r += (desc->chF[aarx+(aatx*desc->nb_rx)][f].r*desc_i2->chF[aarx+(aatx*desc->nb_rx)][f].i -
-                     desc->chF[aarx+(aatx*desc->nb_rx)][f].i*desc_i2->chF[aarx+(aatx*desc->nb_rx)][f].r);
+          S_i2.r += chF[aatx][aarx][f].r * chF2[aatx][aarx][f].r + chF[aatx][aarx][f].i * chF2[aatx][aarx][f].i;
+          S_i2.r += chF[aatx][aarx][f].r * chF2[aatx][aarx][f].i - chF[aatx][aarx][f].i * chF2[aatx][aarx][f].r;
         }
       }
     }
@@ -184,14 +201,16 @@ double compute_sinr(channel_desc_t *desc,
                     double snr_i2_dB,
                     uint16_t nb_rb) {
   double avg_sinr,snr=pow(10.0,.1*snr_dB),snr_i1=pow(10.0,.1*snr_i1_dB),snr_i2=pow(10.0,.1*snr_i2_dB);
-  uint16_t f;
-  uint8_t aarx,aatx;
+  uint f;
+  uint aarx, aatx;
   double S;
   struct complexd S_i1;
   struct complexd S_i2;
   DevAssert( nb_rb > 0 );
   avg_sinr=0.0;
-
+  allocCast3D(chF, struct complexd, desc->chF, desc->nb_tx, desc->nb_rx, desc->channelF_len, false);
+  struct complexd(*chF1)[desc->nb_rx][desc->channelF_len] = (void *)interferer_chF(desc, desc_i1);
+  struct complexd(*chF2)[desc->nb_rx][desc->channelF_len] = (void *)interferer_chF(desc, desc_i2);
   //  printf("nb_rb %d\n",nb_rb);
   for (f=0; f<2*nb_rb; f++) {
     S = 0.0;
@@ -202,21 +221,16 @@ double compute_sinr(channel_desc_t *desc,
 
     for (aarx=0; aarx<desc->nb_rx; aarx++) {
       for (aatx=0; aatx<desc->nb_tx; aatx++) {
-        S    += (desc->chF[aarx+(aatx*desc->nb_rx)][f].r*desc->chF[aarx+(aatx*desc->nb_rx)][f].r +
-                 desc->chF[aarx+(aatx*desc->nb_rx)][f].i*desc->chF[aarx+(aatx*desc->nb_rx)][f].i);
+        S += (chF[aatx][aarx][f].r * chF[aatx][aarx][f].r + chF[aatx][aarx][f].i * chF[aatx][aarx][f].i);
 
         if (desc_i1) {
-          S_i1.r += (desc->chF[aarx+(aatx*desc->nb_rx)][f].r*desc_i1->chF[aarx+(aatx*desc->nb_rx)][f].r +
-                     desc->chF[aarx+(aatx*desc->nb_rx)][f].i*desc_i1->chF[aarx+(aatx*desc->nb_rx)][f].i);
-          S_i1.i += (desc->chF[aarx+(aatx*desc->nb_rx)][f].r*desc_i1->chF[aarx+(aatx*desc->nb_rx)][f].i -
-                     desc->chF[aarx+(aatx*desc->nb_rx)][f].i*desc_i1->chF[aarx+(aatx*desc->nb_rx)][f].r);
+          S_i1.r += (chF[aatx][aarx][f].r * chF1[aatx][aarx][f].r + chF[aatx][aarx][f].i * chF1[aatx][aarx][f].i);
+          S_i1.i += (chF[aatx][aarx][f].r * chF1[aatx][aarx][f].i - chF[aatx][aarx][f].i * chF1[aatx][aarx][f].r);
         }
 
         if (desc_i2) {
-          S_i2.r += (desc->chF[aarx+(aatx*desc->nb_rx)][f].r*desc_i2->chF[aarx+(aatx*desc->nb_rx)][f].r +
-                     desc->chF[aarx+(aatx*desc->nb_rx)][f].i*desc_i2->chF[aarx+(aatx*desc->nb_rx)][f].i);
-          S_i2.i += (desc->chF[aarx+(aatx*desc->nb_rx)][f].r*desc_i2->chF[aarx+(aatx*desc->nb_rx)][f].i -
-                     desc->chF[aarx+(aatx*desc->nb_rx)][f].i*desc_i2->chF[aarx+(aatx*desc->nb_rx)][f].r);
+          S_i2.r += (chF[aatx][aarx][f].r * chF2[aatx][aarx][f].r + chF[aatx][aarx][f].i * chF2[aatx][aarx][f].i);
+          S_i2.i += (chF[aatx][aarx][f].r * chF2[aatx][aarx][f].i - chF[aatx][aarx][f].i * chF2[aatx][aarx][f].r);
         }
       }
     }

@@ -586,6 +586,7 @@ int main(int argc, char **argv)
 
       random_channel(UE2gNB, 0);
       freq_channel(UE2gNB, N_RB_DL, 2 * N_RB_DL + 1, 15 << mu);
+      allocCast3D(chF, struct complexd, UE2gNB->chF, UE2gNB->nb_tx, UE2gNB->nb_rx, UE2gNB->channelF_len, false);
       for (int symb = 0; symb < nrofSymbols; symb++) {
         int i0 = (startingSymbolIndex + symb) * gNB->frame_parms.ofdm_symbol_size;
         for (int re = 0; re < N_RB_DL * 12; re++) {
@@ -594,12 +595,12 @@ int main(int argc, char **argv)
           phasor.r = cos(2 * M_PI * phase * re);
           phasor.i = sin(2 * M_PI * phase * re);
           for (int aarx = 0; aarx < n_rx; aarx++) {
-            double txr = (double)(((int16_t *)txdataF[0])[(i << 1)]);
-            double txi = (double)(((int16_t *)txdataF[0])[1 + (i << 1)]);
+            double txr = txdataF[0][i].r;
+            double txi = txdataF[0][i].i;
             double rxr = {0}, rxi = {0};
             for (int l = 0; l < UE2gNB->channel_length; l++) {
-              rxr = txr * UE2gNB->chF[aarx][l].r - txi * UE2gNB->chF[aarx][l].i;
-              rxi = txr * UE2gNB->chF[aarx][l].i + txi * UE2gNB->chF[aarx][l].r;
+              rxr = txr * chF[0][aarx][l].r - txi * chF[0][aarx][l].i;
+              rxi = txr * chF[0][aarx][l].i + txi * chF[0][aarx][l].r;
             }
             double rxr_tmp = rxr * phasor.r - rxi * phasor.i;
             rxi = rxr * phasor.i + rxi * phasor.r;
@@ -616,8 +617,8 @@ int main(int argc, char **argv)
                      aarx,
                      txr,
                      txi,
-                     UE2gNB->chF[aarx][re].r,
-                     UE2gNB->chF[aarx][re].i,
+                     chF[0][aarx][re].r,
+                     chF[0][aarx][re].i,
                      nr,
                      ni,
                      rxr,

@@ -1044,14 +1044,14 @@ int main(int argc, char **argv) {
                 freq_channel(UE2eNB, N_RB_DL,12*N_RB_DL + 1, 15);
                 // snr=pow(10.0,.1*SNR);
                 fprintf(csv_fdUL,"%f,%u,%u,%f,%f,%f,",SNR,tx_lev,tx_lev_dB,sigma2_dB,tx_gain,SNR2);
+                allocCast3D(chF, struct complexd, UE2eNB->chF, UE2eNB->nb_tx, UE2eNB->nb_rx, UE2eNB->channelF_len, false);
 
                 //fprintf(csv_fdUL,"%f,",SNR);
                 for (u=0; u<12*nb_rb; u++) {
                   for (aarx=0; aarx<UE2eNB->nb_rx; aarx++) {
                     for (aatx=0; aatx<UE2eNB->nb_tx; aatx++) {
-                      // abs_channel = (eNB2UE->chF[aarx+(aatx*eNB2UE->nb_rx)][u].x*eNB2UE->chF[aarx+(aatx*eNB2UE->nb_rx)][u].x + eNB2UE->chF[aarx+(aatx*eNB2UE->nb_rx)][u].y*eNB2UE->chF[aarx+(aatx*eNB2UE->nb_rx)][u].y);
-                      channelx = UE2eNB->chF[aarx+(aatx*UE2eNB->nb_rx)][u].r;
-                      channely = UE2eNB->chF[aarx+(aatx*UE2eNB->nb_rx)][u].i;
+                      channelx = chF[aatx][aarx][u].r;
+                      channely = chF[aatx][aarx][u].i;
                       // if(transmission_m==5){
                       fprintf(csv_fdUL,"%e+i*(%e),",channelx,channely);
                       // }

@@ -40,14 +40,15 @@ channel_desc_t *create_manual_channel_desc(int nb_tx, int nb_rx, int channel_len
   desc->channel_length = channel_length;
   desc->path_loss_dB = -10.0;
   desc->channel_offset = 0;
-  int num_links = nb_tx * nb_rx;
-  desc->ch = (struct complexd **)malloc(num_links * sizeof(struct complexd *));
   float path_gain = (float)pow(10, -desc->path_loss_dB / 20.0);
-  for (int i = 0; i < num_links; i++) {
-    desc->ch[i] = (struct complexd *)malloc(channel_length * sizeof(struct complexd));
-    for (int l = 0; l < channel_length; l++) {
-      desc->ch[i][l].r = (double)rand() / (double)RAND_MAX * path_gain;
-      desc->ch[i][l].i = (double)rand() / (double)RAND_MAX * path_gain;
+  desc->ch = allocateFourDimArray(sizeof(struct complexd), nb_tx, nb_rx, channel_length, 0);
+  cast3Darray(ch_array, struct complexd, desc->ch);
+  for (int tx = 0; tx < nb_tx; tx++) {
+    for (int rx = 0; rx < nb_rx; rx++) {
+      for (int l = 0; l < channel_length; l++) {
+        ch_array[tx][rx][l].r = ((double)rand() / (double)RAND_MAX) * path_gain;
+        ch_array[tx][rx][l].i = ((double)rand() / (double)RAND_MAX) * path_gain;
+      }
     }
   }
   return desc;
@@ -57,10 +58,8 @@ void free_manual_channel_desc(channel_desc_t *desc)
 {
   if (!desc)
     return;
-  int num_links = desc->nb_tx * desc->nb_rx;
-  for (int i = 0; i < num_links; i++)
-    free(desc->ch[i]);
-  free(desc->ch);
+  if (desc->ch)
+    free(desc->ch);
   free(desc);
 }
 
@@ -165,11 +164,15 @@ int main(int argc, char **argv)
 
         int num_links = chan_desc->nb_tx * chan_desc->nb_rx;
         float *h_channel_coeffs = (float *)malloc(num_links * channel_length * sizeof(float2));
-        for (int link = 0; link < num_links; link++) {
-          for (int l = 0; l < channel_length; l++) {
-            int idx = link * channel_length + l;
-            ((float2 *)h_channel_coeffs)[idx].x = (float)chan_desc->ch[link][l].r;
-            ((float2 *)h_channel_coeffs)[idx].y = (float)chan_desc->ch[link][l].i;
+        cast3Darray(ch_array, struct complexd, chan_desc->ch);
+        for (int tx = 0; tx < nb_tx; tx++) {
+          for (int rx = 0; rx < nb_rx; rx++) {
+            int link = tx * nb_rx + rx;
+            for (int l = 0; l < channel_length; l++) {
+              int idx = link * channel_length + l;
+              ((float2 *)h_channel_coeffs)[idx].x = (float)ch_array[tx][rx][l].r;
+              ((float2 *)h_channel_coeffs)[idx].y = (float)ch_array[tx][rx][l].i;
+            }
           }
         }
 

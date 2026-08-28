@@ -1405,11 +1405,15 @@ int main(int argc, char *argv[])
               h_channel_coeffs = (float *)malloc_or_fail(num_links * 256 * sizeof(float2));
             }
 
-            for (int link = 0; link < num_links; link++) {
-              for (int l = 0; l < UE2gNB->channel_length; l++) {
-                int idx = link * UE2gNB->channel_length + l;
-                ((float2 *)h_channel_coeffs)[idx].x = (float)UE2gNB->ch[link][l].r;
-                ((float2 *)h_channel_coeffs)[idx].y = (float)UE2gNB->ch[link][l].i;
+            allocCast3D(ch, struct complexd, UE2gNB->ch, UE2gNB->nb_tx, UE2gNB->nb_rx, UE2gNB->channel_length, false);
+            float2 *h = (float2 *)h_channel_coeffs;
+            for (int aatx = 0; aatx < UE2gNB->nb_tx; aatx++) {
+              for (int aarx = 0; aarx < UE2gNB->nb_rx; aarx++) {
+                for (int l = 0; l < UE2gNB->channel_length; l++) {
+                  int idx = (aatx * UE2gNB->nb_rx + aarx) * UE2gNB->channel_length + l;
+                  h[idx].x = (float)ch[aatx][aarx][l].r;
+                  h[idx].y = (float)ch[aatx][aarx][l].i;
+                }
               }
             }
 

@@ -42,14 +42,15 @@ channel_desc_t *create_manual_channel_desc(int nb_tx, int nb_rx, int channel_len
   desc->channel_length = channel_length;
   desc->path_loss_dB = 0.0;
   desc->channel_offset = 0;
-  int num_links = nb_tx * nb_rx;
   float path_gain = (float)pow(10, -desc->path_loss_dB / 20.0);
-  desc->ch = (struct complexd **)malloc(num_links * sizeof(struct complexd *));
-  for (int i = 0; i < num_links; i++) {
-    desc->ch[i] = (struct complexd *)malloc(channel_length * sizeof(struct complexd));
-    for (int l = 0; l < channel_length; l++) {
-      desc->ch[i][l].r = ((double)rand() / (double)RAND_MAX * 0.1) * path_gain;
-      desc->ch[i][l].i = ((double)rand() / (double)RAND_MAX * 0.1) * path_gain;
+  desc->ch = allocateFourDimArray(sizeof(struct complexd), nb_tx, nb_rx, channel_length, 0);
+  cast3Darray(ch_array, struct complexd, desc->ch);
+  for (int tx = 0; tx < nb_tx; tx++) {
+    for (int rx = 0; rx < nb_rx; rx++) {
+      for (int l = 0; l < channel_length; l++) {
+        ch_array[tx][rx][l].r = ((double)rand() / (double)RAND_MAX * 0.1) * path_gain;
+        ch_array[tx][rx][l].i = ((double)rand() / (double)RAND_MAX * 0.1) * path_gain;
+      }
     }
   }
   return desc;
@@ -59,11 +60,6 @@ void free_manual_channel_desc(channel_desc_t *desc)
 {
   if (!desc)
     return;
-  int num_links = desc->nb_tx * desc->nb_rx;
-  for (int i = 0; i < num_links; i++) {
-    if (desc->ch[i])
-      free(desc->ch[i]);
-  }
   if (desc->ch)
     free(desc->ch);
   free(desc);
@@ -321,8 +317,6 @@ int main(int argc, char **argv)
     for (int i = 0; i < num_tx_signals; i++) {
       generate_random_signal_interleaved(tx_sig_interleaved[i], nb_tx, num_samples);
     }
-    for (int c = 0; c < num_channels; c++)
-      random_channel(channels[c], 0);
 
     struct timespec start, end;
 
@@ -359,11 +353,15 @@ int main(int argc, char **argv)
     clock_gettime(CLOCK_MONOTONIC, &start);
     if (strcmp(mode_str, "batch") == 0) {
       for (int c = 0; c < num_channels; c++) {
-        for (int link = 0; link < nb_tx * nb_rx; link++) {
-          for (int l = 0; l < channel_length; l++) {
-            int batch_idx = (c * nb_tx * nb_rx * max_taps) + (link * max_taps) + l;
-            h_channel_coeffs_batch[batch_idx].x = (float)channels[c]->ch[link][l].r;
-            h_channel_coeffs_batch[batch_idx].y = (float)channels[c]->ch[link][l].i;
+        cast3Darray(ch_array, struct complexd, channels[c]->ch);
+        for (int tx = 0; tx < nb_tx; tx++) {
+          for (int rx = 0; rx < nb_rx; rx++) {
+            int link = tx * nb_rx + rx;
+            for (int l = 0; l < channel_length; l++) {
+              int batch_idx = (c * nb_tx * nb_rx * max_taps) + (link * max_taps) + l;
+              h_channel_coeffs_batch[batch_idx].x = (float)ch_array[tx][rx][l].r;
+              h_channel_coeffs_batch[batch_idx].y = (float)ch_array[tx][rx][l].i;
+            }
           }
         }
       }
@@ -428,11 +426,15 @@ int main(int argc, char **argv)
           cudaStreamCreateWithFlags(&streams[c], cudaStreamNonBlocking);
 
         for (int c = 0; c < num_channels; c++) {
-          for (int link = 0; link < nb_tx * nb_rx; link++) {
-            for (int l = 0; l < channels[c]->channel_length; l++) {
-              int idx = link * max_taps + l;
-              ((float2 *)h_channel_coeffs)[idx].x = (float)channels[c]->ch[link][l].r;
-              ((float2 *)h_channel_coeffs)[idx].y = (float)channels[c]->ch[link][l].i;
+          cast3Darray(ch_array, struct complexd, channels[c]->ch);
+          for (int tx = 0; tx < nb_tx; tx++) {
+            for (int rx = 0; rx < nb_rx; rx++) {
+              int link = tx * nb_rx + rx;
+              for (int l = 0; l < channels[c]->channel_length; l++) {
+                int idx = link * max_taps + l;
+                ((float2 *)h_channel_coeffs)[idx].x = (float)ch_array[tx][rx][l].r;
+                ((float2 *)h_channel_coeffs)[idx].y = (float)ch_array[tx][rx][l].i;
+              }
             }
           }
 
@@ -479,11 +481,15 @@ int main(int argc, char **argv)
             memcpy(data_start_ptr, current_tx[j], num_samples * 2 * sizeof(float));
           }
 
-          for (int link = 0; link < nb_tx * nb_rx; link++) {
-            for (int l = 0; l < channels[c]->channel_length; l++) {
-              int idx = link * max_taps + l;
-              ((float2 *)h_channel_coeffs)[idx].x = (float)channels[c]->ch[link][l].r;
-              ((float2 *)h_channel_coeffs)[idx].y = (float)channels[c]->ch[link][l].i;
+          cast3Darray(ch_array, struct complexd, channels[c]->ch);
+          for (int tx = 0; tx < nb_tx; tx++) {
+            for (int rx = 0; rx < nb_rx; rx++) {
+              int link = tx * nb_rx + rx;
+              for (int l = 0; l < channels[c]->channel_length; l++) {
+                int idx = link * max_taps + l;
+                ((float2 *)h_channel_coeffs)[idx].x = (float)ch_array[tx][rx][l].r;
+                ((float2 *)h_channel_coeffs)[idx].y = (float)ch_array[tx][rx][l].i;
+              }
             }
           }
 

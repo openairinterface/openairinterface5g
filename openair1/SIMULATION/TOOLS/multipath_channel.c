@@ -53,6 +53,7 @@ void __attribute__((no_sanitize_address)) multipath_channel(channel_desc_t *desc
 
   // simd_length = (length - dd) / 2;
   // tail_start = simd_length * 2;
+  allocCast3D(ch, struct complexd, desc->ch, desc->nb_tx, desc->nb_rx, desc->channel_length, false);
 
   for (i = 0; i < (int)(length - dd); i += 2) {
     for (ii = 0; ii < desc->nb_rx; ii++) {
@@ -76,8 +77,8 @@ void __attribute__((no_sanitize_address)) multipath_channel(channel_desc_t *desc
                 tx_im[1] = tx_sig_im[j][i + 1 - l];
               tx128_re = simde_mm_loadu_pd(tx_re);
               tx128_im = simde_mm_loadu_pd(tx_im);
-              ch128_r = simde_mm_set1_pd(desc->ch[ii + (j * desc->nb_rx)][l].r);
-              ch128_i = simde_mm_set1_pd(desc->ch[ii + (j * desc->nb_rx)][l].i);
+              ch128_r = simde_mm_set1_pd(ch[j][ii][l].r);
+              ch128_i = simde_mm_set1_pd(ch[j][ii][l].i);
               rx_tmp128_re =
                   simde_mm_add_pd(rx_tmp128_re,
                                   simde_mm_sub_pd(simde_mm_mul_pd(tx128_re, ch128_r), simde_mm_mul_pd(tx128_im, ch128_i)));
@@ -99,7 +100,7 @@ void __attribute__((no_sanitize_address)) multipath_channel(channel_desc_t *desc
     for (ii = 0; ii < desc->nb_rx; ii++) {
       struct complexd rx_tmp = {0};
       for (j = 0; j < desc->nb_tx; j++) {
-        struct complexd *chan = desc->ch[ii + (j * desc->nb_rx)];
+        struct complexd *chan = ch[j][ii];
         for (l = 0; l < (int)desc->channel_length; l++) {
           if ((i_tail - l) >= 0) {
             struct complexd tx;
@@ -147,29 +148,23 @@ void __attribute__((no_sanitize_address)) multipath_channel(channel_desc_t *desc
     random_channel(desc, 0);
   }
 
-#ifdef DEBUG_CH
-  for (int l = 0; l < (int)desc->channel_length; l++) {
-    printf("ch[%i] = (%f, %f)\n", l, desc->ch[0][l].r, desc->ch[0][l].i);
-  }
-#endif
-
   struct complexd cexp_doppler[length];
   if (desc->max_Doppler != 0.0) {
     get_cexp_doppler(cexp_doppler, desc, length);
   }
-
+  allocCast3D(ch, struct complexd, desc->ch, desc->nb_tx, desc->nb_rx, desc->channel_length, false);
   for (int i = 0; i < ((int)length - dd); i++) {
     for (int ii = 0; ii < desc->nb_rx; ii++) {
       struct complexd rx_tmp = {0};
       for (int j = 0; j < desc->nb_tx; j++) {
-        struct complexd *chan = desc->ch[ii + (j * desc->nb_rx)];
-        for (int l = 0; l < (int)desc->channel_length; l++) {
+        struct complexd *chan = ch[j][ii];
+        for (int l = 0; l < desc->channel_length; l++) {
           if ((i >= 0) && (i - l) >= 0) {
             struct complexd tx;
             tx.r = tx_sig_re[j][i - l];
             tx.i = tx_sig_im[j][i - l];
-            rx_tmp.r += (tx.r * chan[l].r) - (tx.i * chan[l].i);
-            rx_tmp.i += (tx.i * chan[l].r) + (tx.r * chan[l].i);
+            rx_tmp.r += tx.r * chan[l].r - tx.i * chan[l].i;
+            rx_tmp.i += tx.i * chan[l].r + tx.r * chan[l].i;
           }
 #if 0
           if (i==0 && log_channel == 1) {
@@ -232,7 +227,7 @@ void __attribute__((no_sanitize_address)) multipath_channel_float(channel_desc_t
   if (dd >= length) {
     return; // No samples to process
   }
-
+  allocCast3D(ch, struct complexd, desc->ch, desc->nb_tx, desc->nb_rx, desc->channel_length, false);
   for (i = 0; i <= (int)(length - dd) - 4; i += 4) {
     for (ii = 0; ii < desc->nb_rx; ii++) {
       rx_tmp128_re = simde_mm_setzero_ps();
@@ -252,8 +247,8 @@ void __attribute__((no_sanitize_address)) multipath_channel_float(channel_desc_t
             tx128_im = simde_mm_setzero_ps();
           }
 
-          ch128_r = simde_mm_set1_ps((float)desc->ch[ii + (j * desc->nb_rx)][l].r);
-          ch128_i = simde_mm_set1_ps((float)desc->ch[ii + (j * desc->nb_rx)][l].i);
+          ch128_r = simde_mm_set1_ps((float)ch[j][ii][l].r);
+          ch128_i = simde_mm_set1_ps((float)ch[j][ii][l].i);
 
           // re = (tx_re * ch_r) - (tx_im * ch_i)
           rx_tmp128_re = simde_mm_add_ps(rx_tmp128_re,
@@ -289,7 +284,7 @@ void __attribute__((no_sanitize_address)) multipath_channel_float(channel_desc_t
     for (ii = 0; ii < desc->nb_rx; ii++) {
       struct complexf rx_tmp = {0.0f, 0.0f};
       for (j = 0; j < desc->nb_tx; j++) {
-        struct complexd *chan = desc->ch[ii + (j * desc->nb_rx)];
+        struct complexd *chan = ch[j][ii];
         for (l = 0; l < (int)desc->channel_length; l++) {
           if ((i - l) >= 0) {
             struct complexf tx;
@@ -338,12 +333,13 @@ void multipath_channel_float(channel_desc_t *desc,
     return;
   }
 
+  allocCast3D(ch, struct complexd, desc->ch, desc->nb_tx, desc->nb_rx, desc->channel_length, false);
   for (int i = 0; i < ((int)length - dd); i++) {
     for (int ii = 0; ii < desc->nb_rx; ii++) {
       struct complexf rx_tmp = {0.0f, 0.0f};
 
       for (int j = 0; j < desc->nb_tx; j++) {
-        struct complexd *chan = desc->ch[ii + (j * desc->nb_rx)];
+        struct complexd *chan = ch[j][ii];
 
         for (int l = 0; l < (int)desc->channel_length; l++) {
           if ((i - l) >= 0) {
