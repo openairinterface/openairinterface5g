@@ -60,6 +60,7 @@ void nvIPC_send_stop_request()
 
 static uint16_t old_sfn[NFAPI_PHY_MAX];
 static uint16_t old_slot[NFAPI_PHY_MAX];
+static uint16_t cell_slots_per_frame[NFAPI_PHY_MAX]; // set from CONFIG.request
 static nvipc_params_t aerial_params;
 ////////////////////////////////////////////////////////////////////////
 // Handle an RX message
@@ -140,25 +141,28 @@ static int ipc_handle_rx_msg(nv_ipc_msg_t *msg)
           NFAPI_TRACE(NFAPI_TRACE_ERROR, "%s: Failed to unpack message\n", __FUNCTION__);
         } else {
           NFAPI_TRACE(NFAPI_TRACE_DEBUG, "%s: Handling NR SLOT Indication\n", __FUNCTION__);
-          ind.header.phy_id = phy_id;
-          // check if the sfn/slot unpacked come wrong at any time, should be old + 1 (slot 0 -- 19, sfn 0 -- 1023)
-          uint16_t old_slot_plus = ((old_slot[phy_id] + 1) % 20);
-          uint16_t old_sfn_plus = old_slot_plus == 0 ? ((old_sfn[phy_id] + 1) % 1024) : old_sfn[phy_id];
-          if (old_slot_plus != ind.slot || old_sfn_plus != ind.sfn) {
-            LOG_E(NFAPI_VNF,
-                  "\n============================================================================\n"
-                  "sfn slot doesn't match unpacked one! PHY %d L2->L1 %d.%d  vs L1->L2 %d.%d  \n"
-                  "============================================================================\n",
-                  phy_id,
-                  old_sfn[phy_id],
-                  old_slot[phy_id],
-                  ind.sfn,
-                  ind.slot);
-          }
-          old_sfn[phy_id] = ind.sfn;
-          old_slot[phy_id] = ind.slot;
-          if (vnf_p7_config->_public.nr_slot_indication) {
-            (vnf_p7_config->_public.nr_slot_indication)(&ind);
+          /// Aerial sends a single SLOT.indication to the gNB, with it's cell_id set to the first cell
+          for (int i = 0; i < aerial_params.num_phys; ++i) {
+            ind.header.phy_id = i;
+            // check if the sfn/slot unpacked come wrong at any time, should be old + 1 (slot 0 -- slots_per_frame-1, sfn 0 -- 1023)
+            uint16_t old_slot_plus = ((old_slot[i] + 1) % cell_slots_per_frame[i]);
+            uint16_t old_sfn_plus = old_slot_plus == 0 ? ((old_sfn[i] + 1) % 1024) : old_sfn[i];
+            if (old_slot_plus != ind.slot || old_sfn_plus != ind.sfn) {
+              LOG_E(NFAPI_VNF,
+                    "\n============================================================================\n"
+                    "sfn slot doesn't match unpacked one! PHY %d L2->L1 %d.%d  vs L1->L2 %d.%d  \n"
+                    "============================================================================\n",
+                    i,
+                    old_sfn[i],
+                    old_slot[i],
+                    ind.sfn,
+                    ind.slot);
+            }
+            old_sfn[i] = ind.sfn;
+            old_slot[i] = ind.slot;
+            if (vnf_p7_config->_public.nr_slot_indication) {
+              (vnf_p7_config->_public.nr_slot_indication)(&ind);
+            }
           }
         }
         break;
@@ -231,6 +235,8 @@ bool aerial_nr_send_p5_message(vnf_nr_t *vnf, uint16_t p5_idx, nfapi_nr_p4_p5_me
       if (has_separate_dbt_payload) {
         send_msg.data_pool = NV_IPC_MEMPOOL_CPU_LARGE;
       }
+      cell_slots_per_frame[msg->phy_id] = 10 << config_req->ssb_config.scs_common.value;
+      NFAPI_TRACE(NFAPI_TRACE_DEBUG, "PHY %d: %d slots/frame\n", msg->phy_id, cell_slots_per_frame[msg->phy_id]);
     }
 
     // Allocate the message
