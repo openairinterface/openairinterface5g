@@ -109,6 +109,64 @@ static int compute_n_b(frame_t frame_number,
   return n_b;
 }
 
+// Compute cyclic shift of an SRS resource for antenna port
+// 38.211 Release 18 : 6.4.1.4.2
+static uint16_t nr_srs_cyclic_shift(int N_ap, int p_index, uint8_t n_SRS_cs_max, int n_SRS_cs)
+{
+  const int port = SRS_antenna_port[p_index] - 1000;
+  int offset = n_SRS_cs_max * port / N_ap;
+
+  switch (N_ap) {
+    case 8:
+      if (n_SRS_cs_max == 6)
+        offset = n_SRS_cs_max * (port / 4) / (N_ap / 4);
+      else if (n_SRS_cs_max == 12)
+        offset = n_SRS_cs_max * (port / 2) / (N_ap / 2);
+      break;
+    case 4:
+      if (n_SRS_cs_max == 6)
+        offset = n_SRS_cs_max * (port / 2) / (N_ap / 2);
+      break;
+    default:
+      break;
+  }
+
+  return (n_SRS_cs + offset) % n_SRS_cs_max;
+}
+
+// Compute comb offset of an SRS resource for antenna port
+// 38.211 Release 18: 6.4.1.4.3
+static uint8_t nr_srs_comb_offset(int N_ap, int p_index, uint8_t K_TC, uint8_t n_SRS_cs_max, int n_SRS_cs, uint8_t K_TC_overbar)
+{
+  const int16_t port = SRS_antenna_port[p_index];
+  const bool port_odd = (port == 1001) || (port == 1003) || (port == 1005) || (port == 1007);
+  const bool cs_upper_half = (n_SRS_cs >= n_SRS_cs_max / 2) && (n_SRS_cs < n_SRS_cs_max);
+
+  switch (N_ap) {
+    case 8:
+      if (n_SRS_cs_max == 6) {
+        if ((port == 1003) || (port == 1007))
+          return (K_TC_overbar + 3 * K_TC / 4) % K_TC;
+        if ((port == 1002) || (port == 1006))
+          return (K_TC_overbar + K_TC / 2) % K_TC;
+        if ((port == 1001) || (port == 1005))
+          return (K_TC_overbar + K_TC / 4) % K_TC;
+      } else if (port_odd && (n_SRS_cs_max == 12 || (n_SRS_cs_max == 8 && cs_upper_half))) {
+        return (K_TC_overbar + K_TC / 2) % K_TC;
+      }
+      break;
+    case 4:
+      if (((port == 1001) || (port == 1003))
+          && ((n_SRS_cs_max == 6) || (((n_SRS_cs_max == 8) || (n_SRS_cs_max == 12)) && cs_upper_half)))
+        return (K_TC_overbar + K_TC / 2) % K_TC;
+      break;
+    default:
+      break;
+  }
+
+  return K_TC_overbar;
+}
+
 /*************************************************************************
 *
 * NAME :         generate_srs_nr
@@ -221,7 +279,7 @@ bool generate_srs_nr(const NR_DL_FRAME_PARMS *frame_parms,
     LOG_I(NR_PHY,"============ port %d ============\n", p_index);
 #endif
 
-    uint16_t n_SRS_cs_i = (nr_srs_info->n_SRS_cs + (n_SRS_cs_max * (SRS_antenna_port[p_index] - 1000) / N_ap)) % n_SRS_cs_max;
+    uint16_t n_SRS_cs_i = nr_srs_cyclic_shift(N_ap, p_index, n_SRS_cs_max, nr_srs_info->n_SRS_cs);
     double alpha_i = 2 * M_PI * ((double)n_SRS_cs_i / (double)n_SRS_cs_max);
 
 #ifdef SRS_DEBUG
@@ -274,20 +332,11 @@ bool generate_srs_nr(const NR_DL_FRAME_PARMS *frame_parms,
       LOG_I(NR_PHY,"sum_n_b = %i\n", sum_n_b);
 #endif
 
-      // Compute the frequency-domain starting position
-      uint8_t K_TC_p = 0;
-      if((nr_srs_info->n_SRS_cs >= n_SRS_cs_max / 2)
-         && (nr_srs_info->n_SRS_cs < n_SRS_cs_max)
-         && (N_ap == 4)
-         && ((SRS_antenna_port[p_index] == 1001) || (SRS_antenna_port[p_index] == 1003))) {
-        K_TC_p = (nr_srs_info->K_TC_overbar + K_TC / 2) % K_TC;
-      } else {
-        K_TC_p = nr_srs_info->K_TC_overbar;
-      }
+      uint8_t K_TC_p = nr_srs_comb_offset(N_ap, p_index, K_TC, n_SRS_cs_max, nr_srs_info->n_SRS_cs, nr_srs_info->K_TC_overbar);
       uint8_t k_l_offset = 0; // If the SRS is configured by the IE SRS-PosResource-r16, the quantity k_l_offset is
                               // given by TS 38.211 - Table 6.4.1.4.3-2, otherwise k_l_offset = 0.
-      uint8_t k_0_overbar_p = nr_srs_info->n_shift * NR_NB_SC_PER_RB + (K_TC_p + k_l_offset) % K_TC;
-      uint8_t k_0_p = k_0_overbar_p + K_TC * M_sc_b_SRS * sum_n_b;
+      uint16_t k_0_overbar_p = nr_srs_info->n_shift * NR_NB_SC_PER_RB + (K_TC_p + k_l_offset) % K_TC;
+      uint16_t k_0_p = k_0_overbar_p + K_TC * M_sc_b_SRS * sum_n_b;
       nr_srs_info->k_0_p[p_index][l_line] = k_0_p;
 
 #ifdef SRS_DEBUG

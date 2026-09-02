@@ -632,6 +632,27 @@ int nr_pusch_channel_estimation(PHY_VARS_gNB *gNB,
   return 0;
 }
 
+static uint8_t get_srs_fd_cdm(const uint8_t N_ap, const uint8_t K_TC, uint8_t cyclic_shift)
+{
+  uint8_t fd_cdm = N_ap;
+  switch (N_ap) {
+    case 4:
+      if ((K_TC == 2 && cyclic_shift >= 4) || (K_TC == 4 && cyclic_shift >= 6) || (K_TC == 8))
+        fd_cdm = 2;
+      break;
+    case 8:
+      if ((K_TC == 2 && cyclic_shift >= 4) || (K_TC == 4)) {
+        fd_cdm = 4;
+      } else if (K_TC == 8) {
+        fd_cdm = 2;
+      }
+      break;
+    default:
+      break;
+  }
+  return fd_cdm;
+}
+
 int nr_srs_ls_channel_estimation(int ant,
                                  int p_index,
                                  uint16_t ofdm_symbol_size,
@@ -653,10 +674,7 @@ int nr_srs_ls_channel_estimation(int ant,
   const uint8_t K_TC = 2 << srs_pdu->comb_size;
   const uint16_t m_SRS_b = get_m_srs(srs_pdu->config_index, srs_pdu->bandwidth_index);
   const uint16_t M_sc_b_SRS = m_SRS_b * NR_NB_SC_PER_RB / K_TC;
-  uint8_t fd_cdm = N_ap;
-  if (N_ap == 4 && ((K_TC == 2 && srs_pdu->cyclic_shift >= 4) || (K_TC == 4 && srs_pdu->cyclic_shift >= 6))) {
-    fd_cdm = 2;
-  }
+  uint8_t fd_cdm = get_srs_fd_cdm(N_ap, K_TC, srs_pdu->cyclic_shift);
 
   memset(srs_ls_estimated_channel, 0, ofdm_symbol_size * N_symb_SRS * sizeof(c16_t));
 
