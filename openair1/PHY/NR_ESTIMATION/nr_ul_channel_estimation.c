@@ -812,7 +812,6 @@ int nr_srs_channel_interpolation(int p_index,
 #endif
 
   const uint64_t subcarrier_offset = srs_pdu->bwp_start * NR_NB_SC_PER_RB;
-  const uint64_t first_subcarrier = (first_carrier_offset - (ofdm_symbol_size >> 1)) + srs_pdu->bwp_start * NR_NB_SC_PER_RB;
 
   const uint8_t K_TC = 2 << srs_pdu->comb_size;
   const uint16_t m_SRS_b = get_m_srs(srs_pdu->config_index, srs_pdu->bandwidth_index);
@@ -901,7 +900,7 @@ int nr_srs_channel_interpolation(int p_index,
 
     // Copy as DC in center.
     const uint half_bw = ofdm_symbol_size - first_carrier_offset;
-    const uint neg_start = ofdm_symbol_size / 2 - half_bw + subcarrier_offset + nr_srs_info->k_0_p[p_index][srs_symb];
+    const uint neg_start = (ofdm_symbol_size >> 1) - half_bw + subcarrier_offset + nr_srs_info->k_0_p[p_index][srs_symb];
     memset(&srs_estimated_channel_freq[srs_symbol_offset], 0, sizeof(c16_t) * neg_start);
     memcpy(&srs_estimated_channel_freq[srs_symbol_offset + neg_start],
            srs_est,
@@ -916,7 +915,7 @@ int nr_srs_channel_interpolation(int p_index,
 
 #ifdef SRS_DEBUG
     subcarrier = subcarrier_offset + nr_srs_info->k_0_p[p_index][srs_symb];
-    subcarrier_abs = first_subcarrier + nr_srs_info->k_0_p[p_index][srs_symb];
+    subcarrier_abs = neg_start;
 
     for (int k = 0; k < K_TC * M_sc_b_SRS; k++) {
       int subcarrier_log = subcarrier - subcarrier_offset;
@@ -969,8 +968,8 @@ int nr_srs_channel_interpolation(int p_index,
 
   // Compute wideband SNR on the symbol 0
   int tot_subcarriers = m_SRS_b * NR_NB_SC_PER_RB;
-  uint16_t subcarrier_abs = first_subcarrier + nr_srs_info->k_0_p[p_index][0];
-  *signal_power = signal_energy_nodc(&srs_estimated_channel_freq[subcarrier_abs], tot_subcarriers);
+  uint16_t subcarrier_abs = subcarrier_offset + nr_srs_info->k_0_p[p_index][0];
+  *signal_power = signal_energy_nodc(&srs_ls_estimated_channel[subcarrier_abs], tot_subcarriers);
 
   if (*signal_power == 0) {
     LOG_W(NR_PHY, "Received SRS signal power is 0\n");
