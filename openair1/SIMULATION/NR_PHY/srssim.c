@@ -545,7 +545,8 @@ int main(int argc, char *argv[])
     int tao_ns_count = 0;
     for (trial = 0; trial < n_trials && !stop; trial++) {
       // Estimate noise power from the transmitter level and SNR
-      double sigma = compute_noise_variance(txlev_sum, ofdm_symbol_size, srs_pdu.bwp_size, 1, SNR, n_trials);
+      int srs_K_TC = 2 << srs_comb_size;
+      double sigma = compute_noise_variance(txlev_sum, ofdm_symbol_size, srs_pdu.bwp_size / srs_K_TC, 1 << n_ports, SNR, n_trials);
 
       //----------- Apply propagation channel ----------------------------
       multipath_channel(UE2gNB, s_re, s_im, r_re, r_im, slot_length, 0, (n_trials == 1) ? 1 : 0);
