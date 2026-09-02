@@ -108,21 +108,12 @@ struct sfn_slot {
   int sfn;
   int slot;
 };
+
 static bool crc_sfn_slot_matcher(void *wanted, void *candidate)
 {
-  nfapi_nr_p7_message_header_t *msg = candidate;
-  struct sfn_slot *sfn_sf = (struct sfn_slot *)wanted;
-
-  switch (msg->message_id) {
-    case NFAPI_NR_PHY_MSG_TYPE_CRC_INDICATION: {
-      nfapi_nr_crc_indication_t *ind = candidate;
-      return sfn_sf->sfn == ind->sfn && sfn_sf->slot == ind->slot;
-    }
-
-    default:
-      LOG_E(NR_MAC, "sfn_slot_match bad ID: %d\n", msg->message_id);
-  }
-  return false;
+  nfapi_nr_crc_indication_t *ind = candidate;
+  struct sfn_slot *ctx = (struct sfn_slot *)wanted;
+  return ind->sfn == ctx->sfn && ind->slot == ctx->slot;
 }
 
 static void handle_nr_ulsch(NR_UL_IND_t *UL_info)
@@ -343,7 +334,7 @@ static void match_crc_rx_pdu(nfapi_nr_rx_data_indication_t *rx_ind, nfapi_nr_crc
     }
     AssertFatal(crc_ind_unmatched->number_crcs == num_unmatched_crcs, "crc_ind num_pdus %d doesnt match %d\n",
                 crc_ind_unmatched->number_crcs, num_unmatched_crcs);
-    if (!requeue(&gnb_crc_ind_queue, crc_ind_unmatched))
+    if (!requeue(&gnb_crc_ind_queue[crc_ind->header.phy_id], crc_ind_unmatched))
     {
       LOG_E(NR_PHY, "requeue failed for crc_ind_unmatched.\n");
       free_and_zero(crc_ind_unmatched->crc_list);
@@ -371,7 +362,7 @@ static void match_crc_rx_pdu(nfapi_nr_rx_data_indication_t *rx_ind, nfapi_nr_crc
     }
     AssertFatal(rx_ind_unmatched->number_of_pdus == num_unmatched_rxs, "rx_ind num_pdus %d doesnt match %d\n",
                 rx_ind_unmatched->number_of_pdus, num_unmatched_rxs);
-    if (!requeue(&gnb_rx_ind_queue, rx_ind_unmatched))
+    if (!requeue(&gnb_rx_ind_queue[rx_ind->header.phy_id], rx_ind_unmatched))
     {
       LOG_E(NR_PHY, "requeue failed for rx_ind_unmatched.\n");
       free_and_zero(rx_ind_unmatched->pdu_list);
@@ -409,9 +400,9 @@ static void NR_UL_indication(NR_UL_IND_t *UL_info)
   LOG_D(NR_PHY,"SFN/SLOT:%d.%d module_id:%d phy_id:%d UL_info[rach_pdus:%zu rx_ind:%zu crcs:%zu]\n",
         UL_info->frame, UL_info->slot,
         module_id, cell_id,
-        gnb_rach_ind_queue.num_items,
-        gnb_rx_ind_queue.num_items,
-        gnb_crc_ind_queue.num_items);
+        gnb_rach_ind_queue[cell_id].num_items,
+        gnb_rx_ind_queue[cell_id].num_items,
+        gnb_crc_ind_queue[cell_id].num_items);
 
   nfapi_nr_rach_indication_t *rach_ind = NULL;
   nfapi_nr_uci_indication_t *uci_ind = NULL;
@@ -419,30 +410,40 @@ static void NR_UL_indication(NR_UL_IND_t *UL_info)
   nfapi_nr_crc_indication_t *crc_ind = NULL;
   if (NFAPI_MODE == NFAPI_MODE_VNF || NFAPI_MODE == NFAPI_MODE_AERIAL)
   {
-    if (gnb_rach_ind_queue.num_items > 0) {
-      LOG_D(NR_MAC, "gnb_rach_ind_queue size = %zu\n", gnb_rach_ind_queue.num_items);
-      rach_ind = get_queue(&gnb_rach_ind_queue);
-      AssertFatal(rach_ind->number_of_pdus > 0, "Invalid number of PDUs\n");
-      UL_info->rach_ind = *rach_ind;
+    if (gnb_rach_ind_queue[cell_id].num_items > 0) {
+      LOG_D(NR_MAC, "gnb_rach_ind_queue[%d] size = %zu\n", cell_id, gnb_rach_ind_queue[cell_id].num_items);
+      rach_ind = get_queue(&gnb_rach_ind_queue[cell_id]);
+      if (rach_ind) {
+        AssertFatal(rach_ind->number_of_pdus > 0, "Invalid number of PDUs\n");
+        UL_info->rach_ind = *rach_ind;
+      }
     }
-    if (gnb_uci_ind_queue.num_items > 0) {
-      LOG_D(NR_MAC, "gnb_uci_ind_queue size = %zu\n", gnb_uci_ind_queue.num_items);
-      uci_ind = get_queue(&gnb_uci_ind_queue);
-      AssertFatal(uci_ind->num_ucis > 0, "Invalid number of PDUs\n");
-      UL_info->uci_ind = *uci_ind;
+    if (gnb_uci_ind_queue[cell_id].num_items > 0) {
+      LOG_D(NR_MAC, "gnb_uci_ind_queue[%d] size = %zu\n", cell_id, gnb_uci_ind_queue[cell_id].num_items);
+      uci_ind = get_queue(&gnb_uci_ind_queue[cell_id]);
+      if (uci_ind) {
+        AssertFatal(uci_ind->num_ucis > 0, "Invalid number of PDUs\n");
+        UL_info->uci_ind = *uci_ind;
+      }
     }
-    if (gnb_rx_ind_queue.num_items > 0 && gnb_crc_ind_queue.num_items > 0) {
-      LOG_D(NR_MAC, "gnb_rx_ind_queue size = %zu and gnb_crc_ind_queue size = %zu\n",
-            gnb_rx_ind_queue.num_items, gnb_crc_ind_queue.num_items);
-      rx_ind = get_queue(&gnb_rx_ind_queue);
-      struct sfn_slot sfn_slot = {.sfn = rx_ind->sfn, .slot = rx_ind->slot};
-      crc_ind = unqueue_matching(&gnb_crc_ind_queue,
-                                 MAX_QUEUE_SIZE,
-                                 crc_sfn_slot_matcher,
-                                 &sfn_slot);
-      if (!crc_ind) {
-        LOG_I(NR_PHY, "No crc indication with the same SFN SLOT of rx indication %u %u\n", rx_ind->sfn, rx_ind->slot);
-        requeue(&gnb_rx_ind_queue, rx_ind);
+    if (gnb_rx_ind_queue[cell_id].num_items > 0 && gnb_crc_ind_queue[cell_id].num_items > 0) {
+      LOG_D(NR_MAC, "gnb_rx_ind_queue[%d] size = %zu and gnb_crc_ind_queue[%d] size = %zu\n",
+            cell_id, gnb_rx_ind_queue[cell_id].num_items,
+            cell_id, gnb_crc_ind_queue[cell_id].num_items);
+      rx_ind = get_queue(&gnb_rx_ind_queue[cell_id]);
+      if (rx_ind) {
+        struct sfn_slot sfn_slot = {.sfn = rx_ind->sfn, .slot = rx_ind->slot};
+        crc_ind = unqueue_matching(&gnb_crc_ind_queue[cell_id],
+                                   MAX_QUEUE_SIZE,
+                                   crc_sfn_slot_matcher,
+                                   &sfn_slot);
+      }
+      if (!rx_ind || !crc_ind) {
+        if (rx_ind) {
+          LOG_I(NR_PHY, "No crc indication with the same SFN SLOT of rx indication %u %u\n", rx_ind->sfn, rx_ind->slot);
+          requeue(&gnb_rx_ind_queue[cell_id], rx_ind);
+          rx_ind = NULL;
+        }
       }
       else {
         AssertFatal(rx_ind->number_of_pdus > 0, "Invalid number of PDUs\n");
