@@ -389,6 +389,20 @@ void nr_rrc_finalize_ho(gNB_RRC_UE_t *ue)
   ue->ho_context = NULL;
 }
 
+static nr_rrc_cell_container_t *rrc_find_cell_at_index(gNB_RRC_INST *rrc, int target_idx)
+{
+  nr_rrc_du_container_t *du;
+  RB_FOREACH(du, rrc_du_tree, &rrc->dus)
+  {
+    if (target_idx < seq_arr_size(&du->cells)) {
+      nr_rrc_cell_container_t **cp = seq_arr_at(&du->cells, target_idx);
+      return *cp;
+    }
+    target_idx -= (int)seq_arr_size(&du->cells);
+  }
+  return NULL;
+}
+
 void nr_HO_F1_trigger_telnet(gNB_RRC_INST *rrc, uint32_t rrc_ue_id)
 {
   rrc_gNB_ue_context_t *ue_context_p = rrc_gNB_get_ue_context(rrc, rrc_ue_id);
@@ -397,35 +411,42 @@ void nr_HO_F1_trigger_telnet(gNB_RRC_INST *rrc, uint32_t rrc_ue_id)
     return;
   }
   gNB_RRC_UE_t *ue = &ue_context_p->ue_context;
-  nr_rrc_du_container_t *source_du = get_du_for_ue(rrc, ue->rrc_ue_id);
-  if (source_du == NULL) {
-    f1_ue_data_t ue_data = cu_get_f1_ue_data(rrc_ue_id);
-    LOG_E(NR_RRC, "cannot get source gNB-DU with assoc_id %d for UE %u\n", ue_data.du_assoc_id, ue->rrc_ue_id);
-    return;
-  }
   nr_rrc_cell_container_t *source_cell = rrc_get_pcell_for_ue(rrc, ue);
   if (source_cell == NULL) {
     LOG_E(NR_RRC, "cannot get source cell for UE %u\n", ue->rrc_ue_id);
     return;
   }
 
-  nr_rrc_du_container_t *target_du = find_target_du(rrc, source_du->assoc_id);
-  if (target_du == NULL) {
-    LOG_E(NR_RRC, "No target gNB-DU found. Handover for UE %u aborted.\n", ue->rrc_ue_id);
-    return;
+  /* Collect all cells across all DUs in a consistent order (DUs by assoc_id,
+   * cells by seq_arr index within each DU), find the source cell's global
+   * index, then hand over to (index + 1) % total. */
+  int source_idx = -1;
+  int total = 0;
+  nr_rrc_du_container_t *du;
+  RB_FOREACH(du, rrc_du_tree, &rrc->dus) {
+    size_t n = seq_arr_size(&du->cells);
+    for (size_t i = 0; i < n; i++) {
+      nr_rrc_cell_container_t **cp = seq_arr_at(&du->cells, i);
+      if (*cp == source_cell)
+        source_idx = total;
+      total++;
+    }
   }
 
-  // For target cell, get the first cell from target DU
-  // (in future, this could be selected based on measurement)
-  nr_rrc_cell_container_t *target_cell = NULL;
-  FOR_EACH_SEQ_ARR (nr_rrc_cell_container_t **, cell_ptr, &target_du->cells) {
-    target_cell = *cell_ptr;
-    break; // Get first cell
-  }
-  if (target_cell == NULL) {
-    LOG_E(NR_RRC, "cannot get target cell for UE %u\n", ue->rrc_ue_id);
+  if (total < 2) {
+    LOG_E(NR_RRC, "UE %u: only one cell configured, cannot handover\n", ue->rrc_ue_id);
     return;
   }
+  AssertFatal(source_idx >= 0, "source cell not found among connected DUs for UE %u\n", ue->rrc_ue_id);
+
+  nr_rrc_cell_container_t *target_cell = rrc_find_cell_at_index(rrc, (source_idx + 1) % total);
+  AssertFatal(target_cell != NULL, "target cell at index %d not found\n", (source_idx + 1) % total);
+
+  LOG_I(NR_RRC,
+        "UE %u: round-robin HO trigger → target PCI %d (source PCI %d)\n",
+        ue->rrc_ue_id,
+        target_cell->info.pci,
+        source_cell->info.pci);
 
   nr_rrc_trigger_f1_ho(rrc, ue, source_cell, target_cell);
 }
