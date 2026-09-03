@@ -699,8 +699,8 @@ static void copy_srs_info(const nfapi_nr_srs_pdu_t *srs_config_pdu, nr_srs_info_
   nr_srs_info->n_SRS_cs = srs_config_pdu->cyclic_shift;
   nr_srs_info->n_ID_SRS = srs_config_pdu->sequence_id;
   // It adjusts the SRS allocation to align with the common resource block grid in multiples of four
-  nr_srs_info->n_shift = srs_config_pdu->frequency_position;
-  nr_srs_info->n_RRC = srs_config_pdu->frequency_shift;
+  nr_srs_info->n_shift = srs_config_pdu->frequency_shift;
+  nr_srs_info->n_RRC = srs_config_pdu->frequency_position;
   nr_srs_info->groupOrSequenceHopping = srs_config_pdu->group_or_sequence_hopping;
   nr_srs_info->l_offset = srs_config_pdu->time_start_position;
   nr_srs_info->T_SRS = srs_config_pdu->t_srs;
