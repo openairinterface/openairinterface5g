@@ -89,9 +89,9 @@ int nr_get_srs_signal(PHY_VARS_gNB *gNB,
   nr_srs_info->srs_noise_num_phases = num_noise_phases;
 
   if (num_noise_phases == 0)
-    LOG_W(NR_PHY,
-          "SRS UE %04x: all %d comb phases occupied by the %d ports, no noise-only subcarrier available: "
-          "noise and SNR estimates are not valid\n",
+    LOG_D(NR_PHY,
+          "SRS UE %04x: all %d comb phases occupied by the %d ports, no noise-only subcarrier in the SRS "
+          "band: the noise measured on the unallocated resource blocks of the slot is used instead\n",
           srs_pdu->rnti,
           K_TC,
           N_ap);
@@ -142,14 +142,16 @@ int nr_get_srs_signal(PHY_VARS_gNB *gNB,
       } // for (int p_index = 0; p_index < N_ap; p_index++)
 
       // Noise only subcarriers
-      int comb_block = subcarrier_offset + k_0_comb_base[l_line];
-      for (int k = 0; k < M_sc_b_SRS; k++) {
-        for (int j = 0; j < num_noise_phases; j++) {
-          const int subcarrier = comb_block + noise_phase[j];
-          srs_received_noise[ant][l_line_offset + subcarrier] = rx_signal[l_line_offset + subcarrier];
-        }
-        comb_block = CIRCULAR_INC(comb_block, K_TC, frame_parms->ofdm_symbol_size);
-      } // for (int k = 0; k < M_sc_b_SRS; k++)
+      if (num_noise_phases) {
+        int comb_block = subcarrier_offset + k_0_comb_base[l_line];
+        for (int k = 0; k < M_sc_b_SRS; k++) {
+          for (int j = 0; j < num_noise_phases; j++) {
+            const int subcarrier = comb_block + noise_phase[j];
+            srs_received_noise[ant][l_line_offset + subcarrier] = rx_signal[l_line_offset + subcarrier];
+          }
+          comb_block = comb_block + K_TC;
+        } // for (int k = 0; k < M_sc_b_SRS; k++)
+      }
     } // for (int l_line = 0; l_line < N_symb_SRS; l_line++)
   } // for (int ant = 0; ant < num_sp_streams; ant++)
 

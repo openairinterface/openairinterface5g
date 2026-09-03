@@ -93,7 +93,7 @@ void nr_srs_noise_power_estimation(uint16_t ofdm_symbol_size,
                                    uint32_t signal_power,
                                    const c16_t srs_received_noise[ofdm_symbol_size * N_symb_SRS],
                                    uint32_t *noise_power,
-                                   int16_t *noise_power_per_rb);
+                                   uint32_t *noise_power_per_rb);
 
 void nr_freq_equalization(NR_DL_FRAME_PARMS *frame_parms,
                           c16_t *rxdataF_comp,

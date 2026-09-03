@@ -567,6 +567,13 @@ int main(int argc, char *argv[])
       //----------- OFDM Demodulation and RX rotation--------------------------
       nr_ofdm_demod_and_rx_rotation(rxdata, gNB->common_vars.rxdataF, fp, n_rx, slot, slot_offsetF, link_type_ul, was_symbol_used);
 
+      //----------- Per-slot noise measurement on the unallocated PRBs --------
+      uint32_t rb_mask_ul[14][MAX_BWP_SIZE] = {0};
+      for (int s = 0; s < (1 << srs_pdu.num_symbols); s++)
+        for (int rb = srs_pdu.bwp_start; rb < srs_pdu.bwp_start + srs_pdu.srs_parameters_v4.srs_bandwidth_size; rb++)
+          rb_mask_ul[srs_start_symbol + s][rb] = 1;
+      gNB_I0_measurements(gNB, slot, srs_start_symbol, 1 << srs_pdu.num_symbols, rb_mask_ul);
+
       //----------- UE RX SRS procedures ---------------------
 
       start_meas(&gNB->rx_srs_stats);

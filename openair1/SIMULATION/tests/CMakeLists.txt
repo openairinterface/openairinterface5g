@@ -348,6 +348,10 @@ add_physim_test(physim.5g.nr_srssim.test32 "SRS: 8 ports, Combsize 4, Comb offse
 add_physim_test(physim.5g.nr_srssim.test33 "SRS: 8 ports, Combsize 4, Comb offset 2, Cyclic shift 6, ToA 20" nr_srssim -n100 -R106 -s10 -S15 -y8 -z8 -q 3 -e 1 -f 2 -i 6 -d 20)
 add_physim_test(physim.5g.nr_srssim.test34 "SRS: 8 ports, Combsize 4, Comb offset 3, Cyclic shift 3, ToA 8" nr_srssim -n100 -R106 -s25 -S30 -y8 -z8 -q 3 -e 1 -f 3 -i 3 -d 8)
 add_physim_test(physim.5g.nr_srssim.test35 "SRS: 8 ports, Combsize 4, Comb offset 0, Cyclic shift 2, SRS symbols 4, ToA 24" nr_srssim -n100 -R106 -s20 -S25 -y8 -z8 -q 3 -e 1 -f 0 -i 2 -b 4 -a 8 -d 24)
+add_physim_test(physim.5g.nr_srssim.test36 "SRS: 4 ports, Combsize 2, Comb offset 0, Cyclic shift 4, no empty subcarrier, ToA 24" nr_srssim -n100 -R106 -s0 -S5 -y4 -z4 -q 2 -e 0 -f 0 -i 4 -d 24)
+add_physim_test(physim.5g.nr_srssim.test37 "SRS: 4 ports, Combsize 2, Comb offset 1, Cyclic shift 7, no empty subcarrier, ToA 15" nr_srssim -n100 -R106 -s10 -S15 -y4 -z4 -q 2 -e 0 -f 1 -i 7 -d 15)
+add_physim_test(physim.5g.nr_srssim.test38 "SRS: 8 ports, Combsize 2, Comb offset 0, Cyclic shift 4, no empty subcarrier, ToA 24" nr_srssim -n100 -R106 -s5 -S10 -y8 -z8 -q 3 -e 0 -f 0 -i 4 -d 24)
+add_physim_test(physim.5g.nr_srssim.test39 "SRS: 8 ports, Combsize 2, Comb offset 1, Cyclic shift 7, no empty subcarrier, ToA 8" nr_srssim -n100 -R106 -s20 -S25 -y8 -z8 -q 3 -e 0 -f 1 -i 7 -d 8)
 
 ####################################################################################
 ######                           offload-specific tests                       ######

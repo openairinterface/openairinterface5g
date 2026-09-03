@@ -755,7 +755,7 @@ void nr_srs_noise_power_estimation(uint16_t ofdm_symbol_size,
                                    uint32_t signal_power,
                                    const c16_t srs_received_noise[ofdm_symbol_size * N_symb_SRS],
                                    uint32_t *noise_power,
-                                   int16_t *noise_power_per_rb)
+                                   uint32_t *noise_power_per_rb)
 {
   const uint64_t subcarrier_offset = srs_pdu->bwp_start * NR_NB_SC_PER_RB;
   const uint16_t m_SRS_b = get_m_srs(srs_pdu->config_index, srs_pdu->bandwidth_index);
@@ -765,11 +765,8 @@ void nr_srs_noise_power_estimation(uint16_t ofdm_symbol_size,
   const uint8_t num_noise_phases = nr_srs_info->srs_noise_num_phases;
 
   // This is for the case for N_ap = 4/8, cs >=4 and K_TC = 2
-  // should be handled differently
   if (num_noise_phases == 0) {
     *noise_power = 1;
-    for (int rb = 0; rb < m_SRS_b; rb++)
-      noise_power_per_rb[rb] = max(noise_power_per_rb[rb], 1);
     return;
   }
 
