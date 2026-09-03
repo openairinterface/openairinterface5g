@@ -761,14 +761,26 @@ void nr_srs_noise_power_estimation(uint16_t ofdm_symbol_size,
   const uint16_t m_SRS_b = get_m_srs(srs_pdu->config_index, srs_pdu->bandwidth_index);
   int tot_subcarriers = m_SRS_b * NR_NB_SC_PER_RB;
 
+  const uint8_t K_TC = 2 << srs_pdu->comb_size;
+  const uint8_t num_noise_phases = nr_srs_info->srs_noise_num_phases;
+
+  // This is for the case for N_ap = 4/8, cs >=4 and K_TC = 2
+  // should be handled differently
+  if (num_noise_phases == 0) {
+    *noise_power = 1;
+    for (int rb = 0; rb < m_SRS_b; rb++)
+      noise_power_per_rb[rb] = max(noise_power_per_rb[rb], 1);
+    return;
+  }
+
   uint16_t subcarrier = subcarrier_offset + nr_srs_info->k_0_p[0][0];
 
-  *noise_power = signal_energy_nodc(&srs_received_noise[subcarrier], tot_subcarriers);
+  // Compute average noise power on symbol 0
+  *noise_power = signal_energy_nodc(&srs_received_noise[subcarrier], tot_subcarriers) * K_TC / num_noise_phases;
 
-  // Compute SNR per RB on symbol 0
-  subcarrier = subcarrier_offset + nr_srs_info->k_0_p[0][0];
+  // Compute noise power per RB on symbol 0
   for (int rb = 0; rb < m_SRS_b; rb++) {
-    noise_power_per_rb[rb] += signal_energy_nodc(&srs_received_noise[subcarrier], NR_NB_SC_PER_RB);
+    noise_power_per_rb[rb] += signal_energy_nodc(&srs_received_noise[subcarrier], NR_NB_SC_PER_RB) * K_TC / num_noise_phases;
     noise_power_per_rb[rb] = max(noise_power_per_rb[rb], 1);
     subcarrier += NR_NB_SC_PER_RB;
 
