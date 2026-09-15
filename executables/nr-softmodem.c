@@ -163,7 +163,11 @@ static int create_gNB_tasks(ngran_node_t node_type, configmodule_interface_t *cf
   LOG_D(PHY, "%s() Task ready initialize structures\n", __FUNCTION__);
 
 #ifdef ENABLE_AERIAL
-  AssertFatal(NFAPI_MODE == NFAPI_MODE_AERIAL,"Can only be run with '--nfapi AERIAL' when compiled with AERIAL support, if you want to run other (n)FAPI modes, please run ./build_oai without -w AERIAL");
+  if (NODE_IS_DU(node_type) || NODE_IS_MONOLITHIC(node_type)) {
+    AssertFatal(NFAPI_MODE == NFAPI_MODE_AERIAL,
+                "Can only be run with '--nfapi AERIAL' when compiled with AERIAL support, if you want to run other (n)FAPI modes, "
+                "please run ./build_oai without -w AERIAL");
+  }
 #endif
 
   RCconfig_verify(cfg, node_type);
@@ -643,8 +647,10 @@ int main( int argc, char **argv ) {
   }
 
 #ifdef ENABLE_AERIAL
-  gNB_MAC_INST *nrmac = RC.nrmac[0];
-  nvIPC_Init(nrmac->nvipc_params_s);
+  if (NFAPI_MODE == NFAPI_MODE_AERIAL && (NODE_IS_DU(node_type) || NODE_IS_MONOLITHIC(node_type))) {
+    gNB_MAC_INST *nrmac = RC.nrmac[0];
+    nvIPC_Init(nrmac->nvipc_params_s);
+  }
 #endif
 
   for (int idx = 0; idx < RC.nb_nr_L1_inst; idx++)
