@@ -327,6 +327,114 @@ To enable 2-Step RA in any gNB configuration file:
 No additional option is needed on the UE side: `nr-uesoftmodem` uses 2-Step RA
 when the cell advertises it.
 
+## Multi-cell configuration
+
+One `nr-softmodem` instance can serve multiple cells. A sample two-cell
+RFsimulator configuration is at:
+
+```
+targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band77.51prb.rfsim.2cells.yaml
+```
+
+### Config file structure
+
+Each cell is expressed as a separate `gNBs[]` entry, all sharing the same
+`gNB_ID` and `gNB_name`. The following parameters are read only from the **first**
+entry; the gNB will abort on startup if they appear in any subsequent entry:
+
+- `gNBs[]`: `amf_ip_address`, `NETWORK_INTERFACES`, `SCTP`, `TIMERS`
+- `MACRLCs[]` N-side (MAC→RRC/PDCP): `tr_n_preference`, `local_n_address`,
+  `local_n_address_f1u`, `remote_n_address`, `local_n_portd`, `remote_n_portd`
+- `MACRLCs[]` S-side (MAC→L1): `tr_s_preference`, `tr_s_shm_prefix`,
+  `tr_s_poll_core`, `local_s_address`, `remote_s_address`, `local_s_portc`,
+  `local_s_portd`
+
+There must be one `MACRLCs[]` entry per cell.
+
+```yaml
+gNBs:
+  # Cell 0 — gNB-wide params (AMF, SCTP, TIMERS) live here
+  - gNB_ID: "0xe00"
+    gNB_name: gNB-OAI
+    tracking_area_code: 1
+    nr_cellid: "12345678"
+    amf_ip_address: [...]
+    NETWORK_INTERFACES: {...}
+    TIMERS: {...}
+    servingCellConfigCommon:
+      - physCellId: 0
+        absoluteFrequencySSB: 667200
+        dl_absoluteFrequencyPointA: 666672
+        ...
+
+  # Cell 1 — per-cell params only; gNB-wide params must not appear here
+  - gNB_ID: "0xe00"
+    gNB_name: gNB-OAI
+    tracking_area_code: 2
+    nr_cellid: "11111111"
+    servingCellConfigCommon:
+      - physCellId: 1
+        absoluteFrequencySSB: 677376
+        dl_absoluteFrequencyPointA: 676848
+        ...
+
+MACRLCs:
+  - tr_s_preference: local_L1    # one entry per cell
+    tr_n_preference: local_RRC
+    pusch_FailureThres: 20    
+    pusch_TargetSNRx10: 280
+    pucch_TargetSNRx10: 200
+    ulsch_max_frame_inactivity: 10
+    dl_max_mcs: 10
+    ul_max_mcs: 10
+  - pusch_FailureThres: 10
+    pusch_TargetSNRx10: 280
+    pucch_TargetSNRx10: 200
+    ulsch_max_frame_inactivity: 10
+    dl_max_mcs: 10
+    ul_max_mcs: 10
+```
+
+### OAI L1 limitation — one cell broadcasts at a time
+
+This limitation applies only when using the **OAI L1** (e.g. with the
+RFsimulator). When using the **Aerial (NVIDIA cuBB) L1**, all configured cells
+are active simultaneously with no restriction.
+
+With the OAI L1, only one cell can drive the PHY (i.e. have its carrier
+frequency applied to the RFsimulator) at a time. The active cell is selected by
+a guard in `openair2/LAYER2/NR_MAC_gNB/config.c` around the `NR_PHY_config_req`
+call:
+
+```c
+// [TEST] Select cell to configure on the RFsimulator
+if (NFAPI_MODE == NFAPI_MONOLITHIC && cell == nr_mac_get_cell_by_idx(nrmac, 0)) {
+```
+
+Change the index, then recompile:
+
+```bash
+ninja nr-softmodem nr-uesoftmodem
+```
+
+On startup the gNB logs the UE command-line parameters for the active cell.
+See [runmodem-nrue.md](runmodem-nrue.md) for how to use them.
+
+### Adding more cells
+
+1. Add a `gNBs[]` entry with a distinct `physCellId`, `nr_cellid`, and
+   `absoluteFrequencySSB`/`dl_absoluteFrequencyPointA`. Do **not** include
+   `amf_ip_address`, `NETWORK_INTERFACES`, `SCTP`, or `TIMERS` — those belong
+   only in the first entry.
+2. Add a `MACRLCs[]` entry with per-cell scheduler parameters (`pusch_FailureThres`,
+   `pusch_TargetSNRx10`, etc.). Transport parameters (`tr_s_preference`,
+   `tr_n_preference`) belong only in the **first** entry; they are ignored in
+   subsequent entries.
+3. Update the index in the `config.c` guard above and recompile.
+
+`NR_MAX_CELLS` in `openair2/LAYER2/NR_MAC_gNB/nr_mac_gNB.h` is the
+compile-time upper bound on cells per MAC instance (currently 4).
+
 ## Related documentation
 
 Further documentation not referenced above:
