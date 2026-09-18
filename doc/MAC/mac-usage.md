@@ -123,7 +123,7 @@ available in the the file `nrMAC-stats.log` in the same directory in which
 Example:
 
 ```
-UE RNTI 2460 CU-UE-ID 2 in-sync PH 28 dB PCMAX 24 dBm, average RSRP -74 (8 meas), average SINR 40.0 (32 meas)
+UE RNTI 2460 PCI 0 CellID 12345678 CU-UE-ID 2 in-sync PH 28 dB PCMAX 24 dBm, average RSRP -74 (8 meas), average SINR 40.0 (32 meas)
 UE 2460: CSI [CQI 15 RI 2 PMI (14,1)] SRS [UL-RI 2 TPMI 0]
 UE 2460: dlsch_rounds 32917/5113/1504/560, dlsch_errors 211, pucch0_DTX 1385 (SNR 19.8+0.2) RSSI -44.2, BLER 0.19557 MCS (1) 23 (Qm 8) CCE fail 3
 UE 2460: ulsch_rounds 3756/353/182/179, ulsch_errors 170, ulsch_DTX 285, BLER 0.33021 MCS (1) 27 (Qm 8 deltaMCS 0) NPRB 5 SNR 31.0 (-1.0) RSSI -39.8 CCE fail 0
@@ -134,6 +134,10 @@ In the first line,
 
 * `UE RNTI` (here `2460`): this is also used as the DU UE ID over F1; each line
   is prepended with the RNTI
+* `PCI` (`0`): Physical Cell ID, used to identify the cell the UE is served by,
+  unique among neighboring cells
+* `CellID` (`12345678`): NR Cell Identity for the cell read from the config,
+  used to globally identify the cell, unique per cell within the same PLMN
 * `CU UE ID` (`2`): separate identifier from the RNTI to handle multiple
   UEs across DUs (in which case RNTI conflicts are possible)
 * whether a UE is `in-sync` (actively being scheduled) or `out-of-sync` (the UE
