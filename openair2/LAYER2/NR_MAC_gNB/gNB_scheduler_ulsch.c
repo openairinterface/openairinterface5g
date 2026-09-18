@@ -681,23 +681,21 @@ static void handle_nr_ul_harq(nr_cell_sched_t *cell, NR_UE_info_t *UE, rnti_t rn
   NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
   int8_t harq_pid = sched_ctrl->feedback_ul_harq.head;
   LOG_D(NR_MAC, "Comparing crc harq_id vs feedback harq_pid = %d %d\n", crc_harq_id, harq_pid);
-  while (crc_harq_id != harq_pid || harq_pid < 0) {
-    LOG_W(NR_MAC, "Unexpected ULSCH HARQ PID %d (have %d) for RNTI 0x%04x\n", crc_harq_id, harq_pid, rnti);
-    if (harq_pid < 0)
+  if (crc_harq_id != harq_pid) {
+    /* CRC arrived out of grant order (e.g. Aerial batch delivery). Check
+     * is_waiting to distinguish a legitimately pending out-of-order PID from
+     * a truly fake one; avoid incorrectly draining preceding entries. */
+    if (crc_harq_id < 0 || crc_harq_id >= NR_MAX_HARQ_PROCESSES
+        || !sched_ctrl->ul_harq_processes[crc_harq_id].is_waiting) {
+      LOG_W(NR_MAC, "Unexpected ULSCH HARQ PID %d (have %d) for RNTI 0x%04x\n", crc_harq_id, harq_pid, rnti);
       return;
-
-    remove_front_nr_list(&sched_ctrl->feedback_ul_harq);
-    sched_ctrl->ul_harq_processes[harq_pid].is_waiting = false;
-
-    if(sched_ctrl->ul_harq_processes[harq_pid].round >= cell->ul_bler.harq_round_max - 1) {
-      abort_nr_ul_harq(UE, harq_pid);
-    } else {
-      sched_ctrl->ul_harq_processes[harq_pid].round++;
-      add_tail_nr_list(&sched_ctrl->retrans_ul_harq, harq_pid);
     }
-    harq_pid = sched_ctrl->feedback_ul_harq.head;
+    LOG_D(NR_MAC, "Out-of-order CRC for HARQ PID %d (head=%d) for RNTI 0x%04x\n", crc_harq_id, harq_pid, rnti);
+    remove_nr_list(&sched_ctrl->feedback_ul_harq, crc_harq_id);
+    harq_pid = crc_harq_id;
+  } else {
+    remove_front_nr_list(&sched_ctrl->feedback_ul_harq);
   }
-  remove_front_nr_list(&sched_ctrl->feedback_ul_harq);
   NR_UE_ul_harq_t *harq = &sched_ctrl->ul_harq_processes[harq_pid];
   DevAssert(harq->is_waiting);
   harq->feedback_slot = -1;
@@ -708,7 +706,7 @@ static void handle_nr_ul_harq(nr_cell_sched_t *cell, NR_UE_info_t *UE, rnti_t rn
           "Ulharq id %d crc passed for RNTI %04x\n",
           harq_pid,
           rnti);
-  } else if (harq->round >= cell->ul_bler.harq_round_max  - 1) {
+  } else if (harq->round >= cell->ul_bler.harq_round_max - 1) {
     abort_nr_ul_harq(UE, harq_pid);
     LOG_D(NR_MAC,
           "RNTI %04x: Ulharq id %d crc failed in all rounds\n",
