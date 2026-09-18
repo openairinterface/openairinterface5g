@@ -451,6 +451,46 @@ void nr_HO_F1_trigger_telnet(gNB_RRC_INST *rrc, uint32_t rrc_ue_id)
   nr_rrc_trigger_f1_ho(rrc, ue, source_cell, target_cell);
 }
 
+void nr_HO_F1_trigger_telnet_pci(gNB_RRC_INST *rrc, uint32_t target_pci, uint32_t rrc_ue_id)
+{
+  rrc_gNB_ue_context_t *ue_context_p = rrc_gNB_get_ue_context(rrc, rrc_ue_id);
+  if (ue_context_p == NULL) {
+    LOG_E(NR_RRC, "cannot find UE context for UE ID %d\n", rrc_ue_id);
+    return;
+  }
+  gNB_RRC_UE_t *ue = &ue_context_p->ue_context;
+  nr_rrc_cell_container_t *source_cell = rrc_get_pcell_for_ue(rrc, ue);
+  if (source_cell == NULL) {
+    LOG_E(NR_RRC, "cannot get source cell for UE %u\n", ue->rrc_ue_id);
+    return;
+  }
+  if (source_cell->info.pci == target_pci) {
+    LOG_E(NR_RRC, "UE %u: target PCI %u is the current serving cell, aborting\n", rrc_ue_id, target_pci);
+    return;
+  }
+
+  /* Find the target cell by PCI across all connected DUs */
+  nr_rrc_cell_container_t *target_cell = NULL;
+  nr_rrc_du_container_t *du;
+  RB_FOREACH (du, rrc_du_tree, &rrc->dus) {
+    target_cell = rrc_get_cell_by_pci_for_du(&du->cells, (uint16_t)target_pci);
+    if (target_cell)
+      break;
+  }
+  if (target_cell == NULL) {
+    LOG_E(NR_RRC, "UE %u: no cell with PCI %u found among connected DUs\n", rrc_ue_id, target_pci);
+    return;
+  }
+
+  LOG_I(NR_RRC,
+        "UE %u: PCI-targeted HO trigger → target PCI %u (source PCI %d)\n",
+        ue->rrc_ue_id,
+        target_pci,
+        source_cell->info.pci);
+
+  nr_rrc_trigger_f1_ho(rrc, ue, source_cell, target_cell);
+}
+
 static byte_array_t rrc_gNB_encode_HandoverCommand(gNB_RRC_UE_t *UE, gNB_RRC_INST *rrc)
 {
   DevAssert(UE->ho_context);
