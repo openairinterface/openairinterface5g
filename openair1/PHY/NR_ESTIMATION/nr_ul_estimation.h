@@ -79,21 +79,11 @@ int nr_srs_channel_interpolation(int p_index,
                                  const nr_srs_info_t *nr_srs_info,
                                  const c16_t srs_ls_estimated_channel[ofdm_symbol_size * N_symb_SRS],
                                  int est_delay,
-                                 c16_t srs_received_noise[ofdm_symbol_size * N_symb_SRS],
                                  c16_t srs_estimated_channel_freq[ofdm_symbol_size * N_symb_SRS],
                                  c16_t srs_estimated_channel_time[NR_SRS_IDFT_OVERSAMP_FACTOR * ofdm_symbol_size],
                                  c16_t srs_estimated_channel_time_shifted[NR_SRS_IDFT_OVERSAMP_FACTOR * ofdm_symbol_size],
                                  uint32_t *signal_power,
                                  c16_t delay_table[2 * MAX_DELAY_COMP + 1][NR_MAX_OFDM_SYMBOL_SIZE]);
-
-void nr_srs_noise_power_estimation(uint16_t ofdm_symbol_size,
-                                   uint8_t N_symb_SRS,
-                                   const nfapi_nr_srs_pdu_t *srs_pdu,
-                                   const nr_srs_info_t *nr_srs_info,
-                                   uint32_t signal_power,
-                                   const c16_t srs_received_noise[ofdm_symbol_size * N_symb_SRS],
-                                   uint32_t *noise_power,
-                                   uint32_t *noise_power_per_rb);
 
 void nr_freq_equalization(NR_DL_FRAME_PARMS *frame_parms,
                           c16_t *rxdataF_comp,

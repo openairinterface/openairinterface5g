@@ -748,59 +748,6 @@ int nr_srs_ls_channel_estimation(int ant,
   return 0;
 }
 
-void nr_srs_noise_power_estimation(uint16_t ofdm_symbol_size,
-                                   uint8_t N_symb_SRS,
-                                   const nfapi_nr_srs_pdu_t *srs_pdu,
-                                   const nr_srs_info_t *nr_srs_info,
-                                   uint32_t signal_power,
-                                   const c16_t srs_received_noise[ofdm_symbol_size * N_symb_SRS],
-                                   uint32_t *noise_power,
-                                   uint32_t *noise_power_per_rb)
-{
-  const uint64_t subcarrier_offset = srs_pdu->bwp_start * NR_NB_SC_PER_RB;
-  const uint16_t m_SRS_b = get_m_srs(srs_pdu->config_index, srs_pdu->bandwidth_index);
-  int tot_subcarriers = m_SRS_b * NR_NB_SC_PER_RB;
-
-  const uint8_t K_TC = 2 << srs_pdu->comb_size;
-  const uint8_t num_noise_phases = nr_srs_info->srs_noise_num_phases;
-
-  // This is for the case for N_ap = 4/8, cs >=4 and K_TC = 2
-  if (num_noise_phases == 0) {
-    *noise_power = 1;
-    return;
-  }
-
-  uint16_t subcarrier = subcarrier_offset + nr_srs_info->k_0_p[0][0];
-
-  // Compute average noise power on symbol 0
-  *noise_power = signal_energy_nodc(&srs_received_noise[subcarrier], tot_subcarriers) * K_TC / num_noise_phases;
-
-  // Compute noise power per RB on symbol 0
-  for (int rb = 0; rb < m_SRS_b; rb++) {
-    noise_power_per_rb[rb] += signal_energy_nodc(&srs_received_noise[subcarrier], NR_NB_SC_PER_RB) * K_TC / num_noise_phases;
-    noise_power_per_rb[rb] = max(noise_power_per_rb[rb], 1);
-    subcarrier += NR_NB_SC_PER_RB;
-
-#ifdef SRS_DEBUG
-    LOG_I(NR_PHY,
-          "[RB %3i] noise_power_per_rb = %i, SNR_per_rb = %i dB\n",
-          rb,
-          noise_power_per_rb[rb],
-          dB_fixed(signal_power) - dB_fixed(noise_power_per_rb[rb]));
-#endif
-  }
-
-#ifdef SRS_DEBUG
-  int32_t signal_power_dB = dB_fixed(signal_power);
-  int32_t noise_power_dB = dB_fixed(*noise_power);
-  LOG_I(NR_PHY,
-        "signal_power = %i dB, noise_power = %i dB, SNR = %i dB\n",
-        signal_power_dB,
-        noise_power_dB,
-        signal_power_dB - noise_power_dB);
-#endif
-}
-
 int nr_srs_channel_interpolation(int p_index,
                                  uint16_t ofdm_symbol_size,
                                  uint16_t first_carrier_offset,
@@ -809,7 +756,6 @@ int nr_srs_channel_interpolation(int p_index,
                                  const nr_srs_info_t *nr_srs_info,
                                  const c16_t srs_ls_estimated_channel[ofdm_symbol_size * N_symb_SRS],
                                  int est_delay,
-                                 c16_t srs_received_noise[ofdm_symbol_size * N_symb_SRS],
                                  c16_t srs_estimated_channel_freq[ofdm_symbol_size * N_symb_SRS],
                                  c16_t srs_estimated_channel_time[NR_SRS_IDFT_OVERSAMP_FACTOR * ofdm_symbol_size],
                                  c16_t srs_estimated_channel_time_shifted[NR_SRS_IDFT_OVERSAMP_FACTOR * ofdm_symbol_size],
@@ -929,23 +875,21 @@ int nr_srs_channel_interpolation(int p_index,
     for (int k = 0; k < K_TC * M_sc_b_SRS; k++) {
       int subcarrier_log = subcarrier - subcarrier_offset;
 
-      if (subcarrier_log % 12 == 0) {
+      if (k == 0 || subcarrier_log % NR_NB_SC_PER_RB == 0) {
         LOG_I(NR_PHY,
               "---------------------------- PRB %d, symbol %d -------------------------------\n",
-              subcarrier_log / 12,
+              subcarrier_log / NR_NB_SC_PER_RB,
               srs_symb);
-        LOG_I(NR_PHY, "\t  __lsRe__________lsIm__|____intRe_______intIm__|____noiRe_______noiIm__\n");
+        LOG_I(NR_PHY, "\t  __lsRe__________lsIm__|____intRe_______intIm__\n");
       }
 
       LOG_I(NR_PHY,
-            "(%4i) %6i\t%6i  |  %6i\t%6i  |  %6i\t%6i\n",
+            "(%4i) %6i\t%6i  |  %6i\t%6i\n",
             subcarrier_log,
             srs_ls_estimated_channel[srs_symbol_offset + subcarrier].r,
             srs_ls_estimated_channel[srs_symbol_offset + subcarrier].i,
             srs_estimated_channel_freq[srs_symbol_offset + subcarrier_abs].r,
-            srs_estimated_channel_freq[srs_symbol_offset + subcarrier_abs].i,
-            srs_received_noise[srs_symbol_offset + subcarrier].r,
-            srs_received_noise[srs_symbol_offset + subcarrier].i);
+            srs_estimated_channel_freq[srs_symbol_offset + subcarrier_abs].i);
 
       // Subcarrier increment
       subcarrier++;

@@ -56,8 +56,7 @@ int nr_get_srs_signal(PHY_VARS_gNB *gNB,
                       slot_t slot,
                       const nfapi_nr_srs_pdu_t *srs_pdu,
                       nr_srs_info_t *nr_srs_info,
-                      c16_t srs_received_signal[][gNB->frame_parms.ofdm_symbol_size * (1 << srs_pdu->num_symbols)],
-                      c16_t srs_received_noise[][gNB->frame_parms.ofdm_symbol_size * (1 << srs_pdu->num_symbols)])
+                      c16_t srs_received_signal[][gNB->frame_parms.ofdm_symbol_size * (1 << srs_pdu->num_symbols)])
 {
   const NR_DL_FRAME_PARMS *frame_parms = &gNB->frame_parms;
 
@@ -72,40 +71,9 @@ int nr_get_srs_signal(PHY_VARS_gNB *gNB,
   const uint16_t M_sc_b_SRS = get_m_srs(srs_pdu->config_index, srs_pdu->bandwidth_index) * NR_NB_SC_PER_RB / K_TC;
   const uint8_t num_sp_streams = srs_pdu->srs_parameters_v4.num_ul_spatial_streams_ports;
 
-  // store SRS occupied subcarriers in a comb over all the ports
-  bool phase_used[K_TC];
-  memset(phase_used, 0, sizeof(phase_used));
-  for (int p_index = 0; p_index < N_ap; p_index++)
-    phase_used[nr_srs_info->k_0_p[p_index][0] % K_TC] = true;
-
-  // store empty subcarriers in a comb over all the ports
-  uint8_t noise_phase[K_TC];
-  uint8_t num_noise_phases = 0;
-  for (int n = 0; n < K_TC; n++)
-    if (!phase_used[n])
-      noise_phase[num_noise_phases++] = n;
-
-  // nr_srs_noise_power_estimation() needs this to scale the noise power it reads back from srs_received_noise
-  nr_srs_info->srs_noise_num_phases = num_noise_phases;
-
-  if (num_noise_phases == 0)
-    LOG_D(NR_PHY,
-          "SRS UE %04x: all %d comb phases occupied by the %d ports, no noise-only subcarrier in the SRS "
-          "band: the noise measured on the unallocated resource blocks of the slot is used instead\n",
-          srs_pdu->rnti,
-          K_TC,
-          N_ap);
-
-  // Every port shares the same k_0_p except for its comb phase, so port 0 anchors the comb block: rounding its
-  // start down to a multiple of K_TC puts phase n exactly at k_0_comb_base + n.
-  uint16_t k_0_comb_base[N_symb_SRS];
-  for (int l_line = 0; l_line < N_symb_SRS; l_line++)
-    k_0_comb_base[l_line] = nr_srs_info->k_0_p[0][l_line] - (nr_srs_info->k_0_p[0][l_line] % K_TC);
-
   bool no_srs_signal = true;
   for (int ant = 0; ant < num_sp_streams; ant++) {
     memset(srs_received_signal[ant], 0, frame_parms->ofdm_symbol_size * N_symb_SRS * sizeof(c16_t));
-    memset(srs_received_noise[ant], 0, frame_parms->ofdm_symbol_size * N_symb_SRS * sizeof(c16_t));
     c16_t *rx_signal = &rxdataF[ant][symbol_offset];
 
     for (int l_line = 0; l_line < N_symb_SRS; l_line++) {
@@ -141,17 +109,6 @@ int nr_get_srs_signal(PHY_VARS_gNB *gNB,
           no_srs_signal = false;
       } // for (int p_index = 0; p_index < N_ap; p_index++)
 
-      // Noise only subcarriers
-      if (num_noise_phases) {
-        int comb_block = subcarrier_offset + k_0_comb_base[l_line];
-        for (int k = 0; k < M_sc_b_SRS; k++) {
-          for (int j = 0; j < num_noise_phases; j++) {
-            const int subcarrier = comb_block + noise_phase[j];
-            srs_received_noise[ant][l_line_offset + subcarrier] = rx_signal[l_line_offset + subcarrier];
-          }
-          comb_block = comb_block + K_TC;
-        } // for (int k = 0; k < M_sc_b_SRS; k++)
-      }
     } // for (int l_line = 0; l_line < N_symb_SRS; l_line++)
   } // for (int ant = 0; ant < num_sp_streams; ant++)
 

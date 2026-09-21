@@ -108,7 +108,6 @@ typedef struct nr_srs_info_s {
   int N_symb_SRS;
   int n_srs_ports;
   int resource_type;
-  uint8_t srs_noise_num_phases;
 } nr_srs_info_t;
 
 typedef struct NR_DL_FRAME_PARMS_s {

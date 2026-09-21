@@ -732,7 +732,6 @@ nr_srs_info_t nr_srs_rx_procedures(PHY_VARS_gNB *gNB,
   c16_t srs_estimated_channel_time[nb_antennas_rx][N_ap][NR_SRS_IDFT_OVERSAMP_FACTOR * ofdm_symbol_size]
         __attribute__((aligned(32)));
   c16_t srs_received_signal[nb_antennas_rx][ofdm_symbol_size * N_symb_SRS];
-  c16_t srs_received_noise[nb_antennas_rx][ofdm_symbol_size * N_symb_SRS];
   c16_t srs_estimated_channel_time_shifted[nb_antennas_rx][N_ap][NR_SRS_IDFT_OVERSAMP_FACTOR * ofdm_symbol_size];
 
   start_meas(&gNB->generate_srs_stats);
@@ -765,7 +764,7 @@ nr_srs_info_t nr_srs_rx_procedures(PHY_VARS_gNB *gNB,
                                                     p->num_ul_spatial_streams_ports > 0 ? p->Ul_spatial_stream_ports[0] : 0);
   c16_t **rxdataF = gNB->common_vars.rxdataF + ant_port_start;
   start_meas(&gNB->get_srs_signal_stats);
-  *srs_est = nr_get_srs_signal(gNB, rxdataF, slot_rx, srs_pdu, &nr_srs_info, srs_received_signal, srs_received_noise);
+  *srs_est = nr_get_srs_signal(gNB, rxdataF, slot_rx, srs_pdu, &nr_srs_info, srs_received_signal);
   stop_meas(&gNB->get_srs_signal_stats);
 
   uint32_t signal_power_avg = 0;
@@ -804,7 +803,6 @@ nr_srs_info_t nr_srs_rx_procedures(PHY_VARS_gNB *gNB,
                                      &nr_srs_info,
                                      srs_ls_estimated_channel[ant_rx_ind][p_ind],
                                      delay.est_delay,
-                                     srs_received_noise[ant_rx_ind],
                                      srs_estimated_channel_freq[ant_rx_ind][p_ind],
                                      srs_estimated_channel_time[ant_rx_ind][p_ind],
                                      srs_estimated_channel_time_shifted[ant_rx_ind][p_ind],
@@ -846,39 +844,15 @@ nr_srs_info_t nr_srs_rx_procedures(PHY_VARS_gNB *gNB,
     signal_power_avg /= (nb_antennas_rx * N_ap);
     signal_power_avg = max(signal_power_avg, 1);
 
-    uint32_t noise_power_avg = 0;
-    uint32_t noise_power_per_rb[srs_pdu->bwp_size];
-    if (nr_srs_info.srs_noise_num_phases) {
-      memset(noise_power_per_rb, 0, srs_pdu->bwp_size * sizeof(uint32_t));
-      for (int ant_rx_ind = 0; ant_rx_ind < nb_antennas_rx; ant_rx_ind++) {
-        uint32_t noise_power_per_ant = 0;
-        nr_srs_noise_power_estimation(ofdm_symbol_size,
-                                      N_symb_SRS,
-                                      srs_pdu,
-                                      &nr_srs_info,
-                                      signal_power_avg,
-                                      srs_received_noise[ant_rx_ind],
-                                      &noise_power_per_ant,
-                                      noise_power_per_rb);
-        noise_power_avg += noise_power_per_ant;
-      }
-      noise_power_avg /= nb_antennas_rx;
-    }
-
     const uint16_t m_SRS_b = get_m_srs(srs_pdu->config_index, srs_pdu->bandwidth_index);
 
-    // noise power in the case of no empty subcarriers use I0 measurements
-    const int noise_power_avg_dB = nr_srs_info.srs_noise_num_phases == 0
-                                       ? gNB->measurements.n0_subband_power_avg_dB - dB_fixed(nb_antennas_rx)
-                                       : dB_fixed(max(noise_power_avg, 1));
+    const int noise_power_avg_dB = gNB->measurements.n0_subband_power_avg_dB - dB_fixed(nb_antennas_rx);
 
     *snr = dB_fixed(signal_power_avg) - noise_power_avg_dB;
 
-    for (int rb = 0; rb < m_SRS_b; rb++) {
-      snr_per_rb[rb] = nr_srs_info.srs_noise_num_phases == 0
-                           ? *snr
-                           : dB_fixed(signal_power_avg) - dB_fixed(max(noise_power_per_rb[rb] / nb_antennas_rx, 1));
-    }
+    for (int rb = 0; rb < m_SRS_b; rb++)
+      snr_per_rb[rb] = *snr;
+
     stop_meas(&gNB->srs_channel_estimation_stats);
 
     start_meas(&gNB->srs_timing_advance_stats);
@@ -899,7 +873,7 @@ nr_srs_info_t nr_srs_rx_procedures(PHY_VARS_gNB *gNB,
       T_INT(frame_rx),
       T_INT(0),
       T_INT(0),
-      T_BUFFER(snr_per_rb, srs_pdu->bwp_size * sizeof(int16_t)));
+      T_BUFFER(snr_per_rb, m_SRS_b * sizeof(int16_t)));
 
     T(T_GNB_PHY_UL_SRS_TOA_NS,
       T_INT(gNB->Mod_id),
@@ -925,6 +899,7 @@ static void handle_srs(fsn_t now,
   uint8_t N_symb_SRS = 1 << srs_pdu->num_symbols;
   uint8_t N_ap = 1 << srs_pdu->num_ant_ports;
   int16_t snr_per_rb[srs_pdu->bwp_size];
+  memset(snr_per_rb, 0, sizeof(snr_per_rb));
   uint16_t timing_advance_offset;
   int16_t timing_advance_offset_nsec[nb_antennas_rx];
   int srs_est;
