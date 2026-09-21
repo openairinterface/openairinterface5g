@@ -1819,6 +1819,12 @@ void handle_nr_srs_toa_vendor_ext_measurements(const module_id_t module_id,
   if (!mac->pos_meas_info.active) {
     return;
   }
+
+  if (!get_pos_act_ue_context(mac, rnti)) {
+    LOG_D(NR_MAC, "No positioning measurement was requested for RNTI 0x%04x, ignoring its SRS\n", rnti);
+    return;
+  }
+
   LOG_I(NR_MAC, "Fill Positioning Measurement Response\n");
   f1ap_positioning_measurement_req_t *req = &mac->pos_meas_info.meas_req;
   f1ap_positioning_measurement_resp_t resp = {.transaction_id = req->transaction_id,
