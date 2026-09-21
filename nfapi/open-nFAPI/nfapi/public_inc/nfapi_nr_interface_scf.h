@@ -1992,12 +1992,17 @@ typedef struct {
 
 #define NFAPI_NR_MAX_NUM_TA_NSEC 32
 typedef struct {
-  nfapi_nr_p7_message_header_t header;
-  uint16_t sfn; // SFN. Value: 0 -> 1023
-  uint16_t slot; // Slot. Value: 0 -> 159
   uint16_t rnti;
   uint8_t num_ta;
   int16_t ta_offset_nsec[NFAPI_NR_MAX_NUM_TA_NSEC];
+} nfapi_nr_srs_toa_vendor_ext_pdu_t;
+
+typedef struct {
+  nfapi_nr_p7_message_header_t header;
+  uint16_t sfn; // SFN. Value: 0 -> 1023
+  uint16_t slot; // Slot. Value: 0 -> 159
+  uint8_t number_of_pdus;
+  nfapi_nr_srs_toa_vendor_ext_pdu_t* pdu_list;
 } nfapi_nr_srs_toa_vendor_ext_indication_t;
 
 //3.4.11 rach_indication

@@ -9,10 +9,15 @@ static void fill_srs_toa_vendor_ext_indication(nfapi_nr_srs_toa_vendor_ext_indic
 {
   msg->sfn = rand16_range(0, 1023);
   msg->slot = rand16_range(0, 159);
-  msg->rnti = rand16_range(1, 65535);
-  msg->num_ta = rand8_range(1, NFAPI_NR_MAX_NUM_TA_NSEC);
-  for (int ta_idx = 0; ta_idx < msg->num_ta; ++ta_idx) {
-    msg->ta_offset_nsec[ta_idx] = rands16_range(-16800, 16800);
+  msg->number_of_pdus = rand8_range(1, 8);
+  msg->pdu_list = calloc_or_fail(msg->number_of_pdus, sizeof(*msg->pdu_list));
+  for (int pdu_idx = 0; pdu_idx < msg->number_of_pdus; ++pdu_idx) {
+    nfapi_nr_srs_toa_vendor_ext_pdu_t *pdu = &msg->pdu_list[pdu_idx];
+    pdu->rnti = rand16_range(1, 65535);
+    pdu->num_ta = rand8_range(1, NFAPI_NR_MAX_NUM_TA_NSEC);
+    for (int ta_idx = 0; ta_idx < pdu->num_ta; ++ta_idx) {
+      pdu->ta_offset_nsec[ta_idx] = rands16_range(-16800, 16800);
+    }
   }
 }
 

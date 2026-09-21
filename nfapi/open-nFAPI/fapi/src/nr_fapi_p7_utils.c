@@ -805,10 +805,15 @@ bool eq_srs_toa_vendor_ext_indication(const nfapi_nr_srs_toa_vendor_ext_indicati
   EQ(a->header.message_length, b->header.message_length);
   EQ(a->sfn, b->sfn);
   EQ(a->slot, b->slot);
-  EQ(a->rnti, b->rnti);
-  EQ(a->num_ta, b->num_ta);
-  for (int ta_idx = 0; ta_idx < a->num_ta; ++ta_idx) {
-    EQ(a->ta_offset_nsec[ta_idx], b->ta_offset_nsec[ta_idx]);
+  EQ(a->number_of_pdus, b->number_of_pdus);
+  for (int pdu_idx = 0; pdu_idx < a->number_of_pdus; ++pdu_idx) {
+    const nfapi_nr_srs_toa_vendor_ext_pdu_t *pdu_a = &a->pdu_list[pdu_idx];
+    const nfapi_nr_srs_toa_vendor_ext_pdu_t *pdu_b = &b->pdu_list[pdu_idx];
+    EQ(pdu_a->rnti, pdu_b->rnti);
+    EQ(pdu_a->num_ta, pdu_b->num_ta);
+    for (int ta_idx = 0; ta_idx < pdu_a->num_ta; ++ta_idx) {
+      EQ(pdu_a->ta_offset_nsec[ta_idx], pdu_b->ta_offset_nsec[ta_idx]);
+    }
   }
   return true;
 }
@@ -971,8 +976,7 @@ void free_srs_indication(nfapi_nr_srs_indication_t *msg)
 
 void free_srs_toa_vendor_ext_indication(nfapi_nr_srs_toa_vendor_ext_indication_t *msg)
 {
-  // Nothing to free
-  UNUSED(msg);
+  free(msg->pdu_list);
 }
 
 void free_rach_indication(nfapi_nr_rach_indication_t *msg)
@@ -1752,6 +1756,16 @@ void copy_srs_indication(const nfapi_nr_srs_indication_t *src, nfapi_nr_srs_indi
   }
 }
 
+static void copy_srs_toa_vendor_ext_indication_PDU(const nfapi_nr_srs_toa_vendor_ext_pdu_t *src,
+                                                   nfapi_nr_srs_toa_vendor_ext_pdu_t *dst)
+{
+  dst->rnti = src->rnti;
+  dst->num_ta = src->num_ta;
+  for (int ta_idx = 0; ta_idx < src->num_ta; ++ta_idx) {
+    dst->ta_offset_nsec[ta_idx] = src->ta_offset_nsec[ta_idx];
+  }
+}
+
 void copy_srs_toa_vendor_ext_indication(const nfapi_nr_srs_toa_vendor_ext_indication_t *src,
                                         nfapi_nr_srs_toa_vendor_ext_indication_t *dst)
 {
@@ -1759,10 +1773,10 @@ void copy_srs_toa_vendor_ext_indication(const nfapi_nr_srs_toa_vendor_ext_indica
   dst->header.message_length = src->header.message_length;
   dst->sfn = src->sfn;
   dst->slot = src->slot;
-  dst->rnti = src->rnti;
-  dst->num_ta = src->num_ta;
-  for (int ta_idx = 0; ta_idx < src->num_ta; ++ta_idx) {
-    memcpy(dst->ta_offset_nsec, src->ta_offset_nsec, sizeof(dst->ta_offset_nsec));
+  dst->number_of_pdus = src->number_of_pdus;
+  dst->pdu_list = calloc(dst->number_of_pdus, sizeof(*dst->pdu_list));
+  for (int pdu_idx = 0; pdu_idx < src->number_of_pdus; ++pdu_idx) {
+    copy_srs_toa_vendor_ext_indication_PDU(&src->pdu_list[pdu_idx], &dst->pdu_list[pdu_idx]);
   }
 }
 
@@ -1791,9 +1805,8 @@ size_t get_srs_toa_vendor_ext_indication_size(const nfapi_nr_srs_toa_vendor_ext_
   total_size += sizeof(msg->header);
   total_size += sizeof(msg->sfn);
   total_size += sizeof(msg->slot);
-  total_size += sizeof(msg->rnti);
-  total_size += sizeof(msg->num_ta);
-  total_size += sizeof(msg->ta_offset_nsec);
+  total_size += sizeof(msg->number_of_pdus);
+  total_size += msg->number_of_pdus * sizeof(*msg->pdu_list);
 
   return total_size;
 }
@@ -2736,11 +2749,17 @@ void dump_srs_toa_vendor_ext_indication(const nfapi_nr_srs_toa_vendor_ext_indica
   depth++;
   INDENTED_PRINTF("SFN = %d\n", msg->sfn);
   INDENTED_PRINTF("Slot = %d\n", msg->slot);
-  INDENTED_PRINTF("RNTI = 0x%02x\n", msg->rnti);
-  INDENTED_PRINTF("Number of TA_NSEC = %d\n", msg->num_ta);
+  INDENTED_PRINTF("Number of PDUs = %d\n", msg->number_of_pdus);
   depth++;
-  for (int i = 0; i < msg->num_ta; i++) {
-    INDENTED_PRINTF("Timing advance offset in nanoseconds [%d] = 0x%02x\n", i, msg->ta_offset_nsec[i]);
+  for (int pdu_idx = 0; pdu_idx < msg->number_of_pdus; pdu_idx++) {
+    const nfapi_nr_srs_toa_vendor_ext_pdu_t *pdu = &msg->pdu_list[pdu_idx];
+    INDENTED_PRINTF("RNTI = 0x%02x\n", pdu->rnti);
+    INDENTED_PRINTF("Number of TA_NSEC = %d\n", pdu->num_ta);
+    depth++;
+    for (int i = 0; i < pdu->num_ta; i++) {
+      INDENTED_PRINTF("Timing advance offset in nanoseconds [%d] = 0x%02x\n", i, pdu->ta_offset_nsec[i]);
+    }
+    depth--;
   }
 }
 

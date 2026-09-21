@@ -2457,18 +2457,22 @@ uint8_t pack_nr_srs_toa_vendor_ext_indication(void *msg, uint8_t **ppWritePacked
   nfapi_nr_srs_toa_vendor_ext_indication_t *pNfapiMsg = (nfapi_nr_srs_toa_vendor_ext_indication_t *)msg;
 
   if (!(push16(pNfapiMsg->sfn, ppWritePackedMsg, end) && push16(pNfapiMsg->slot, ppWritePackedMsg, end)
-        && push16(pNfapiMsg->rnti, ppWritePackedMsg, end) && push8(pNfapiMsg->num_ta, ppWritePackedMsg, end))) {
+        && push8(pNfapiMsg->number_of_pdus, ppWritePackedMsg, end))) {
     return 0;
   }
 
-  AssertFatal(pNfapiMsg->num_ta <= NFAPI_NR_MAX_NUM_TA_NSEC,
-              "pNfapiMsg->num_ta %d cannot be greater than %d\n",
-              pNfapiMsg->num_ta,
-              NFAPI_NR_MAX_NUM_TA_NSEC);
-
-  for (int i = 0; i < pNfapiMsg->num_ta; i++) {
-    if (!pushs16(pNfapiMsg->ta_offset_nsec[i], ppWritePackedMsg, end)) {
+  for (int pdu_idx = 0; pdu_idx < pNfapiMsg->number_of_pdus; pdu_idx++) {
+    const nfapi_nr_srs_toa_vendor_ext_pdu_t *pdu = &pNfapiMsg->pdu_list[pdu_idx];
+    if (!(push16(pdu->rnti, ppWritePackedMsg, end) && push8(pdu->num_ta, ppWritePackedMsg, end))) {
       return 0;
+    }
+
+    NR_FAPI_CHECK_COUNT(pdu->num_ta, pdu->ta_offset_nsec);
+
+    for (int i = 0; i < pdu->num_ta; i++) {
+      if (!pushs16(pdu->ta_offset_nsec[i], ppWritePackedMsg, end)) {
+        return 0;
+      }
     }
   }
 
@@ -2563,16 +2567,25 @@ uint8_t unpack_nr_srs_indication(uint8_t **ppReadPackedMsg, uint8_t *end, void *
 uint8_t unpack_nr_srs_toa_vendor_ext_indication(uint8_t **ppReadPackedMsg, uint8_t *end, void *msg)
 {
   nfapi_nr_srs_toa_vendor_ext_indication_t *pNfapiMsg = (nfapi_nr_srs_toa_vendor_ext_indication_t *)msg;
+
   if (!(pull16(ppReadPackedMsg, &pNfapiMsg->sfn, end) && pull16(ppReadPackedMsg, &pNfapiMsg->slot, end)
-        && pull16(ppReadPackedMsg, &pNfapiMsg->rnti, end) && pull8(ppReadPackedMsg, &pNfapiMsg->num_ta, end))) {
+        && pull8(ppReadPackedMsg, &pNfapiMsg->number_of_pdus, end))) {
     return 0;
   }
 
-  NR_FAPI_CHECK_COUNT(pNfapiMsg->num_ta, pNfapiMsg->ta_offset_nsec);
-
-  for (int i = 0; i < pNfapiMsg->num_ta; i++) {
-    if (!pulls16(ppReadPackedMsg, &pNfapiMsg->ta_offset_nsec[i], end)) {
+  pNfapiMsg->pdu_list = calloc(pNfapiMsg->number_of_pdus, sizeof(*pNfapiMsg->pdu_list));
+  for (int pdu_idx = 0; pdu_idx < pNfapiMsg->number_of_pdus; pdu_idx++) {
+    nfapi_nr_srs_toa_vendor_ext_pdu_t *pdu = &pNfapiMsg->pdu_list[pdu_idx];
+    if (!(pull16(ppReadPackedMsg, &pdu->rnti, end) && pull8(ppReadPackedMsg, &pdu->num_ta, end))) {
       return 0;
+    }
+
+    NR_FAPI_CHECK_COUNT(pdu->num_ta, pdu->ta_offset_nsec);
+
+    for (int i = 0; i < pdu->num_ta; i++) {
+      if (!pulls16(ppReadPackedMsg, &pdu->ta_offset_nsec[i], end)) {
+        return 0;
+      }
     }
   }
 

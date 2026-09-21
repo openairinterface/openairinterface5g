@@ -153,10 +153,11 @@ static int test_srs_toa_num_ta(void)
   body_t b = {0};
   put16(&b, 0); /* sfn */
   put16(&b, 0); /* slot */
+  put8(&b, 1); /* number_of_pdus */
   put16(&b, 0); /* rnti */
   put8(&b, NFAPI_NR_MAX_NUM_TA_NSEC + 1); /* num_ta: one past ta_offset_nsec[] */
   pad(&b, 120);
-  EXPECT_REJECT(unpack_nr_srs_toa_vendor_ext_indication, b, nfapi_nr_srs_toa_vendor_ext_indication_t, (void)0);
+  EXPECT_REJECT(unpack_nr_srs_toa_vendor_ext_indication, b, nfapi_nr_srs_toa_vendor_ext_indication_t, free(msg->pdu_list));
   return 0;
 }
 

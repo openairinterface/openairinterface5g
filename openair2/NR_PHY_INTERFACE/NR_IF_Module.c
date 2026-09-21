@@ -221,29 +221,28 @@ static void handle_nr_srs(NR_UL_IND_t *UL_info)
 static void handle_nr_srs_toa_vendor_ext(NR_UL_IND_t *UL_info)
 {
   // Custom vendor extension to encode and send SRS measurements for positioning in NFAPI mode
-  if (NFAPI_MODE == NFAPI_MODE_PNF) {
-    if (UL_info->srs_toa_vendor_ext_ind.num_ta > 0) {
-      LOG_D(NR_PHY,
-            "PNF Sending UL_info->srs_toa_vendor_ext_ind.num_ta: %d, SFN/SF:%d.%d \n",
-            UL_info->srs_toa_vendor_ext_ind.num_ta,
-            UL_info->frame,
-            UL_info->slot);
-      oai_nfapi_nr_srs_toa_vendor_ext_indication(&UL_info->srs_toa_vendor_ext_ind);
-    }
+  nfapi_nr_srs_toa_vendor_ext_indication_t *ind = &UL_info->srs_toa_vendor_ext_ind;
+  if (ind->number_of_pdus == 0) {
     return;
   }
 
-  const module_id_t module_id = UL_info->module_id;
-  const frame_t frame = UL_info->srs_toa_vendor_ext_ind.sfn;
-  const slot_t slot = UL_info->srs_toa_vendor_ext_ind.slot;
-  const uint8_t num_ta = UL_info->srs_toa_vendor_ext_ind.num_ta;
-  const int16_t *ta_offset_nsec = UL_info->srs_toa_vendor_ext_ind.ta_offset_nsec;
-  const uint16_t rnti = UL_info->srs_toa_vendor_ext_ind.rnti;
-
-  if (num_ta > 0) {
-    LOG_D(NR_PHY, "(%d.%d) UL_info->srs_toa_vendor_ext_ind.rnti: 0x%04x\n", frame, slot, rnti);
-    handle_nr_srs_toa_vendor_ext_measurements(module_id, frame, slot, num_ta, ta_offset_nsec, rnti);
+  if (NFAPI_MODE == NFAPI_MODE_PNF) {
+    LOG_D(NR_PHY,
+          "PNF Sending UL_info->srs_toa_vendor_ext_ind.number_of_pdus: %d, SFN/SF:%d.%d \n",
+          ind->number_of_pdus,
+          UL_info->frame,
+          UL_info->slot);
+    oai_nfapi_nr_srs_toa_vendor_ext_indication(ind);
+    ind->number_of_pdus = 0;
+    return;
   }
+
+  for (int pdu_idx = 0; pdu_idx < ind->number_of_pdus; pdu_idx++) {
+    const nfapi_nr_srs_toa_vendor_ext_pdu_t *pdu = &ind->pdu_list[pdu_idx];
+    LOG_D(NR_PHY, "(%d.%d) srs_toa_vendor_ext_ind rnti: 0x%04x\n", ind->sfn, ind->slot, pdu->rnti);
+    handle_nr_srs_toa_vendor_ext_measurements(UL_info->module_id, ind->sfn, ind->slot, pdu->num_ta, pdu->ta_offset_nsec, pdu->rnti);
+  }
+  ind->number_of_pdus = 0;
 }
 
 static void free_unqueued_nfapi_indications(nfapi_nr_rach_indication_t *rach_ind,

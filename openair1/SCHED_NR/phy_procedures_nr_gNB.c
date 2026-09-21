@@ -889,7 +889,7 @@ static void handle_srs(fsn_t now,
                        PHY_VARS_gNB *gNB,
                        const NR_gNB_SRS_job_t *srs,
                        nfapi_nr_srs_indication_pdu_t *srs_indication,
-                       nfapi_nr_srs_toa_vendor_ext_indication_t *srs_toa_v_ext)
+                       nfapi_nr_srs_toa_vendor_ext_pdu_t *srs_toa_v_ext)
 {
   const NR_DL_FRAME_PARMS *frame_parms = &gNB->frame_parms;
   const nfapi_nr_srs_pdu_t *srs_pdu = &srs->srs_pdu;
@@ -1012,13 +1012,10 @@ static void handle_srs(fsn_t now,
       break;
 
     case NFAPI_NR_SRS_POSITIONING: {
-      nfapi_nr_srs_toa_vendor_ext_indication_t *srs_toa_vendor_ext_ind = srs_toa_v_ext;
-      srs_toa_vendor_ext_ind->sfn = now.f;
-      srs_toa_vendor_ext_ind->slot = now.s;
-      srs_toa_vendor_ext_ind->rnti = srs_pdu->rnti;
-      srs_toa_vendor_ext_ind->num_ta = nb_antennas_rx;
+      srs_toa_v_ext->rnti = srs_pdu->rnti;
+      srs_toa_v_ext->num_ta = nb_antennas_rx;
       for (int ta_idx = 0; ta_idx < nb_antennas_rx; ta_idx++) {
-        srs_toa_vendor_ext_ind->ta_offset_nsec[ta_idx] = timing_advance_offset_nsec[ta_idx];
+        srs_toa_v_ext->ta_offset_nsec[ta_idx] = timing_advance_offset_nsec[ta_idx];
       }
       break;
     }
@@ -1393,14 +1390,20 @@ int phy_procedures_gNB_uespec_RX(PHY_VARS_gNB *gNB, int frame_rx, int slot_rx, N
   UL_INFO->srs_ind.pdu_list = UL_INFO->srs_pdu_list;
   UL_INFO->srs_ind.number_of_pdus = n_srs;
   UL_INFO->srs_ind.control_length = 0;
+
   UL_INFO->srs_toa_vendor_ext_ind.header.transmit_timestamp = 0;
-  UL_INFO->srs_toa_vendor_ext_ind.sfn = frame_rx;
-  UL_INFO->srs_toa_vendor_ext_ind.slot = slot_rx;
-  UL_INFO->srs_toa_vendor_ext_ind.rnti = 0;
-  UL_INFO->srs_toa_vendor_ext_ind.num_ta = 0;
+  nfapi_nr_srs_toa_vendor_ext_indication_t *srs_toa_v_ext = &UL_INFO->srs_toa_vendor_ext_ind;
+  srs_toa_v_ext->pdu_list = UL_INFO->srs_toa_vendor_ext_pdu_list;
+  srs_toa_v_ext->sfn = frame_rx;
+  srs_toa_v_ext->slot = slot_rx;
+  srs_toa_v_ext->number_of_pdus = 0;
   for (int i = 0; i < n_srs; ++i) {
     start_meas(&gNB->rx_srs_stats);
-    handle_srs(now, gNB, &srs[i], &UL_INFO->srs_ind.pdu_list[i], &UL_INFO->srs_toa_vendor_ext_ind);
+    nfapi_nr_srs_toa_vendor_ext_pdu_t *ta_pdu = &srs_toa_v_ext->pdu_list[srs_toa_v_ext->number_of_pdus];
+    ta_pdu->num_ta = 0;
+    handle_srs(now, gNB, &srs[i], &UL_INFO->srs_ind.pdu_list[i], ta_pdu);
+    if (ta_pdu->num_ta)
+      srs_toa_v_ext->number_of_pdus++;
     stop_meas(&gNB->rx_srs_stats);
   }
 

@@ -336,7 +336,7 @@ int phy_nr_slot_indication(nfapi_nr_slot_indication_scf_t *ind)
   INIT_UL_IND(ul_ind.rach_ind, number_of_pdus, ind->sfn, ind->slot);
   INIT_UL_IND(ul_ind.srs_ind, number_of_pdus, ind->sfn, ind->slot);
   INIT_UL_IND(ul_ind.uci_ind, num_ucis, ind->sfn, ind->slot);
-  INIT_UL_IND(ul_ind.srs_toa_vendor_ext_ind, num_ta, ind->sfn, ind->slot);
+  INIT_UL_IND(ul_ind.srs_toa_vendor_ext_ind, number_of_pdus, ind->sfn, ind->slot);
 
   // the callback is picking up messages from queues
   ifi->NR_UL_indication(&ul_ind);
@@ -353,7 +353,10 @@ int phy_nr_srs_indication(nfapi_nr_srs_indication_t *ind)
 
 int phy_nr_srs_toa_vendor_ext_indication(nfapi_nr_srs_toa_vendor_ext_indication_t *ind)
 {
-  handle_nr_srs_toa_vendor_ext_measurements(0, ind->sfn, ind->slot, ind->num_ta, ind->ta_offset_nsec, ind->rnti);
+  for (int pdu_idx = 0; pdu_idx < ind->number_of_pdus; pdu_idx++) {
+    const nfapi_nr_srs_toa_vendor_ext_pdu_t *pdu = &ind->pdu_list[pdu_idx];
+    handle_nr_srs_toa_vendor_ext_measurements(0, ind->sfn, ind->slot, pdu->num_ta, pdu->ta_offset_nsec, pdu->rnti);
+  }
   return 1;
 }
 //end NR phy indication
