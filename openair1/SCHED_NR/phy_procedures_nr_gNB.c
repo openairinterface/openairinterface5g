@@ -653,6 +653,15 @@ static int fill_srs_channel_matrix(nfapi_nr_srs_normalized_channel_iq_matrix_t *
       (frame_parms->first_carrier_offset - (frame_parms->ofdm_symbol_size >> 1)) + srs_pdu->bwp_start * NR_NB_SC_PER_RB;
   const uint16_t step = prg_size * NR_NB_SC_PER_RB;
 
+  const uint32_t matrix_size = (uint32_t)num_ue_srs_ports * num_gnb_antenna_elements * num_prgs * NFAPI_NR_SRS_MAX_IQ_SAMPLE_SIZE;
+  AssertFatal(matrix_size <= NFAPI_NR_SRS_CHANNEL_MATRIX_SIZE,
+              "SRS channel matrix needs %u bytes but only %d are there: %d ports, %d antennas, %d PRGs\n",
+              matrix_size,
+              NFAPI_NR_SRS_CHANNEL_MATRIX_SIZE,
+              num_ue_srs_ports,
+              num_gnb_antenna_elements,
+              num_prgs);
+
   nr_srs_channel_iq_matrix->normalized_iq_representation = normalized_iq_representation;
   nr_srs_channel_iq_matrix->num_gnb_antenna_elements = num_gnb_antenna_elements;
   nr_srs_channel_iq_matrix->num_ue_srs_ports = num_ue_srs_ports;
