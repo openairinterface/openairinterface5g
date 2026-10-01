@@ -355,7 +355,7 @@ static void test_xn_handover_request(void)
 
   /* ---------- UE History Information ---------- */
   ue_history_info_t *history_list = calloc_or_fail(1, sizeof(*history_list));
-  history_list[0].xnap_cell_type = XNAP_LastVisitedCell_Item_PR_nG_RAN_Cell;
+  history_list[0].xnap_cell_type = XNAP_LAST_VISITED_CELL_NR;
 
   uint8_t history_buf[] = {0x01, 0x02, 0x03, 0x04};
   history_list[0].last_visited_cell_info.buf = calloc_or_fail(sizeof(history_buf), 1);

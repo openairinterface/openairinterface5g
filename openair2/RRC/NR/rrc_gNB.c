@@ -1910,10 +1910,24 @@ static void process_Event_Based_Measurement_Report(gNB_RRC_INST *rrc,
             if (neighbourCellRSRP > best_rsrp) {
               // UE can send multiple neighbour cells A3 event report in 1 Meas Report. So, we need to find the best neighbour
               best_rsrp = neighbourCellRSRP;
-              LOG_I(NR_RRC, "HO LOG: Serving Cell RSRP: %d - Best Neighbor RSRP: %d ! Trigger N2 HO\n", servingCellRSRP, best_rsrp);
-              nr_rrc_trigger_n2_ho(rrc, ue, neighbour);
+              const rrc_xn_candidate_t *xn_cand = rrc_find_xn_candidate(rrc, neighbour->gNB_ID);
+              if (xn_cand) {
+                LOG_I(NR_RRC,
+                      "Xn HO source: UE %d: A3 serving RSRP %d, neighbour RSRP %d, trigger to gNB_ID 0x%x (assoc_id %d)\n",
+                      ue->rrc_ue_id,
+                      servingCellRSRP,
+                      best_rsrp,
+                      neighbour->gNB_ID,
+                      xn_cand->assoc_id);
+                nr_rrc_trigger_xn_ho(rrc, ue, neighbour);
+                LOG_D(NR_RRC, "HO LOG: Trigger Xn HO for the neighbour gnb: %u cell: %lu\n", neighbour->gNB_ID, neighbour->nrcell_id);
+              } else {
+                LOG_I(NR_RRC, "HO LOG: Serving RSRP: %d Best Neighbour RSRP: %d — Trigger N2 HO (no Xn)\n",
+                      servingCellRSRP, best_rsrp);
+                nr_rrc_trigger_n2_ho(rrc, ue, neighbour);
+                LOG_D(NR_RRC, "HO LOG: Trigger N2 HO for the neighbour gnb: %u cell: %lu\n", neighbour->gNB_ID, neighbour->nrcell_id);
+              }
             }
-            LOG_D(NR_RRC, "HO LOG: Trigger N2 HO for the neighbour gnb: %u cell: %lu\n", neighbour->gNB_ID, neighbour->nrcell_id);
           }
         } else if (target_cell && neighbour) {
           /* we know the cell and are connected to the DU! */

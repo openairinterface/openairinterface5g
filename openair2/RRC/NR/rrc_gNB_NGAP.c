@@ -491,6 +491,15 @@ int rrc_gNB_process_NGAP_INITIAL_CONTEXT_SETUP_REQ(MessageDef *msg_p, instance_t
 
   UE->amf_ue_ngap_id = req->amf_ue_ngap_id;
 
+  struct in_addr ipv4_bin;
+  if (req->amf_ng_ip.ipv4 && inet_pton(AF_INET, req->amf_ng_ip.ipv4_address, &ipv4_bin) == 1) {
+    memcpy(UE->amf_ng_ip.buffer, &ipv4_bin, 4);
+    UE->amf_ng_ip.length = 4;
+  } else {
+    /* the CP TNL address in the Xn Handover Request is encoded as IPv4 only */
+    LOG_W(NR_RRC, "UE %d: AMF NG-C address is not IPv4, not supported for Xn handover\n", UE->rrc_ue_id);
+  }
+
   // Directly copy the entire guami structure
   UE->ue_guami = req->guami;
 

@@ -269,6 +269,34 @@ int rrc_gNB_trigger_n2_ho(char *buf, int debug, telnet_printfunc_t prnt)
   return 0;
 }
 
+int rrc_gNB_trigger_xn_ho(char *buf, int debug, telnet_printfunc_t prnt)
+{
+  UNUSED(debug);
+  if (!RC.nrrrc)
+    ERROR_MSG_RET("no RRC present, cannot trigger Xn HO\n");
+
+  if (!buf)
+    ERROR_MSG_RET("Please provide neighbour PCI and UE id\n");
+
+  char *token = strtok(buf, ",");
+  if (!token)
+    ERROR_MSG_RET("Invalid input. Expected format: neighbour_pci,ueId\n");
+  uint32_t neighbour_pci = strtol(token, NULL, 10);
+
+  token = strtok(NULL, ",");
+  if (!token)
+    ERROR_MSG_RET("Missing UE ID\n");
+  uint32_t ueId = strtol(token, NULL, 10);
+
+  rrc_gNB_ue_context_t *ue_p = rrc_gNB_get_ue_context(RC.nrrrc[0], ueId);
+  if (!ue_p)
+    ERROR_MSG_RET("UE with id %u not found\n", ueId);
+
+  nr_HO_Xn_trigger_telnet(RC.nrrrc[0], neighbour_pci, ue_p->ue_context.rrc_ue_id);
+  prnt("RRC Xn handover triggered for UE %u towards neighbour PCI %u\n", ueId, neighbour_pci);
+  return 0;
+}
+
 int force_ul_failure(char *buf, int debug, telnet_printfunc_t prnt)
 {
   UNUSED(debug);
@@ -446,6 +474,7 @@ static telnetshell_cmddef_t cicmds[] = {
     {"get_current_bwp", "[rnti(hex,opt)]", get_current_bwp},
     {"trigger_bwp_switch", "newBWPId [rnti(hex,opt)]", trigger_bwp_switch},
     {"trigger_n2_ho", "[neighbour_pci(uint32_t),ueId(uint32_t)]", rrc_gNB_trigger_n2_ho},
+    {"trigger_xn_ho", "[neighbour_pci(uint32_t),ueId(uint32_t)]", rrc_gNB_trigger_xn_ho},
     {"set_pusch_target_snr", "[somelongSNR(dec)]", set_pusch_target_snr},
     {"pdu_session_release", "[gNB_ue_ngap_id(int,opt)]", trigger_ngap_pdu_session_release},
     {"", "", NULL},

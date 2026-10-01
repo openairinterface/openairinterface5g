@@ -837,6 +837,9 @@ typedef struct ngap_initial_context_setup_req_s {
 
   uint64_t amf_ue_ngap_id;
 
+  /* Serving AMF's NG-C IP address, forwarded to RRC for use in Xn HO Request */
+  net_ip_address_t amf_ng_ip;
+
   /* UE aggregate maximum bitrate */
   bool has_ue_ambr;
   ngap_ambr_t ue_ambr;

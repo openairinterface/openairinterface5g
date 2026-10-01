@@ -222,6 +222,9 @@ typedef struct gNB_RRC_UE_s {
 
   uint32_t                           rrc_ue_id;
   uint64_t amf_ue_ngap_id;
+  /* Serving AMF's NG-C transport address; populated from NGAP Initial Context
+   * Setup Request and forwarded in Xn HO Request as cp_tnl_ip_source. */
+  transport_layer_addr_t amf_ng_ip;
   // Globally Unique AMF Identifier
   nr_guami_t ue_guami;
   // Serving PLMN of the UE
