@@ -1392,6 +1392,44 @@ void fill_removal_lists_from_source_measConfig(NR_MeasConfig_t *currentMC, byte_
   ASN_STRUCT_FREE(asn_DEF_NR_RRCReconfiguration, rrcReconf);
 }
 
+/** @brief Extract and re-encode the UE Capability RAT Container List embedded in a received
+ *  HandoverPreparationInformation, in the standalone encoded form get_HandoverPreparationInformation()
+ *  expects back out of ue_cap_buffer for a subsequent handover -- carries UE capabilities across an
+ *  inter-CU handover so they survive to be re-sent if this UE is handed over again later. */
+byte_array_t extract_ue_cap_from_HandoverPreparationInformation(byte_array_t prep_info)
+{
+  byte_array_t out = {.buf = NULL, .len = 0};
+
+  NR_HandoverPreparationInformation_t *hpi = NULL;
+  asn_dec_rval_t dec_rval =
+      uper_decode_complete(NULL, &asn_DEF_NR_HandoverPreparationInformation, (void **)&hpi, (uint8_t *)prep_info.buf, prep_info.len);
+  if (dec_rval.code != RC_OK || !hpi) {
+    LOG_E(NR_RRC, "Failed to decode HandoverPreparationInformation to extract UE capabilities\n");
+    ASN_STRUCT_FREE(asn_DEF_NR_HandoverPreparationInformation, hpi);
+    return out;
+  }
+
+  /* the HandoverPreparationInformation comes from the source gNB: check its structure */
+  if (hpi->criticalExtensions.present != NR_HandoverPreparationInformation__criticalExtensions_PR_c1
+      || !hpi->criticalExtensions.choice.c1
+      || hpi->criticalExtensions.choice.c1->present != NR_HandoverPreparationInformation__criticalExtensions__c1_PR_handoverPreparationInformation
+      || !hpi->criticalExtensions.choice.c1->choice.handoverPreparationInformation) {
+    LOG_E(NR_RRC, "Invalid HandoverPreparationInformation in criticalExtensions.choice.c1, no UE capabilities\n");
+    ASN_STRUCT_FREE(asn_DEF_NR_HandoverPreparationInformation, hpi);
+    return out;
+  }
+
+  NR_UE_CapabilityRAT_ContainerList_t *clist = &hpi->criticalExtensions.choice.c1->choice.handoverPreparationInformation->ue_CapabilityRAT_List;
+  out.len = uper_encode_to_new_buffer(&asn_DEF_NR_UE_CapabilityRAT_ContainerList, NULL, (void *)clist, (void **)&out.buf);
+  if (out.len <= 0) {
+    LOG_E(NR_RRC, "Failed to re-encode UE Capability RAT Container List from HandoverPreparationInformation\n");
+    out = (byte_array_t){.buf = NULL, .len = 0};
+  }
+
+  ASN_STRUCT_FREE(asn_DEF_NR_HandoverPreparationInformation, hpi);
+  return out;
+}
+
 byte_array_t doRRCReconfiguration_from_HandoverCommand(const byte_array_t handoverCommand)
 {
   DevAssert(handoverCommand.buf);

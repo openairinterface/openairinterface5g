@@ -338,6 +338,8 @@ typedef struct {
   uint32_t rrc_ue_id;
   // source RRC->XNAP: SCTP association to the target gNB
   sctp_assoc_t target_assoc_id;
+  // target XNAP->RRC: XnAP UE ID allocated by XNAP, bound by RRC to the new UE
+  uint32_t t_ng_node_ue_xnap_id;
 } xnap_handover_req_t;
 
 /* QoS Flows Admitted Item */

@@ -786,6 +786,42 @@ void nr_HO_N2_trigger_telnet(gNB_RRC_INST *rrc, uint32_t neighbour_pci, uint32_t
   nr_rrc_trigger_n2_ho(rrc, UE, neighbour);
 }
 
+/** @brief Callback invoked when F1 UE Context Setup is complete during Xn HO:
+ *         encode the HandoverCommand and send Handover Request Acknowledge to source. */
+static void nr_rrc_xn_ho_acknowledge(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE)
+{
+  AssertFatal(cu_exists_f1_ue_data(UE->rrc_ue_id), "No CU found for rrc_ue_id %d\n", UE->rrc_ue_id);
+
+  f1_ue_data_t previous_data = cu_get_f1_ue_data(UE->rrc_ue_id);
+  AssertFatal(previous_data.secondary_ue == -1, "there was already a DU present\n");
+  nr_rrc_apply_target_context(UE);
+  LOG_D(NR_RRC, "Xn HO target: UE %d: F1 UE Context Setup done, building Handover Request Acknowledge\n", UE->rrc_ue_id);
+
+  if (!nr_rrc_update_cell_assoc_after_ho(UE)) {
+    LOG_E(NR_RRC, "UE %d: Xn HO acknowledge failed — cell association update failed\n", UE->rrc_ue_id);
+    return;
+  }
+
+  byte_array_t hoCommand = rrc_gNB_encode_HandoverCommand(UE, rrc);
+  if (!hoCommand.buf) {
+    LOG_E(NR_RRC, "UE %d: Xn HO acknowledge failed — HandoverCommand encoding failed\n", UE->rrc_ue_id);
+    return;
+  }
+
+  rrc_gNB_send_XNAP_HANDOVER_REQ_ACK(rrc, UE, hoCommand);
+  free_byte_array(hoCommand);
+}
+
+/** @brief Trigger Xn Handover on the target gNB after E1 bearer setup:
+ *         initiate F1 UE Context Setup toward the target DU. */
+void nr_rrc_trigger_xn_ho_target(gNB_RRC_INST *rrc, gNB_RRC_UE_t *ue)
+{
+  LOG_D(NR_RRC, "Xn HO target: UE %d: E1 Bearer Context Setup done, starting F1 UE Context Setup\n", ue->rrc_ue_id);
+  ho_req_ack_t ack = nr_rrc_xn_ho_acknowledge;
+  nr_initiate_handover(rrc, ue, NULL, &ue->ho_context->target->ue_ho_prep_info, ack, NULL, NULL, NULL);
+  FREE_AND_ZERO_BYTE_ARRAY(ue->ho_context->target->ue_ho_prep_info);
+}
+
 /** @brief Trigger Xn handover on source gNB:
  *         1) Prepare RRC Container with HandoverPreparationInformation message
  *         2) send XNAP HandoverRequest message */

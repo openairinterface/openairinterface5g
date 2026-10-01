@@ -71,6 +71,9 @@
 #include "uper_encoder.h"
 #include "utils.h"
 #include "x2ap_messages_types.h"
+#include "rrc_gNB_XNAP.h"
+#include "openair2/XNAP/lib/xnap_gNB_mobility_management.h"
+#include "openair2/XNAP/xnap_ids.h"
 #include "xer_encoder.h"
 #include "E1AP/lib/e1ap_bearer_context_management.h"
 #include "E1AP/lib/e1ap_interface_management.h"
@@ -2959,6 +2962,9 @@ void rrc_remove_ue(gNB_RRC_INST *rrc, rrc_gNB_ue_context_t *ue_context_p)
    * are in E1, we also need to free the UE in the CU-CP, so call it twice to
    * cover all cases */
   nr_pdcp_remove_UE(UE->rrc_ue_id);
+  /* the rrc_ue_id is reused: drop the Xn handover of this UE, if any */
+  if (xn_remove_ue(UE->rrc_ue_id))
+    LOG_W(NR_RRC, "UE %u: removed during an Xn handover\n", UE->rrc_ue_id);
   LOG_I(NR_RRC, "removed UE CU UE ID %u/RNTI %04x \n", UE->rrc_ue_id, UE->rnti);
   rrc_delete_ue_data(UE);
   rrc_gNB_remove_ue_context(rrc, ue_context_p);
@@ -4148,6 +4154,11 @@ void *rrc_gnb_task(void *args_p)
 
       case XNAP_PEER_SHUTDOWN_IND:
         rrc_remove_xn_candidate(RC.nrrrc[instance], XNAP_PEER_SHUTDOWN_IND(msg_p).gnb_id);
+        break;
+
+      case XNAP_HANDOVER_REQ:
+        rrc_gNB_process_XNAP_HANDOVER_REQUEST(RC.nrrrc[instance], &XNAP_HANDOVER_REQ(msg_p));
+        free_xnap_handover_request(&XNAP_HANDOVER_REQ(msg_p));
         break;
 
       default:

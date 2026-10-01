@@ -601,8 +601,6 @@ static void free_xnap_qos_flow_param(xnap_qos_flow_param_t *p)
  */
 static void free_xnap_qos_tobe_setup_list(xnap_qos_flow_tobe_setup_item_t *qos_list, uint8_t num_qos)
 {
-  DevAssert(qos_list && num_qos > 0);
-
   for (int i = 0; i < num_qos; i++) {
     free_xnap_qos_flow_param(&qos_list[i].qos_params);
   }
@@ -614,8 +612,6 @@ static void free_xnap_qos_tobe_setup_list(xnap_qos_flow_tobe_setup_item_t *qos_l
  */
 static void free_xnap_pdusession_resources_tobe_setup_list(xnap_pdusession_resources_tobe_setup_item_t *pdu_list, uint16_t num_pdu)
 {
-  DevAssert(pdu_list && num_pdu > 0);
-
   for (int i = 0; i < num_pdu; i++) {
     free(pdu_list[i].nssai);
     free_xnap_qos_tobe_setup_list(pdu_list[i].qos_list, pdu_list[i].num_qos);
@@ -642,8 +638,6 @@ static void free_xnap_ue_context_info(const xnap_ue_context_info_t *ue_context)
  */
 static void free_xnap_ue_history_info_list(ue_history_info_t *history_list, uint8_t num_cells)
 {
-  DevAssert(history_list && num_cells > 0);
-
   for (int i = 0; i < num_cells; i++) {
     free_byte_array(history_list[i].last_visited_cell_info);
   }

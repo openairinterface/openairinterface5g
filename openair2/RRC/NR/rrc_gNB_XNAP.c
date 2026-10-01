@@ -11,6 +11,11 @@
 #include "rrc_gNB_XNAP.h"
 #include "rrc_gNB_mobility.h"
 #include "rrc_cell_management.h"
+#include "rrc_gNB_UE_context.h"
+#include "rrc_gNB_NGAP.h"
+#include "rrc_gNB_security.h"
+#include "rrc_gNB_radio_bearers.h"
+#include "nr_rrc_proto.h"
 #include "openair2/COMMON/xnap_messages_types.h"
 #include "openair3/NGAP/ngap_common.h"
 #include "openair3/SECU/key_nas_deriver.h"
@@ -21,6 +26,7 @@
 #include "assertions.h"
 #include "intertask_interface.h"
 #include "aper_encoder.h"
+#include "openair2/XNAP/xnap_ids.h"
 
 /** @brief APER-encode the serving cell as an NGAP LastVisitedNGRANCellInformation OCTET STRING.
  *  As per 3GPP TS 38.423 §9.2.3.65, the XnAP UE history entry for NR is the NGAP encoding of
@@ -208,4 +214,146 @@ bool rrc_gNB_send_XNAP_HANDOVER_REQUEST(gNB_RRC_INST *rrc,
           pdu_list[i].num_qos);
   itti_send_msg_to_task(TASK_XNAP, rrc->module_id, msg_p);
   return true;
+}
+
+/* Select security algorithms from Xn capabilities and configure the UE context.
+ * xnap_security_capabilities_t has identical bitmask fields to ngap_security_capabilities_t. */
+static void set_UE_security_algos_xn(const gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE, const xnap_security_capabilities_t *cap)
+{
+  UE->security_capabilities.nRencryption_algorithms = cap->nRencryption_algorithms;
+  UE->security_capabilities.nRintegrity_algorithms = cap->nRintegrity_algorithms;
+  UE->security_capabilities.eUTRAencryption_algorithms = cap->eUTRAencryption_algorithms;
+  UE->security_capabilities.eUTRAintegrity_algorithms = cap->eUTRAintegrity_algorithms;
+
+  UE->ciphering_algorithm = rrc_gNB_select_ciphering(rrc, cap->nRencryption_algorithms);
+  UE->integrity_algorithm = rrc_gNB_select_integrity(rrc, cap->nRintegrity_algorithms);
+
+  LOG_UE_EVENT(UE, "Xn HO: selected ciphering %lx integrity %x\n", UE->ciphering_algorithm, UE->integrity_algorithm);
+}
+
+int rrc_gNB_process_XNAP_HANDOVER_REQUEST(gNB_RRC_INST *rrc, xnap_handover_req_t *req)
+{
+  nr_rrc_cell_container_t *cell = get_cell_by_cell_id(&rrc->cells, req->target_cgi.nrcell_id);
+  if (!cell) {
+    LOG_E(NR_RRC, "Xn HandoverRequest: no cell with NR Cell ID 0x%lx\n", req->target_cgi.nrcell_id);
+    return -1;
+  }
+
+  nr_rrc_du_container_t *du = get_du_by_assoc_id(rrc, cell->assoc_id);
+  if (!du) {
+    LOG_E(NR_RRC, "Xn HandoverRequest: no DU for assoc_id %d\n", cell->assoc_id);
+    return -1;
+  }
+
+  if (!is_cuup_associated(rrc)) {
+    LOG_E(NR_RRC, "Xn HandoverRequest: no CU-UP associated — rejecting\n");
+    return -1;
+  }
+
+  rrc_gNB_ue_context_t *ue_ctx = rrc_gNB_create_ue_context(du->assoc_id, UINT16_MAX, rrc, UINT64_MAX, UINT32_MAX);
+  gNB_RRC_UE_t *UE = &ue_ctx->ue_context;
+
+  /* map the XnAP UE IDs of this handover to the new UE in XNAP */
+  if (!xn_bind_ue(req->t_ng_node_ue_xnap_id, UE->rrc_ue_id)) {
+    /* XNAP dropped the handover meanwhile, e.g. the source peer is lost */
+    LOG_W(NR_RRC, "Xn HO target: UE %d: t_xnap_ue_id %u is gone, dropping the UE\n", UE->rrc_ue_id, req->t_ng_node_ue_xnap_id);
+    rrc_remove_ue(rrc, ue_ctx);
+    return -1;
+  }
+  LOG_I(NR_RRC,
+        "Xn HO target: UE %d: Handover Request received (s_xnap_ue_id %u t_xnap_ue_id %u), UE created\n",
+        UE->rrc_ue_id,
+        req->s_ng_node_ue_xnap_id,
+        req->t_ng_node_ue_xnap_id);
+
+  UE->ho_context = alloc_ho_ctx(HO_CTX_TARGET);
+  nr_ho_target_cu_t *target = UE->ho_context->target;
+  target->cell = cell;
+  target->ho_trigger = nr_rrc_trigger_xn_ho_target;
+  target->ue_ho_prep_info = copy_byte_array(req->ue_context.rrc_context);
+
+  /* Carry UE capabilities forward from the source: unlike N2 HO (where the AMF sends
+   * them as a separate NGAP IE), Xn HO only carries them embedded in rrc_context. Without
+   * this, ue_cap_buffer stays empty and a later handover of this same UE (now as source)
+   * fails to re-encode its own HandoverPreparationInformation. */
+  UE->ue_cap_buffer = extract_ue_cap_from_HandoverPreparationInformation(req->ue_context.rrc_context);
+
+  UE->amf_ue_ngap_id = req->ue_context.ngc_ue_sig_ref;
+  UE->amf_ng_ip = req->ue_context.cp_tnl_ip_source;
+  UE->ue_guami = req->guami;
+  UE->serving_plmn = cell->info.plmn;
+
+  /* Xn HO: source delivers KgNB* (as_security_key_ranstar) directly —
+   * copy to kgnb; no derivation step unlike N2 HO which starts from NH. */
+  set_UE_security_algos_xn(rrc, UE, &req->ue_context.security_capabilities);
+  UE->nh_ncc = req->ue_context.as_security_ncc;
+  memcpy(UE->kgnb, req->ue_context.as_security_key_ranstar, SECURITY_KEY_LENGTH);
+  memset(UE->nh, 0, SECURITY_KEY_LENGTH);
+  UE->as_security_active = true;
+
+  activate_srb(UE, SRB1);
+  activate_srb(UE, SRB2);
+  nr_rrc_pdcp_config_security(UE, true);
+
+  UE->ambr.dl_br = req->ue_context.ue_ambr.br_dl;
+  UE->ambr.ul_br = req->ue_context.ue_ambr.br_ul;
+  LOG_D(NR_RRC,
+        "Xn HO target: UE %d: Handover Request: AMF UE NGAP ID %lu, NCC %d, ciphering %ld integrity %d, UE-AMBR DL %lu UL %lu, "
+        "%d PDU session(s)\n",
+        UE->rrc_ue_id,
+        UE->amf_ue_ngap_id,
+        UE->nh_ncc,
+        UE->ciphering_algorithm,
+        UE->integrity_algorithm,
+        UE->ambr.dl_br,
+        UE->ambr.ul_br,
+        req->ue_context.num_pdu);
+
+  /* Convert Xn PDU session resources to pdusession_t for bearer setup */
+  int n_pdu = req->ue_context.num_pdu;
+  pdusession_t *sessions = calloc_or_fail(n_pdu, sizeof(*sessions));
+
+  for (int i = 0; i < n_pdu; i++) {
+    xnap_pdusession_resources_tobe_setup_item_t *xpdu = &req->ue_context.pdusession_resources_tobe_setup_list[i];
+    pdusession_t *pdu = &sessions[i];
+
+    pdu->pdusession_id = xpdu->pdusession_id;
+    pdu->pdu_session_type = xpdu->pdu_session_type;
+    pdu->n3_incoming = xpdu->n3_incoming;
+    if (xpdu->nssai)
+      pdu->nssai = *xpdu->nssai;
+
+    seq_arr_init(&pdu->qos, sizeof(nr_rrc_qos_t));
+    for (int j = 0; j < xpdu->num_qos; j++) {
+      xnap_qos_flow_tobe_setup_item_t *xqos = &xpdu->qos_list[j];
+      pdusession_level_qos_parameter_t qp = {
+        .qfi = xqos->qfi,
+        .fiveQI_type = xqos->qos_params.qos_type,
+        .arp = xqos->qos_params.arp,
+      };
+      if (xqos->qos_params.qos_type == NON_DYNAMIC) {
+        qp.qos_characteristics.non_dynamic.fiveQI = xqos->qos_params.nondyn.fiveQI;
+      } else {
+        qp.qos_characteristics.dynamic.qos_priority = xqos->qos_params.dyn.prio;
+        qp.qos_characteristics.dynamic.packet_delay_budget = xqos->qos_params.dyn.pdb;
+        qp.qos_characteristics.dynamic.per.scalar = xqos->qos_params.dyn.per.scalar;
+        qp.qos_characteristics.dynamic.per.exponent = xqos->qos_params.dyn.per.exponent;
+      }
+      add_qos(&pdu->qos, &qp);
+    }
+    LOG_D(NR_RRC, "Xn HO target: UE %d:   PDU session %d, %d QoS flow(s)\n", UE->rrc_ue_id, pdu->pdusession_id, xpdu->num_qos);
+  }
+
+  nr_rrc_add_bearers(rrc, UE, n_pdu, sessions);
+  free(sessions);
+  trigger_bearer_setup(rrc, UE, UE->ambr.dl_br);
+  return 0;
+}
+
+/* Temporary stub: the Handover Request Acknowledge is sent in the next commit */
+void rrc_gNB_send_XNAP_HANDOVER_REQ_ACK(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE, byte_array_t ho_command)
+{
+  UNUSED(rrc);
+  UNUSED(ho_command);
+  LOG_W(NR_RRC, "UE %u: Xn Handover Request Acknowledge not implemented\n", UE->rrc_ue_id);
 }
