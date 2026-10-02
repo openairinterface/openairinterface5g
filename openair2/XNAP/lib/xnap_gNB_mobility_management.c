@@ -870,8 +870,6 @@ bool eq_xnap_handover_request_acknowledge(const xnap_handover_req_ack_t *a, cons
  */
 static void free_xnap_qos_admitted_list(xnap_qos_admitted_item_t *qos_list)
 {
-  DevAssert(qos_list);
-
   /* QoS admitted items have no dynamically allocated members */
   free(qos_list);
 }
@@ -879,10 +877,8 @@ static void free_xnap_qos_admitted_list(xnap_qos_admitted_item_t *qos_list)
 /**
  * @brief Free PDU Session Resources Admitted list
  */
-static void free_xnap_pdusession_admitted_list(xnap_pdusession_admitted_item_t *pdu_list, uint8_t num_pdu)
+static void free_xnap_pdusession_admitted_list(xnap_pdusession_admitted_item_t *pdu_list, uint16_t num_pdu)
 {
-  DevAssert(pdu_list && num_pdu > 0);
-
   for (int i = 0; i < num_pdu; i++) {
     free_xnap_qos_admitted_list(pdu_list[i].qos_list);
   }
