@@ -158,14 +158,11 @@ void __attribute__((no_sanitize_address)) multipath_channel(channel_desc_t *desc
       struct complexd rx_tmp = {0};
       for (int j = 0; j < desc->nb_tx; j++) {
         struct complexd *chan = ch[j][ii];
-        for (int l = 0; l < desc->channel_length; l++) {
-          if ((i >= 0) && (i - l) >= 0) {
-            struct complexd tx;
-            tx.r = tx_sig_re[j][i - l];
-            tx.i = tx_sig_im[j][i - l];
-            rx_tmp.r += tx.r * chan[l].r - tx.i * chan[l].i;
-            rx_tmp.i += tx.i * chan[l].r + tx.r * chan[l].i;
-          }
+        int end = min(desc->channel_length, i + 1); // taps l <= i only (tx[i - l])
+        for (int l = 0; l < end; l++) {
+          struct complexd tx = (struct complexd){tx_sig_re[j][i - l], tx_sig_im[j][i - l]};
+          rx_tmp.r += tx.r * chan[l].r - tx.i * chan[l].i;
+          rx_tmp.i += tx.i * chan[l].r + tx.r * chan[l].i;
 #if 0
           if (i==0 && log_channel == 1) {
             printf("channel[%d][%d][%d] = %f dB \t(%e, %e)\n",
