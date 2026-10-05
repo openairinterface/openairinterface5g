@@ -20,6 +20,7 @@
 #define XNAP_PEER_SHUTDOWN_IND(mSGpTR)    (mSGpTR)->ittiMsg.xnap_peer_shutdown_ind
 #define XNAP_HANDOVER_REQ(mSGpTR)         (mSGpTR)->ittiMsg.xnap_handover_req
 #define XNAP_HANDOVER_REQ_ACK(mSGpTR)     (mSGpTR)->ittiMsg.xnap_handover_req_ack
+#define XNAP_HANDOVER_PREP_FAILURE(mSGpTR) (mSGpTR)->ittiMsg.xnap_handover_prep_failure
 
 typedef struct {
   // PLMN Identity (M)
@@ -381,6 +382,11 @@ typedef struct {
   uint32_t s_ng_node_ue_xnap_id;
   // Cause (M)
   xnap_cause_t cause;
+  /* Routing fields — not part of the XnAP PDU */
+  // RRC UE identity (target: 0 if no UE was created; source: looked up from s_xn_ue_id)
+  uint32_t rrc_ue_id;
+  // target: SCTP association to the source gNB
+  sctp_assoc_t assoc_id;
 } xnap_handover_preparation_failure_t;
 
 /** 3GPP TS 38.423 – 9.1.1.4 SN Status Transfer 
