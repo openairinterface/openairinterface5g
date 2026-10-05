@@ -51,7 +51,7 @@ typedef struct {
   double *amps;
   ///normalization channel factor
   double normalization_ch_factor;
-  ///Delays of the taps in mus. length(delays)=nb_taps. Has to be between 0 and Td.
+  /// Delays of the taps in mus. length(delays)=nb_taps, ordered by increasing delays
   double *delays;
   ///length of impulse response. should be set to 11+2*bw*t_max
   uint channel_length;
@@ -64,8 +64,6 @@ typedef struct {
   ///Sampled frequency response (90 kHz resolution)
   int channelF_len;
   fourDimArray_t *chF;
-  ///Maximum path delay in mus.
-  double Td;
   ///Carrier center frequency
   uint64_t center_freq;
   ///Channel bandwidth in MHz.
