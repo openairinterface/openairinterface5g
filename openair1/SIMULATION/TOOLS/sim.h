@@ -30,10 +30,8 @@ typedef enum {
 } channelmod_moduleid_t;
 #define MODULEID_STR_INIT {"","rfsimulator"}
 
-#define CHANMODEL_FREE_DELAY       1<<0
 #define CHANMODEL_FREE_RSQRT_6     1<<1
-#define CHANMODEL_FREE_RSQRT_NTAPS 1<<2
-#define CHANMODEL_FREE_AMPS        1<<3
+#define CHANMODEL_FREE_RSQRT_NTAPS 1 << 2
 #define SHR3 (jz = jsr, jsr ^= (jsr << 13), jsr ^= (jsr >> 17), jsr ^= (jsr << 5), jz + jsr)
 
 typedef enum {

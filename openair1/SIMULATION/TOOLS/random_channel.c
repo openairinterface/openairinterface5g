@@ -56,6 +56,38 @@ static channel_desc_t **defined_channels = NULL;
 static char *modellist_name = NULL;
 static int noise_power_dBFS = INVALID_DBFS_VALUE;
 
+static const double default_amps_lin[] = {0.3868472, 0.3094778, 0.1547389, 0.0773694, 0.0386847, 0.0193424, 0.0096712, 0.0038685};
+static const double default_amp_lin[] = {1};
+
+// Tap powers from linear values, normalized to a total power of 1
+static void init_amps_lin(channel_desc_t *chan_desc, const double *amps_lin)
+{
+  chan_desc->amps = malloc(chan_desc->nb_taps * sizeof(*chan_desc->amps));
+  double sum_amps = 0;
+  for (int i = 0; i < chan_desc->nb_taps; i++) {
+    chan_desc->amps[i] = amps_lin[i];
+    sum_amps += chan_desc->amps[i];
+  }
+  for (int i = 0; i < chan_desc->nb_taps; i++) {
+    chan_desc->amps[i] /= sum_amps;
+  }
+}
+
+// Tap powers from values in dB, normalized to a total power of 1
+static void init_amps(channel_desc_t *chan_desc, const double *amps_dB)
+{
+  double amps_lin[chan_desc->nb_taps];
+  for (int i = 0; i < chan_desc->nb_taps; i++)
+    amps_lin[i] = pow(10, 0.1 * amps_dB[i]);
+  init_amps_lin(chan_desc, amps_lin);
+}
+
+static void init_delays(channel_desc_t *chan_desc, const double *delays)
+{
+  chan_desc->delays = malloc(chan_desc->nb_taps * sizeof(*chan_desc->delays));
+  memcpy(chan_desc->delays, delays, chan_desc->nb_taps * sizeof(*chan_desc->delays));
+}
+
 static void fill_channel_desc(channel_desc_t *chan_desc, struct complexd *R_sqrt, uint8_t random_aoa)
 {
   const int nb_rx = chan_desc->nb_rx;
@@ -70,9 +102,17 @@ static void fill_channel_desc(channel_desc_t *chan_desc, struct complexd *R_sqrt
         chan_desc->channel_length);
   LOG_D(OCM, "[CHANNEL] Doing delays ...\n");
 
+  if (chan_desc->amps == NULL) {
+    if (nb_taps == 1) {
+      init_amps_lin(chan_desc, default_amp_lin);
+    } else {
+      AssertFatal(nb_taps <= sizeofArray(default_amps_lin), "no default amplitudes for %d taps\n", nb_taps);
+      init_amps_lin(chan_desc, default_amps_lin);
+    }
+  }
+
   if (chan_desc->delays == NULL) {
-    chan_desc->delays = calloc(nb_taps, sizeof(double));
-    chan_desc->free_flags |= CHANMODEL_FREE_DELAY;
+    chan_desc->delays = malloc(nb_taps * sizeof(*chan_desc->delays));
     const double delta_tau = chan_desc->Td / nb_taps;
     for (int i = 0; i < nb_taps; i++)
       chan_desc->delays[i] = i * delta_tau;
@@ -119,41 +159,78 @@ static void fill_channel_desc(channel_desc_t *chan_desc, struct complexd *R_sqrt
   reset_meas(&chan_desc->convolution);
 }
 
-static double mbsfn_delays[] = {0,.03,.15,.31,.37,1.09,12.490,12.52,12.64,12.80,12.86,13.58,27.49,27.52,27.64,27.80,27.86,28.58};
-static double mbsfn_amps_dB[] = {0,-1.5,-1.4,-3.6,-0.6,-7.0,-10,-11.5,-11.4,-13.6,-10.6,-17.0,-20,-21.5,-21.4,-23.6,-20.6,-27};
+static const double mbsfn_delays[] =
+    {0, .03, .15, .31, .37, 1.09, 12.490, 12.52, 12.64, 12.80, 12.86, 13.58, 27.49, 27.52, 27.64, 27.80, 27.86, 28.58};
+static const double mbsfn_amps_dB[] =
+    {0, -1.5, -1.4, -3.6, -0.6, -7.0, -10, -11.5, -11.4, -13.6, -10.6, -17.0, -20, -21.5, -21.4, -23.6, -20.6, -27};
 
-static double scm_c_delays[] = {0, 0.0125, 0.0250, 0.3625, 0.3750, 0.3875, 0.2500, 0.2625, 0.2750, 1.0375, 1.0500, 1.0625, 2.7250, 2.7375, 2.7500, 4.6000, 4.6125, 4.6250};
-static double scm_c_amps_dB[] = {0.00, -2.22, -3.98, -1.86, -4.08, -5.84, -1.08, -3.30, -5.06, -9.08, -11.30, -13.06, -15.14, -17.36, -19.12, -20.64, -22.85, -24.62};
+static const double scm_c_delays[] = {0,
+                                      0.0125,
+                                      0.0250,
+                                      0.3625,
+                                      0.3750,
+                                      0.3875,
+                                      0.2500,
+                                      0.2625,
+                                      0.2750,
+                                      1.0375,
+                                      1.0500,
+                                      1.0625,
+                                      2.7250,
+                                      2.7375,
+                                      2.7500,
+                                      4.6000,
+                                      4.6125,
+                                      4.6250};
+static const double scm_c_amps_dB[] = {0.00,
+                                       -2.22,
+                                       -3.98,
+                                       -1.86,
+                                       -4.08,
+                                       -5.84,
+                                       -1.08,
+                                       -3.30,
+                                       -5.06,
+                                       -9.08,
+                                       -11.30,
+                                       -13.06,
+                                       -15.14,
+                                       -17.36,
+                                       -19.12,
+                                       -20.64,
+                                       -22.85,
+                                       -24.62};
 
 // TS 38.104 - Table G.2.1.1-2, delays normalized based on TR 38.901 - eq. 7.7-1
-static double tdl_a_delays[] = {0, 0.3333, 0.5000, 0.6667, 0.8333, 1.6667, 2.1667, 2.5000, 3.5000, 4.5000, 5.0000, 9.6667};
-static double tdl_a_amps_dB[] = {-15.5, 0.0, -5.1, -5.1, -9.6, -8.2, -13.1, -11.5, -11.0, -16.2, -16.6, -26.2};
+static const double tdl_a_delays[] = {0, 0.3333, 0.5000, 0.6667, 0.8333, 1.6667, 2.1667, 2.5000, 3.5000, 4.5000, 5.0000, 9.6667};
+static const double tdl_a_amps_dB[] = {-15.5, 0.0, -5.1, -5.1, -9.6, -8.2, -13.1, -11.5, -11.0, -16.2, -16.6, -26.2};
 
 // TS 38.104 - Table G.2.1.1-3, delays normalized based on TR 38.901 - eq. 7.7-1
-static double tdl_b_delays[] = {0.0000, 0.1000, 0.2000, 0.3000, 0.3500, 0.4500, 0.5500, 1.2000, 1.7000, 2.4500, 3.3000, 4.8000};
-static double tdl_b_amps_dB[] = {0.0, -2.2, -0.6, -0.6, -0.3, -1.2, -5.9, -2.2, -0.8, -6.3, -7.5, -7.1};
+static const double tdl_b_delays[] =
+    {0.0000, 0.1000, 0.2000, 0.3000, 0.3500, 0.4500, 0.5500, 1.2000, 1.7000, 2.4500, 3.3000, 4.8000};
+static const double tdl_b_amps_dB[] = {0.0, -2.2, -0.6, -0.6, -0.3, -1.2, -5.9, -2.2, -0.8, -6.3, -7.5, -7.1};
 
 // TS 38.104 - Table G.2.1.1-4, delays normalized based on TR 38.901 - eq. 7.7-1
-static double tdl_c_delays[] = {0.0000, 0.2167, 0.2333, 0.6333, 0.6500, 0.6667, 0.8000, 1.0833, 1.7333, 3.4833, 5.0333, 8.6500};
-static double tdl_c_amps_dB[] = {-6.9, 0.0, -7.7, -2.5, -2.4, -9.9, -8.0, -6.6, -7.1, -13.0, -14.2, -16.0};
+static const double tdl_c_delays[] =
+    {0.0000, 0.2167, 0.2333, 0.6333, 0.6500, 0.6667, 0.8000, 1.0833, 1.7333, 3.4833, 5.0333, 8.6500};
+static const double tdl_c_amps_dB[] = {-6.9, 0.0, -7.7, -2.5, -2.4, -9.9, -8.0, -6.6, -7.1, -13.0, -14.2, -16.0};
 
-static double tdl_d_delays[] = {//0,
-  0,
-  0.035,
-  0.612,
-  1.363,
-  1.405,
-  1.804,
-  2.596,
-  1.775,
-  4.042,
-  7.937,
-  9.424,
-  9.708,
-  12.525
-};
+static const double tdl_d_delays[] = { // 0,
+    0,
+    0.035,
+    0.612,
+    1.363,
+    1.405,
+    1.804,
+    2.596,
+    1.775,
+    4.042,
+    7.937,
+    9.424,
+    9.708,
+    12.525};
 
-static double tdl_d_amps_dB[] = { //-0.2,
+static const double tdl_d_amps_dB[] = { //-0.2,
     //-13.5,
     -.00147,
     -18.8,
@@ -171,23 +248,10 @@ static double tdl_d_amps_dB[] = { //-0.2,
 
 #define TDL_D_RICEAN_FACTOR .046774
 
-static double tdl_e_delays[] = {0,
-                         0.5133,
-                         0.5440,
-                         0.5630,
-                         0.5440,
-                         0.7112,
-                         1.9092,
-                         1.9293,
-                         1.9589,
-                         2.6426,
-                         3.7136,
-                         5.4524,
-                         12.0034,
-                         20.6519
-                        };
+static const double tdl_e_delays[] =
+    {0, 0.5133, 0.5440, 0.5630, 0.5440, 0.7112, 1.9092, 1.9293, 1.9589, 2.6426, 3.7136, 5.4524, 12.0034, 20.6519};
 
-static double tdl_e_amps_dB[] = { //-0.03,
+static const double tdl_e_amps_dB[] = { //-0.03,
     //-22.03,
     -.00433,
     -15.8,
@@ -204,22 +268,19 @@ static double tdl_e_amps_dB[] = { //-0.03,
     -29.8,
     -29.2};
 
-static double ts_shift_delays[] = {0, 1 / 7.68};
-static double ts_shift_amps[] = {0, 1};
+static const double ts_shift_delays[] = {0, 1 / 7.68};
+static const double ts_shift_amps[] = {0, 1};
 
 #define TDL_E_RICEAN_FACTOR 0.0063096
 
-static double epa_delays[] = { 0,.03,.07,.09,.11,.19,.41};
-static double epa_amps_dB[] = {0.0,-1.0,-2.0,-3.0,-8.0,-17.2,-20.8};
+static const double epa_delays[] = {0, .03, .07, .09, .11, .19, .41};
+static const double epa_amps_dB[] = {0.0, -1.0, -2.0, -3.0, -8.0, -17.2, -20.8};
 
-static double eva_delays[] = { 0,.03,.15,.31,.37,.71,1.09,1.73,2.51};
-static double eva_amps_dB[] = {0.0,-1.5,-1.4,-3.6,-0.6,-9.1,-7.0,-12.0,-16.9};
+static const double eva_delays[] = {0, .03, .15, .31, .37, .71, 1.09, 1.73, 2.51};
+static const double eva_amps_dB[] = {0.0, -1.5, -1.4, -3.6, -0.6, -9.1, -7.0, -12.0, -16.9};
 
-static double etu_delays[] = { 0,.05,.12,.2,.23,.5,1.6,2.3,5.0};
-static double etu_amps_dB[] = {-1.0,-1.0,-1.0,0.0,0.0,0.0,-3.0,-5.0,-7.0};
-
-static double default_amps_lin[] = {0.3868472, 0.3094778, 0.1547389, 0.0773694, 0.0386847, 0.0193424, 0.0096712, 0.0038685};
-static double default_amp_lin[] = {1};
+static const double etu_delays[] = {0, .05, .12, .2, .23, .5, 1.6, 2.3, 5.0};
+static const double etu_amps_dB[] = {-1.0, -1.0, -1.0, 0.0, 0.0, 0.0, -3.0, -5.0, -7.0};
 
 //correlation matrix for a 2x2 channel with full Tx correlation
 static struct complexd R_sqrt_22_corr[16] = {{0.70711, 0},
@@ -359,21 +420,13 @@ static struct complexd R_sqrt_22_EPA_medium[16] = {{0.8375, 0.0},
                                                    {0.5249, 0.0},
                                                    {0.8375, 0.0}};
 
-//Rayleigh1_orth_eff_ch_TM4
-static void init_amps(double **amps_ptr, int nb_taps, const double *coeffs)
-{
-  double *amps = *amps_ptr = calloc(nb_taps, sizeof(*amps));
-  double sum_amps = 0;
-  for (int i = 0; i < nb_taps; i++) {
-    amps[i] = pow(10, 0.1 * coeffs[i]);
-    sum_amps += amps[i];
-  }
-  for (int i = 0; i < nb_taps; i++) {
-    amps[i] /= sum_amps;
-  }
-}
+// Rayleigh1_orth_eff_ch_TM4
 
-static void tdlModel(int tdl_paths, double *tdl_delays, double *tdl_amps_dB, double DS_TDL, channel_desc_t *chan_desc)
+static void tdlModel(const int tdl_paths,
+                     const double *tdl_delays,
+                     const double *tdl_amps_dB,
+                     double DS_TDL,
+                     channel_desc_t *chan_desc)
 {
   int nb_rx = chan_desc->nb_rx;
   int nb_tx = chan_desc->nb_tx;
@@ -387,13 +440,11 @@ static void tdlModel(int tdl_paths, double *tdl_delays, double *tdl_amps_dB, dou
          tdl_paths,
          chan_desc->Td,
          chan_desc->channel_length);
-  chan_desc->free_flags |= CHANMODEL_FREE_AMPS;
-  init_amps(&chan_desc->amps, chan_desc->nb_taps, tdl_amps_dB);
-
+  init_amps(chan_desc, tdl_amps_dB);
+  chan_desc->delays = malloc(chan_desc->nb_taps * sizeof(*chan_desc->delays));
   for (int i = 0; i < chan_desc->nb_taps; i++)
-    tdl_delays[i] *= DS_TDL;
+    chan_desc->delays[i] = tdl_delays[i] * DS_TDL;
 
-  chan_desc->delays = tdl_delays;
   chan_desc->aoa = 0;
   chan_desc->random_aoa = 0;
 
@@ -578,10 +629,7 @@ channel_desc_t *new_channel_desc_scm(uint8_t nb_tx,
   chan_desc->noise_power_dB             = noise_power_dB;
   chan_desc->normalization_ch_factor    = 1.0;
   chan_desc->channelF_len = 275 * 12;
-  LOG_I(OCM,"Channel Model (inside of new_channel_desc_scm)=%d\n\n", channel_model);
-  int tdl_paths=0;
-  double *tdl_amps_dB;
-  double *tdl_delays;
+  LOG_I(OCM, "Channel Model (inside of new_channel_desc_scm)=%d\n\n", channel_model);
 
   /*  Spatial Channel Models (SCM)  channel model from TR 38.901 Section 7.7.2 */
   switch (channel_model) {
@@ -600,9 +648,8 @@ channel_desc_t *new_channel_desc_scm(uint8_t nb_tx,
       chan_desc->Td = 4.625;
       chan_desc->channel_length = 2 * chan_desc->sampling_rate * chan_desc->Td + 1
                                   + 2 / (M_PI * M_PI) * log(4 * M_PI * chan_desc->sampling_rate * chan_desc->Td);
-      chan_desc->free_flags |= CHANMODEL_FREE_AMPS;
-      init_amps(&chan_desc->amps, chan_desc->nb_taps, scm_c_amps_dB);
-      chan_desc->delays = scm_c_delays;
+      init_amps(chan_desc, scm_c_amps_dB);
+      init_delays(chan_desc, scm_c_delays);
       chan_desc->ricean_factor = 1;
       chan_desc->aoa = 0;
       chan_desc->random_aoa = 0;
@@ -634,9 +681,8 @@ channel_desc_t *new_channel_desc_scm(uint8_t nb_tx,
       chan_desc->Td = 4.625;
       chan_desc->channel_length = 2 * chan_desc->sampling_rate * chan_desc->Td + 1
                                   + 2 / (M_PI * M_PI) * log(4 * M_PI * chan_desc->sampling_rate * chan_desc->Td);
-      chan_desc->free_flags |= CHANMODEL_FREE_AMPS;
-      init_amps(&chan_desc->amps, chan_desc->nb_taps, scm_c_amps_dB);
-      chan_desc->delays = scm_c_delays;
+      init_amps(chan_desc, scm_c_amps_dB);
+      init_delays(chan_desc, scm_c_delays);
       chan_desc->ricean_factor = 0.1;
       chan_desc->aoa = 0;
       chan_desc->random_aoa = 0;
@@ -665,50 +711,49 @@ channel_desc_t *new_channel_desc_scm(uint8_t nb_tx,
 
       break;
       /*  tapped delay line (TDL)  channel model from TR 38.901 Section 7.7.2 */
-#define tdl_m(MoDel)                                                          \
-  DevAssert(sizeof(tdl_##MoDel##_amps_dB) == sizeof(tdl_##MoDel##_delays));   \
-  tdl_paths = sizeof(tdl_##MoDel##_amps_dB) / sizeof(*tdl_##MoDel##_amps_dB); \
-  tdl_delays = tdl_##MoDel##_delays;                                          \
-  tdl_amps_dB = tdl_##MoDel##_amps_dB
+#define tdl_m(MoDel)                                                                    \
+  DevAssert(sizeof(tdl_##MoDel##_amps_dB) == sizeof(tdl_##MoDel##_delays));             \
+  const int tdl_paths = sizeof(tdl_##MoDel##_amps_dB) / sizeof(*tdl_##MoDel##_amps_dB); \
+  const double *tdl_delays = tdl_##MoDel##_delays;                                      \
+  const double *tdl_amps_dB = tdl_##MoDel##_amps_dB
 
-    case TDL_A:
+    case TDL_A: {
       chan_desc->ricean_factor = 1;
       tdl_m(a);
       tdlModel(tdl_paths, tdl_delays, tdl_amps_dB, DS_TDL, chan_desc);
-      break;
+    } break;
 
-    case TDL_B:
+    case TDL_B: {
       chan_desc->ricean_factor = 1;
       tdl_m(b);
       tdlModel(tdl_paths, tdl_delays, tdl_amps_dB, DS_TDL, chan_desc);
-      break;
+    } break;
 
-    case TDL_C:
+    case TDL_C: {
       chan_desc->ricean_factor = 1;
       tdl_m(c);
       tdlModel(tdl_paths, tdl_delays, tdl_amps_dB, DS_TDL, chan_desc);
-      break;
+    } break;
 
-    case TDL_D:
+    case TDL_D: {
       chan_desc->ricean_factor = TDL_D_RICEAN_FACTOR;
       tdl_m(d);
       tdlModel(tdl_paths, tdl_delays, tdl_amps_dB, DS_TDL, chan_desc);
-      break;
+    } break;
 
-    case TDL_E:
+    case TDL_E: {
       chan_desc->ricean_factor = TDL_E_RICEAN_FACTOR;
       tdl_m(e);
       tdlModel(tdl_paths, tdl_delays, tdl_amps_dB, DS_TDL, chan_desc);
-      break;
+    } break;
 
     case EPA:
       chan_desc->nb_taps = 7;
       chan_desc->Td = .410;
       chan_desc->channel_length = 2 * chan_desc->sampling_rate * chan_desc->Td + 1
                                   + 2 / (M_PI * M_PI) * log(4 * M_PI * chan_desc->sampling_rate * chan_desc->Td);
-      chan_desc->free_flags |= CHANMODEL_FREE_AMPS;
-      init_amps(&chan_desc->amps, chan_desc->nb_taps, epa_amps_dB);
-      chan_desc->delays = epa_delays;
+      init_amps(chan_desc, epa_amps_dB);
+      init_delays(chan_desc, epa_delays);
       chan_desc->ricean_factor = 1;
       chan_desc->aoa = 0;
       chan_desc->random_aoa = 0;
@@ -733,9 +778,8 @@ channel_desc_t *new_channel_desc_scm(uint8_t nb_tx,
       chan_desc->Td = .410;
       chan_desc->channel_length = 2 * chan_desc->sampling_rate * chan_desc->Td + 1
                                   + 2 / (M_PI * M_PI) * log(4 * M_PI * chan_desc->sampling_rate * chan_desc->Td);
-      chan_desc->free_flags |= CHANMODEL_FREE_AMPS;
-      init_amps(&chan_desc->amps, chan_desc->nb_taps, epa_amps_dB);
-      chan_desc->delays = epa_delays;
+      init_amps(chan_desc, epa_amps_dB);
+      init_delays(chan_desc, epa_delays);
       chan_desc->ricean_factor = 1;
       chan_desc->aoa = 0;
       chan_desc->random_aoa = 0;
@@ -753,9 +797,8 @@ channel_desc_t *new_channel_desc_scm(uint8_t nb_tx,
       chan_desc->Td = .410;
       chan_desc->channel_length = 2 * chan_desc->sampling_rate * chan_desc->Td + 1
                                   + 2 / (M_PI * M_PI) * log(4 * M_PI * chan_desc->sampling_rate * chan_desc->Td);
-      chan_desc->free_flags |= CHANMODEL_FREE_AMPS;
-      init_amps(&chan_desc->amps, chan_desc->nb_taps, epa_amps_dB);
-      chan_desc->delays = epa_delays;
+      init_amps(chan_desc, epa_amps_dB);
+      init_delays(chan_desc, epa_delays);
       chan_desc->ricean_factor = 1;
       chan_desc->aoa = 0;
       chan_desc->random_aoa = 0;
@@ -774,9 +817,8 @@ channel_desc_t *new_channel_desc_scm(uint8_t nb_tx,
       chan_desc->Td = .410;
       chan_desc->channel_length = 2 * chan_desc->sampling_rate * chan_desc->Td + 1
                                   + 2 / (M_PI * M_PI) * log(4 * M_PI * chan_desc->sampling_rate * chan_desc->Td);
-      chan_desc->free_flags |= CHANMODEL_FREE_AMPS;
-      init_amps(&chan_desc->amps, chan_desc->nb_taps, epa_amps_dB);
-      chan_desc->delays = epa_delays;
+      init_amps(chan_desc, epa_amps_dB);
+      init_delays(chan_desc, epa_delays);
       chan_desc->ricean_factor = 1;
       chan_desc->aoa = 0;
       chan_desc->random_aoa = 0;
@@ -795,9 +837,8 @@ channel_desc_t *new_channel_desc_scm(uint8_t nb_tx,
       chan_desc->Td = 2.51;
       chan_desc->channel_length = 2 * chan_desc->sampling_rate * chan_desc->Td + 1
                                   + 2 / (M_PI * M_PI) * log(4 * M_PI * chan_desc->sampling_rate * chan_desc->Td);
-      chan_desc->free_flags |= CHANMODEL_FREE_AMPS;
-      init_amps(&chan_desc->amps, chan_desc->nb_taps, eva_amps_dB);
-      chan_desc->delays = eva_delays;
+      init_amps(chan_desc, eva_amps_dB);
+      init_delays(chan_desc, eva_delays);
       chan_desc->ricean_factor = 1;
       chan_desc->aoa = 0;
       chan_desc->random_aoa = 0;
@@ -822,9 +863,8 @@ channel_desc_t *new_channel_desc_scm(uint8_t nb_tx,
       chan_desc->Td = 5.0;
       chan_desc->channel_length = 2 * chan_desc->sampling_rate * chan_desc->Td + 1
                                   + 2 / (M_PI * M_PI) * log(4 * M_PI * chan_desc->sampling_rate * chan_desc->Td);
-      chan_desc->free_flags |= CHANMODEL_FREE_AMPS;
-      init_amps(&chan_desc->amps, chan_desc->nb_taps, etu_amps_dB);
-      chan_desc->delays = etu_delays;
+      init_amps(chan_desc, etu_amps_dB);
+      init_delays(chan_desc, etu_delays);
       chan_desc->ricean_factor = 1;
       chan_desc->aoa = 0;
       chan_desc->random_aoa = 0;
@@ -849,9 +889,8 @@ channel_desc_t *new_channel_desc_scm(uint8_t nb_tx,
       chan_desc->Td = 28.58;
       chan_desc->channel_length = 2 * chan_desc->sampling_rate * chan_desc->Td + 1
                                   + 2 / (M_PI * M_PI) * log(4 * M_PI * chan_desc->sampling_rate * chan_desc->Td);
-      chan_desc->free_flags |= CHANMODEL_FREE_AMPS;
-      init_amps(&chan_desc->amps, chan_desc->nb_taps, mbsfn_amps_dB);
-      chan_desc->delays = mbsfn_delays;
+      init_amps(chan_desc, mbsfn_amps_dB);
+      init_delays(chan_desc, mbsfn_delays);
       chan_desc->ricean_factor = 1;
       chan_desc->aoa = 0;
       chan_desc->random_aoa = 0;
@@ -873,7 +912,6 @@ channel_desc_t *new_channel_desc_scm(uint8_t nb_tx,
       chan_desc->aoa = .03;
       chan_desc->max_Doppler = 0;
       chan_desc->nb_taps = 8;
-      chan_desc->amps = default_amps_lin;
       fill_channel_desc(chan_desc, NULL, 0);
       break;
 
@@ -884,7 +922,6 @@ channel_desc_t *new_channel_desc_scm(uint8_t nb_tx,
       chan_desc->aoa = 0.7854;
       chan_desc->max_Doppler = 0;
       chan_desc->nb_taps = 8;
-      chan_desc->amps = default_amps_lin;
       fill_channel_desc(chan_desc, NULL, 1);
       break;
 
@@ -895,7 +932,6 @@ channel_desc_t *new_channel_desc_scm(uint8_t nb_tx,
       chan_desc->aoa = .03;
       chan_desc->max_Doppler = 0;
       chan_desc->nb_taps = 1;
-      chan_desc->amps = default_amp_lin;
       fill_channel_desc(chan_desc, NULL, 0);
       break;
 
@@ -906,7 +942,6 @@ channel_desc_t *new_channel_desc_scm(uint8_t nb_tx,
       chan_desc->aoa = .03;
       chan_desc->max_Doppler = 800;
       chan_desc->nb_taps = 1;
-      chan_desc->amps = default_amp_lin;
       fill_channel_desc(chan_desc, NULL, 0);
       break;
 
@@ -924,7 +959,6 @@ channel_desc_t *new_channel_desc_scm(uint8_t nb_tx,
       } else
         R_sqrt_ptr2 = NULL;
       chan_desc->nb_taps = 1;
-      chan_desc->amps = default_amp_lin;
       fill_channel_desc(chan_desc, R_sqrt_ptr2, 0);
       break;
 
@@ -942,7 +976,6 @@ channel_desc_t *new_channel_desc_scm(uint8_t nb_tx,
       } else
         R_sqrt_ptr2 = NULL;
       chan_desc->nb_taps = 1;
-      chan_desc->amps = default_amp_lin;
       fill_channel_desc(chan_desc, R_sqrt_ptr2, 0);
       break;
 
@@ -953,7 +986,6 @@ channel_desc_t *new_channel_desc_scm(uint8_t nb_tx,
       chan_desc->aoa = 0.7854;
       chan_desc->max_Doppler = 0;
       chan_desc->nb_taps = 1;
-      chan_desc->amps = default_amp_lin;
       fill_channel_desc(chan_desc, NULL, 0);
       break;
 
@@ -964,20 +996,19 @@ channel_desc_t *new_channel_desc_scm(uint8_t nb_tx,
       chan_desc->aoa = 0.0;
       chan_desc->max_Doppler = 0;
       chan_desc->nb_taps = 1;
-      chan_desc->amps = default_amp_lin;
       fill_channel_desc(chan_desc, NULL, 0);
       printf("AWGN: ricean_factor %f\n", chan_desc->ricean_factor);
       break;
 
     case TS_SHIFT:
-      chan_desc->delays = ts_shift_delays;
+      chan_desc->nb_taps = 2;
       chan_desc->Td = chan_desc->delays[1];
       chan_desc->channel_length = 10;
       chan_desc->ricean_factor = 0.0;
       chan_desc->aoa = 0.0;
       chan_desc->max_Doppler = 0;
-      chan_desc->nb_taps = 2;
-      chan_desc->amps = ts_shift_amps;
+      init_amps_lin(chan_desc, ts_shift_amps);
+      init_delays(chan_desc, ts_shift_delays);
       fill_channel_desc(chan_desc, NULL, 0);
       printf("TS_SHIFT: ricean_factor %f\n", chan_desc->ricean_factor);
       break;
@@ -996,7 +1027,6 @@ channel_desc_t *new_channel_desc_scm(uint8_t nb_tx,
       } else
         R_sqrt_ptr2 = NULL;
       chan_desc->nb_taps = 1;
-      chan_desc->amps = default_amp_lin;
       fill_channel_desc(chan_desc, R_sqrt_ptr2, 1);
       break;
 
@@ -1014,7 +1044,6 @@ channel_desc_t *new_channel_desc_scm(uint8_t nb_tx,
       } else
         R_sqrt_ptr2 = NULL;
       chan_desc->nb_taps = 1;
-      chan_desc->amps = default_amp_lin;
       fill_channel_desc(chan_desc, R_sqrt_ptr2, 1);
       break;
 
@@ -1025,12 +1054,11 @@ channel_desc_t *new_channel_desc_scm(uint8_t nb_tx,
       chan_desc->aoa = 0.03;
       chan_desc->max_Doppler = 0;
 
-      if (nb_tx == 2 && nb_rx == 2) {
+      if (nb_tx == 2 && nb_rx == 2)
         R_sqrt_ptr2 = R_sqrt_22_orthogonal;
-      } else
+      else
         R_sqrt_ptr2 = NULL;
       chan_desc->nb_taps = 1;
-      chan_desc->amps = default_amp_lin;
       fill_channel_desc(chan_desc, R_sqrt_ptr2, 0);
       break;
 
@@ -1046,8 +1074,6 @@ channel_desc_t *new_channel_desc_scm(uint8_t nb_tx,
       else
         R_sqrt_ptr2 = NULL;
       chan_desc->nb_taps = 1;
-      chan_desc->amps = default_amp_lin;
-
       fill_channel_desc(chan_desc, R_sqrt_ptr2, 1);
       break;
 
@@ -1063,8 +1089,6 @@ channel_desc_t *new_channel_desc_scm(uint8_t nb_tx,
       else
         R_sqrt_ptr2 = NULL;
       chan_desc->nb_taps = 1;
-      chan_desc->amps = default_amp_lin;
-
       fill_channel_desc(chan_desc, R_sqrt_ptr2, 0);
       break;
 
@@ -1080,8 +1104,6 @@ channel_desc_t *new_channel_desc_scm(uint8_t nb_tx,
       chan_desc->aoa = .03;
       chan_desc->max_Doppler = 0;
       chan_desc->nb_taps = 8;
-      chan_desc->amps = default_amps_lin;
-
       fill_channel_desc(chan_desc, R_sqrt_ptr2, 0);
       break;
 
@@ -1097,8 +1119,6 @@ channel_desc_t *new_channel_desc_scm(uint8_t nb_tx,
       else
         R_sqrt_ptr2 = NULL;
       chan_desc->nb_taps = 8;
-      chan_desc->amps = default_amps_lin;
-
       fill_channel_desc(chan_desc, R_sqrt_ptr2, 0);
       break;
 
@@ -1113,8 +1133,6 @@ channel_desc_t *new_channel_desc_scm(uint8_t nb_tx,
       chan_desc->enable_dynamic_delay = true;
       chan_desc->enable_dynamic_Doppler = true;
       chan_desc->nb_taps = 1;
-      chan_desc->amps = default_amp_lin;
-
       fill_channel_desc(chan_desc, NULL, 0);
       printf("%s: satellite orbit height %f km\n", map_int_to_str(channelmod_names, channel_model), chan_desc->sat_height / 1000);
       break;
@@ -1155,12 +1173,8 @@ void free_channel_desc_scm(channel_desc_t *ch) {
       defined_channels[ch->chan_idx] = NULL;
   }
 
-  // for all cases, let's free the underlying heap allocations
-  if(ch->free_flags&CHANMODEL_FREE_AMPS)
-    free(ch->amps);
-
-  if(ch->free_flags&CHANMODEL_FREE_DELAY)
-    free(ch->delays);
+  free(ch->amps);
+  free(ch->delays);
 
   if(ch->free_flags&CHANMODEL_FREE_RSQRT_6)
     for (int i = 0; i<6; i++)
