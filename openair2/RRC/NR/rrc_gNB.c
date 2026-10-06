@@ -2624,7 +2624,7 @@ void store_du_f1u_tunnel(const f1ap_drb_setup_t *drbs, int n, gNB_RRC_UE_t *ue)
 
 static DRB_nGRAN_to_mod_t get_e1_drb_mod_pdcp_status(const drb_t *drb,
                                                      bearer_context_pdcp_config_t *pdcp_config,
-                                                     const ngap_drb_status_t *drb_status)
+                                                     const rrc_drb_pdcp_status_t *drb_status)
 {
   DevAssert(drb_status);
   DevAssert(pdcp_config);
@@ -2637,9 +2637,9 @@ static DRB_nGRAN_to_mod_t get_e1_drb_mod_pdcp_status(const drb_t *drb,
   *drb_to_mod.pdcp_config = *pdcp_config;
   drb_to_mod.pdcp_status = calloc_or_fail(1, sizeof(*drb_to_mod.pdcp_status));
   drb_to_mod.pdcp_status->dl_count.hfn = drb_status->dl_count.hfn;
-  drb_to_mod.pdcp_status->dl_count.sn = drb_status->dl_count.pdcp_sn;
+  drb_to_mod.pdcp_status->dl_count.sn = drb_status->dl_count.sn;
   drb_to_mod.pdcp_status->ul_count.hfn = drb_status->ul_count.hfn;
-  drb_to_mod.pdcp_status->ul_count.sn = drb_status->ul_count.pdcp_sn;
+  drb_to_mod.pdcp_status->ul_count.sn = drb_status->ul_count.sn;
   return drb_to_mod;
 }
 
@@ -2715,8 +2715,8 @@ static void e1_request_pdcp_status(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE)
   free_e1ap_context_mod_request(&req);
 }
 
-/** @brief Notify CU-UP with PDCP status during handover */
-void e1_notify_pdcp_status(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE, const ngap_drb_status_t *drb_status)
+/** @brief Notify CU-UP with PDCP status during handover (N2 or Xn) */
+void e1_notify_pdcp_status(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE, const rrc_drb_pdcp_status_t *drb_status)
 {
   if (!is_cuup_associated(rrc) || !drb_status)
     return;
@@ -3662,9 +3662,9 @@ void rrc_gNB_process_e1_bearer_context_modif_resp(const e1ap_bearer_modif_resp_t
     }
   }
 
-  // Trigger UL RAN Status Transfer if PDCP status is available
+  // Send the status transfer (N2: UL RAN Status Transfer, Xn: SN Status Transfer) if PDCP status is available
   if (n_drb_mod) {
-    LOG_I(NR_RRC, "UE %d: received PDU Status Info - send UL RAN Status Transfer\n", resp->gNB_cu_cp_ue_id);
+    LOG_I(NR_RRC, "UE %d: received PDCP Status Info - send status transfer\n", resp->gNB_cu_cp_ue_id);
     if (ue->ho_context && ue->ho_context->source)
       ue->ho_context->source->ho_status_transfer(rrc, ue, n_drb_mod, drb_ids, pdcp_status);
   }
@@ -4168,6 +4168,10 @@ void *rrc_gnb_task(void *args_p)
 
       case XNAP_HANDOVER_PREP_FAILURE:
         rrc_gNB_process_XNAP_HANDOVER_PREP_FAILURE(RC.nrrrc[instance], &XNAP_HANDOVER_PREP_FAILURE(msg_p));
+        break;
+
+      case XNAP_SN_STATUS_TRANSFER:
+        rrc_gNB_process_XNAP_SN_STATUS_TRANSFER(RC.nrrrc[instance], instance, &XNAP_SN_STATUS_TRANSFER(msg_p));
         break;
 
       default:

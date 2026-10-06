@@ -17,3 +17,6 @@ MESSAGE_DEF(XNAP_HANDOVER_REQ_ACK,   MESSAGE_PRIORITY_MED, xnap_handover_req_ack
 
 /* Handover Preparation Failure: RRC -> XNAP (target sends) / XNAP -> RRC (source receives) */
 MESSAGE_DEF(XNAP_HANDOVER_PREP_FAILURE, MESSAGE_PRIORITY_MED, xnap_handover_preparation_failure_t, xnap_handover_prep_failure)
+
+/* SN Status Transfer: RRC -> XNAP (source sends) / XNAP -> RRC (target receives) */
+MESSAGE_DEF(XNAP_SN_STATUS_TRANSFER,   MESSAGE_PRIORITY_MED, xnap_sn_status_transfer_t,   xnap_sn_status_transfer)

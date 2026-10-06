@@ -427,6 +427,50 @@ static int xnap_gNB_handle_handover_prep_failure(instance_t instance,
   return 0;
 }
 
+/* Target gNB: receives SN Status Transfer from source — decode, look up rrc_ue_id, forward to RRC */
+static int xnap_gNB_handle_sn_status_transfer(instance_t instance,
+                                               sctp_assoc_t assoc_id,
+                                               uint32_t stream,
+                                               xnap_gnb_inst_t *inst,
+                                               xnap_peer_t *peer,
+                                               XNAP_XnAP_PDU_t *pdu)
+{
+  UNUSED(stream);
+  UNUSED(peer);
+  UNUSED(inst);
+  LOG_I(XNAP, "[gNB %ld] Received SN Status Transfer from assoc_id %d\n", instance, assoc_id);
+
+  xnap_sn_status_transfer_t msg = {0};
+  if (!decode_xnap_sn_status_transfer(&msg, pdu)) {
+    LOG_E(XNAP, "[gNB %ld] Failed to decode SN Status Transfer from assoc_id %d\n",
+          instance, assoc_id);
+    return -1;
+  }
+
+  xn_ue_data_t ue_data;
+  if (!xn_get_ue_by_xnap_id(XN_ROLE_TARGET, msg.t_ng_node_ue_xnap_id, &ue_data) || ue_data.rrc_ue_id == 0) {
+    LOG_E(XNAP, "[gNB %ld] SN Status Transfer: unknown t_xnap_ue_id %u\n", instance, msg.t_ng_node_ue_xnap_id);
+    return -1;
+  }
+  if (!xn_ue_from_peer(instance, "SN Status Transfer", &ue_data, assoc_id))
+    return -1;
+  if (msg.s_ng_node_ue_xnap_id != ue_data.s_ng_node_ue_xnap_id) {
+    LOG_W(XNAP,
+          "[gNB %ld] SN Status Transfer: t_xnap_ue_id %u with s_xnap_ue_id %u, expected %u: dropping\n",
+          instance,
+          msg.t_ng_node_ue_xnap_id,
+          msg.s_ng_node_ue_xnap_id,
+          ue_data.s_ng_node_ue_xnap_id);
+    return -1;
+  }
+  msg.rrc_ue_id = ue_data.rrc_ue_id;
+
+  MessageDef *itti_msg = itti_alloc_new_message(TASK_XNAP, instance, XNAP_SN_STATUS_TRANSFER);
+  XNAP_SN_STATUS_TRANSFER(itti_msg) = msg;
+  itti_send_msg_to_task(TASK_RRC_GNB, instance, itti_msg);
+  return 0;
+}
+
 /* Callback table
  * Indexed by [procedureCode][direction-1]
  * where direction is:  0 = initiatingMessage, 1 = successfulOutcome, 2 = unsuccessfulOutcome
@@ -434,7 +478,7 @@ static int xnap_gNB_handle_handover_prep_failure(instance_t instance,
  */
 static const xnap_message_decoded_callback xnap_messages_callback[][3] = {
   {xnap_gNB_handle_handover_request, xnap_gNB_handle_handover_request_acknowledge, xnap_gNB_handle_handover_prep_failure}, /*  0 handoverPreparation */
-  {0, 0, 0}, /*  1 sNStatusTransfer */
+  {xnap_gNB_handle_sn_status_transfer, 0, 0}, /*  1 sNStatusTransfer */
   {0, 0, 0}, /*  2 handoverCancel */
   {0, 0, 0}, /*  3 retrieveUEContext */
   {0, 0, 0}, /*  4 rANPaging */

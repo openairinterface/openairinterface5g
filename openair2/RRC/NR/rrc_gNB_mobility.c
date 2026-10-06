@@ -895,6 +895,7 @@ void nr_rrc_trigger_xn_ho(gNB_RRC_INST *rrc, gNB_RRC_UE_t *ue, const nr_neighbou
   ue->ho_context = alloc_ho_ctx(HO_CTX_SOURCE);
   ue->ho_context->source->cell = source_cell;
   ue->ho_context->source->target_nci = neighbour_config->nrcell_id;
+  ue->ho_context->source->ho_status_transfer = rrc_gNB_send_XNAP_SN_STATUS_TRANSFER;
 
   if (!rrc_gNB_send_XNAP_HANDOVER_REQUEST(rrc, ue, neighbour_config, hoPrepInfo)) {
     LOG_E(NR_RRC, "UE %d: Xn HO failed — could not send HandoverRequest\n", ue->rrc_ue_id);

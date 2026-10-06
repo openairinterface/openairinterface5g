@@ -27,4 +27,12 @@ int rrc_gNB_process_XNAP_HANDOVER_PREP_FAILURE(gNB_RRC_INST *rrc, const xnap_han
 
 void rrc_gNB_xn_ho_target_abort(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE, const char *why);
 
+int rrc_gNB_send_XNAP_SN_STATUS_TRANSFER(gNB_RRC_INST *rrc,
+                                          gNB_RRC_UE_t *UE,
+                                          const int n_to_mod,
+                                          const int *drb_ids,
+                                          const e1_pdcp_status_info_t *pdcp_status);
+
+int rrc_gNB_process_XNAP_SN_STATUS_TRANSFER(gNB_RRC_INST *rrc, instance_t instance, const xnap_sn_status_transfer_t *msg);
+
 #endif /* RRC_GNB_XNAP_H_ */

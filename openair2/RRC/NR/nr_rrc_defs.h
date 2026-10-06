@@ -98,6 +98,19 @@ typedef struct pdu_session_param_s {
   ngap_cause_t cause;
 } rrc_pdu_session_param_t;
 
+/* Protocol-neutral PDCP COUNT value — used by both N2 and Xn SN Status Transfer */
+typedef struct {
+  uint32_t sn;
+  uint32_t hfn;
+} rrc_pdcp_count_t;
+
+/* Protocol-neutral per-DRB PDCP status — used by both N2 and Xn SN Status Transfer */
+typedef struct {
+  uint8_t drb_id;
+  rrc_pdcp_count_t ul_count;
+  rrc_pdcp_count_t dl_count;
+} rrc_drb_pdcp_status_t;
+
 typedef struct drb_s {
   int status;
   int drb_id;

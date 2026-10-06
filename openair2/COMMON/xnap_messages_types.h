@@ -21,6 +21,7 @@
 #define XNAP_HANDOVER_REQ(mSGpTR)         (mSGpTR)->ittiMsg.xnap_handover_req
 #define XNAP_HANDOVER_REQ_ACK(mSGpTR)     (mSGpTR)->ittiMsg.xnap_handover_req_ack
 #define XNAP_HANDOVER_PREP_FAILURE(mSGpTR) (mSGpTR)->ittiMsg.xnap_handover_prep_failure
+#define XNAP_SN_STATUS_TRANSFER(mSGpTR)   (mSGpTR)->ittiMsg.xnap_sn_status_transfer
 
 typedef struct {
   // PLMN Identity (M)
@@ -431,6 +432,9 @@ typedef struct {
   uint32_t t_ng_node_ue_xnap_id;
   // DRBs Subject To Status Transfer List (M)
   xnap_ran_status_container_t ran_status;
+  /* Routing fields — not part of the XnAP PDU */
+  // RRC UE identity (source: UE to send for; target: looked up from t_xn_ue_id)
+  uint32_t rrc_ue_id;
 } xnap_sn_status_transfer_t;
 
 /* 3GPP TS 38.423 9.1.1.5 – UE CONTEXT RELEASE */

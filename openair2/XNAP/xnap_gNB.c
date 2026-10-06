@@ -210,6 +210,55 @@ static void xnap_gNB_generate_handover_request_acknowledge(instance_t instance, 
   xnap_gNB_itti_send_sctp_data(instance, peer->assoc_id, buffer, length, XNAP_NON_UE_STREAM_ID);
 }
 
+/* Source gNB: RRC sends SN Status Transfer — encode and send to target */
+static void xnap_gNB_generate_sn_status_transfer(instance_t instance, xnap_sn_status_transfer_t *msg)
+{
+  xnap_gnb_inst_t *inst = xnap_get_inst(instance);
+  AssertFatal(inst != NULL, "Xn instance %ld not found\n", instance);
+
+  xn_ue_data_t ue_data;
+  if (!xn_get_ue(XN_ROLE_SOURCE, msg->rrc_ue_id, &ue_data)) {
+    LOG_E(XNAP, "[gNB %ld] SN Status Transfer: no Xn handover for rrc_ue_id %u\n", instance, msg->rrc_ue_id);
+    return;
+  }
+  msg->s_ng_node_ue_xnap_id = ue_data.s_ng_node_ue_xnap_id;
+  msg->t_ng_node_ue_xnap_id = ue_data.t_ng_node_ue_xnap_id;
+  sctp_assoc_t assoc_id = ue_data.assoc_id;
+
+  xnap_peer_t *peer = xnap_get_peer_by_assoc(inst, assoc_id);
+  if (peer == NULL) {
+    LOG_E(XNAP, "[gNB %ld] SN Status Transfer: no peer for assoc_id %d\n", instance, assoc_id);
+    return;
+  }
+  if (peer->state != XNAP_PEER_STATE_CONNECTED) {
+    LOG_E(XNAP, "[gNB %ld] SN Status Transfer: peer assoc_id %d not connected\n",
+          instance, assoc_id);
+    return;
+  }
+
+  XNAP_XnAP_PDU_t *pdu = encode_xnap_sn_status_transfer(msg);
+  AssertFatal(pdu != NULL, "[gNB %ld] encode_xnap_sn_status_transfer() failed\n", instance);
+
+  uint8_t *buffer = NULL;
+  uint32_t length = 0;
+  int rc = xnap_gNB_encode_pdu(pdu, &buffer, &length);
+  ASN_STRUCT_FREE(asn_DEF_XNAP_XnAP_PDU, pdu);
+  if (rc < 0) {
+    LOG_E(XNAP, "[gNB %ld] Failed to encode SN Status Transfer (rrc_ue_id %u)\n", instance, msg->rrc_ue_id);
+    return;
+  }
+
+  LOG_I(XNAP,
+        "[gNB %ld] Sending SN Status Transfer to peer assoc_id %d s_xnap_ue_id %u t_xnap_ue_id %u (%u bytes)\n",
+        instance,
+        assoc_id,
+        msg->s_ng_node_ue_xnap_id,
+        msg->t_ng_node_ue_xnap_id,
+        length);
+
+  xnap_gNB_itti_send_sctp_data(instance, peer->assoc_id, buffer, length, XNAP_NON_UE_STREAM_ID);
+}
+
 /* Create the Xn instance, bind a local SCTP listener (for incoming Xn
  * connections), and dial every configured candidate gNB */
 static void xnap_gNB_handle_register_gnb(instance_t instance, xnap_register_gnb_req_t *req)
@@ -400,6 +449,10 @@ void *xnap_task(void *args)
 
       case XNAP_HANDOVER_PREP_FAILURE:
         xnap_gNB_generate_handover_prep_failure(instance, &XNAP_HANDOVER_PREP_FAILURE(msg));
+        break;
+
+      case XNAP_SN_STATUS_TRANSFER:
+        xnap_gNB_generate_sn_status_transfer(instance, &XNAP_SN_STATUS_TRANSFER(msg));
         break;
 
       default:

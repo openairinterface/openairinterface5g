@@ -533,3 +533,94 @@ void rrc_gNB_xn_ho_target_abort(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE, const char 
   nr_rrc_finalize_ho(UE);
   rrc_remove_ue(rrc, ue_ctx);
 }
+
+/** @brief Send SN Status Transfer (TS 38.423 §9.1.1.4) from source to target via Xn.
+ *  Matches ho_status_transfer_t — wired via ue->ho_context->source->ho_status_transfer. */
+int rrc_gNB_send_XNAP_SN_STATUS_TRANSFER(gNB_RRC_INST *rrc,
+                                          gNB_RRC_UE_t *UE,
+                                          const int n_to_mod,
+                                          const int *drb_ids,
+                                          const e1_pdcp_status_info_t *pdcp_status)
+{
+  AssertFatal(UE != NULL, "UE context is NULL\n");
+  AssertFatal(UE->ho_context && UE->ho_context->source, "Source HO context is NULL\n");
+  DevAssert(n_to_mod <= MAX_DRBS_PER_UE);
+  DevAssert(drb_ids);
+
+  LOG_I(NR_RRC, "Xn HO source: UE %d: sending SN Status Transfer\n", UE->rrc_ue_id);
+
+  xnap_sn_status_transfer_t msg = {
+    .rrc_ue_id = UE->rrc_ue_id,
+  };
+
+  for (int i = 0; i < n_to_mod; ++i) {
+    int drb_id = drb_ids[i];
+    drb_t *drb = get_drb(&UE->drbs, drb_id);
+    if (!drb) {
+      LOG_E(NR_RRC, "UE %d: SN Status Transfer: DRB %d not found\n", UE->rrc_ue_id, drb_id);
+      continue;
+    }
+    bool sn_length_18 = drb->pdcp_config.drb.sn_size == 18;
+
+    DevAssert(msg.ran_status.nb_drb < MAX_DRBS_PER_UE);
+    xnap_drb_status_t *item = &msg.ran_status.drb_status_list[msg.ran_status.nb_drb++];
+    item->drb_id = drb_id;
+
+    item->ul_count.pdcp_sn = pdcp_status[i].ul_count.sn;
+    item->ul_count.hfn = pdcp_status[i].ul_count.hfn;
+    item->ul_count.sn_len = sn_length_18 ? XNAP_SN_LENGTH_18 : XNAP_SN_LENGTH_12;
+
+    item->dl_count.pdcp_sn = pdcp_status[i].dl_count.sn;
+    item->dl_count.hfn = pdcp_status[i].dl_count.hfn;
+    item->dl_count.sn_len = sn_length_18 ? XNAP_SN_LENGTH_18 : XNAP_SN_LENGTH_12;
+  }
+
+  /* the DRBs Subject To Status Transfer List is mandatory, with at least one DRB */
+  if (msg.ran_status.nb_drb == 0) {
+    LOG_E(NR_RRC, "UE %d: no DRB for the SN Status Transfer, not sent\n", UE->rrc_ue_id);
+    return -1;
+  }
+
+  MessageDef *msg_p = itti_alloc_new_message(TASK_RRC_GNB, 0, XNAP_SN_STATUS_TRANSFER);
+  XNAP_SN_STATUS_TRANSFER(msg_p) = msg;
+  itti_send_msg_to_task(TASK_XNAP, rrc->module_id, msg_p);
+  return 0;
+}
+
+/** @brief Process incoming SN Status Transfer on target gNB (TS 38.423 §9.1.1.4).
+ *  Forwards each DRB's PDCP counts to the target CU-UP via E1AP Bearer Modification. */
+int rrc_gNB_process_XNAP_SN_STATUS_TRANSFER(gNB_RRC_INST *rrc, instance_t instance, const xnap_sn_status_transfer_t *msg)
+{
+  rrc_gNB_ue_context_t *ue_context_p = rrc_gNB_get_ue_context(rrc, msg->rrc_ue_id);
+  if (!ue_context_p) {
+    LOG_E(NR_RRC, "[gNB %ld] SN Status Transfer: no UE context for rrc_ue_id %u\n", instance, msg->rrc_ue_id);
+    return -1;
+  }
+
+  gNB_RRC_UE_t *UE = &ue_context_p->ue_context;
+  LOG_I(NR_RRC,
+        "Xn HO target: UE %u: SN Status Transfer received (s_xnap_ue_id %u t_xnap_ue_id %u), %u DRB(s)\n",
+        UE->rrc_ue_id,
+        msg->s_ng_node_ue_xnap_id,
+        msg->t_ng_node_ue_xnap_id,
+        msg->ran_status.nb_drb);
+
+  for (int i = 0; i < msg->ran_status.nb_drb; ++i) {
+    const xnap_drb_status_t *s = &msg->ran_status.drb_status_list[i];
+    LOG_I(NR_RRC,
+          "  DRB %d: UL SN=%u HFN=%u (%s)  DL SN=%u HFN=%u (%s)\n",
+          s->drb_id,
+          s->ul_count.pdcp_sn, s->ul_count.hfn,
+          s->ul_count.sn_len == XNAP_SN_LENGTH_18 ? "18-bit" : "12-bit",
+          s->dl_count.pdcp_sn, s->dl_count.hfn,
+          s->dl_count.sn_len == XNAP_SN_LENGTH_18 ? "18-bit" : "12-bit");
+    rrc_drb_pdcp_status_t status = {
+      .drb_id   = s->drb_id,
+      .ul_count = {.sn = s->ul_count.pdcp_sn, .hfn = s->ul_count.hfn},
+      .dl_count = {.sn = s->dl_count.pdcp_sn, .hfn = s->dl_count.hfn},
+    };
+    e1_notify_pdcp_status(rrc, UE, &status);
+  }
+
+  return 0;
+}
