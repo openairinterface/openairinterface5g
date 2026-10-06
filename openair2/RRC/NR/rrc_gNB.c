@@ -2997,6 +2997,11 @@ static void rrc_CU_process_ue_context_release_complete(MessageDef *msg_p)
      * operation (i.e, handover) */
     rrc_gNB_send_NGAP_UE_CONTEXT_RELEASE_COMPLETE(0, UE->rrc_ue_id, &UE->pduSessions);
     rrc_remove_ue(RC.nrrrc[0], ue_context_p);
+  } else if (UE->xn_released && cu_get_f1_ue_data(UE->rrc_ue_id).du_assoc_id == msg_p->ittiMsgHeader.originInstance) {
+    /* Xn handover source: the UE is served by the target, release the NGAP context locally,
+     * without AMF signalling. Only on the completion from the DU the release was sent to */
+    rrc_gNB_send_NGAP_UE_CONTEXT_LOCAL_RELEASE(UE->rrc_ue_id);
+    rrc_remove_ue(RC.nrrrc[0], ue_context_p);
   }
 }
 
@@ -4178,6 +4183,10 @@ void *rrc_gnb_task(void *args_p)
 
       case XNAP_SN_STATUS_TRANSFER:
         rrc_gNB_process_XNAP_SN_STATUS_TRANSFER(RC.nrrrc[instance], instance, &XNAP_SN_STATUS_TRANSFER(msg_p));
+        break;
+
+      case XNAP_UE_CONTEXT_RELEASE:
+        rrc_gNB_process_XNAP_UE_CONTEXT_RELEASE(RC.nrrrc[instance], instance, &XNAP_UE_CONTEXT_RELEASE(msg_p));
         break;
 
       case XNAP_HANDOVER_CANCEL:

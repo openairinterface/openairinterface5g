@@ -666,6 +666,10 @@ void *ngap_gNB_process_itti_msg(void *notUsed)
         ngap_ue_context_release_complete(instance, &NGAP_UE_CONTEXT_RELEASE_COMPLETE(received_msg));
         break;
 
+      case NGAP_UE_CONTEXT_LOCAL_RELEASE:
+        ngap_ue_context_local_release(&NGAP_UE_CONTEXT_LOCAL_RELEASE(received_msg));
+        break;
+
       case NGAP_UE_CONTEXT_RELEASE_REQ:
         ngap_ue_context_release_req(instance, &NGAP_UE_CONTEXT_RELEASE_REQ(received_msg));
         break;

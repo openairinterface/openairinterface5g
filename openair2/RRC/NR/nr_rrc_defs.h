@@ -266,6 +266,7 @@ typedef struct gNB_RRC_UE_s {
   uint32_t                           ue_reconfiguration_counter;
   bool ongoing_reconfiguration;
   bool an_release; // flag if core requested UE release
+  bool xn_released; // flag if the Xn handover target released the UE (UE Context Release)
 
   /* NGUEContextSetup might come with PDU sessions, but setup needs to be
    * delayed after security (and capability); PDU sessions are stored here */

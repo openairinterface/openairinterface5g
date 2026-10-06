@@ -42,6 +42,7 @@ MESSAGE_DEF(NGAP_INITIAL_CONTEXT_SETUP_RESP, MESSAGE_PRIORITY_MED, ngap_initial_
 MESSAGE_DEF(NGAP_INITIAL_CONTEXT_SETUP_FAIL, MESSAGE_PRIORITY_MED, ngap_initial_context_setup_fail_t, ngap_initial_context_setup_fail)
 MESSAGE_DEF(NGAP_NAS_NON_DELIVERY_IND      , MESSAGE_PRIORITY_MED, ngap_nas_non_delivery_ind_t      , ngap_nas_non_delivery_ind)
 MESSAGE_DEF(NGAP_UE_CONTEXT_RELEASE_COMPLETE, MESSAGE_PRIORITY_MED, ngap_ue_release_complete_t      , ngap_ue_release_complete)
+MESSAGE_DEF(NGAP_UE_CONTEXT_LOCAL_RELEASE  , MESSAGE_PRIORITY_MED, ngap_ue_local_release_t         , ngap_ue_local_release)
 MESSAGE_DEF(NGAP_PDUSESSION_SETUP_RESP          , MESSAGE_PRIORITY_MED, ngap_pdusession_setup_resp_t          , ngap_pdusession_setup_resp)
 MESSAGE_DEF(NGAP_PDUSESSION_MODIFY_RESP          , MESSAGE_PRIORITY_MED, ngap_pdusession_modify_resp_t          , ngap_pdusession_modify_resp)
 MESSAGE_DEF(NGAP_PDUSESSION_RELEASE_RESPONSE    , MESSAGE_PRIORITY_MED, ngap_pdusession_release_resp_t        , ngap_pdusession_release_resp)

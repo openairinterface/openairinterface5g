@@ -24,6 +24,7 @@
 #include "rrc_cell_management.h"
 #include "openair2/RRC/NR/rrc_gNB_mobility.h"
 #include "rrc_gNB_XNAP.h"
+#include "openair2/XNAP/xnap_ids.h"
 
 #ifdef E2_AGENT
 #include "openair2/E2AP/RAN_FUNCTION/O-RAN/ran_func_rc_extern.h"
@@ -885,6 +886,17 @@ void nr_rrc_trigger_xn_ho(gNB_RRC_INST *rrc, gNB_RRC_UE_t *ue, const nr_neighbou
 
   if (ue->ho_context != NULL) {
     LOG_E(NR_RRC, "UE %d: ongoing handover, cannot trigger new Xn HO\n", ue->rrc_ue_id);
+    return;
+  }
+
+  /* the Xn handover into this gNB ends on the Path Switch Request Acknowledge, after the
+   * HO context: its XnAP UE IDs are needed for the UE Context Release to the source */
+  xn_ue_data_t xn_ue;
+  if (xn_get_ue(XN_ROLE_TARGET, ue->rrc_ue_id, &xn_ue)) {
+    LOG_E(NR_RRC,
+          "UE %d: Xn HO into this gNB not completed (t_xnap_ue_id %u), cannot trigger new Xn HO\n",
+          ue->rrc_ue_id,
+          xn_ue.t_ng_node_ue_xnap_id);
     return;
   }
 

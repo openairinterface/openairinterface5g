@@ -21,5 +21,8 @@ MESSAGE_DEF(XNAP_HANDOVER_PREP_FAILURE, MESSAGE_PRIORITY_MED, xnap_handover_prep
 /* SN Status Transfer: RRC -> XNAP (source sends) / XNAP -> RRC (target receives) */
 MESSAGE_DEF(XNAP_SN_STATUS_TRANSFER,   MESSAGE_PRIORITY_MED, xnap_sn_status_transfer_t,   xnap_sn_status_transfer)
 
+/* UE Context Release: RRC -> XNAP (target sends) / XNAP -> RRC (source receives) */
+MESSAGE_DEF(XNAP_UE_CONTEXT_RELEASE,   MESSAGE_PRIORITY_MED, xnap_ue_context_release_t,   xnap_ue_context_release)
+
 /* Handover Cancel: XNAP -> RRC (target receives; also sent by XNAP when the source peer is lost) */
 MESSAGE_DEF(XNAP_HANDOVER_CANCEL,      MESSAGE_PRIORITY_MED, xnap_handover_cancel_t,      xnap_handover_cancel)

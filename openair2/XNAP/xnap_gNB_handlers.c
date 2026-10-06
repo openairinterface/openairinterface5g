@@ -488,6 +488,53 @@ static int xnap_gNB_handle_sn_status_transfer(instance_t instance,
   return 0;
 }
 
+/* Source gNB: receives UE Context Release from target — decode, look up rrc_ue_id,
+ * drop the UE mapping (the handover is over) and forward to RRC */
+static int xnap_gNB_handle_ue_context_release(instance_t instance,
+                                               sctp_assoc_t assoc_id,
+                                               uint32_t stream,
+                                               xnap_gnb_inst_t *inst,
+                                               xnap_peer_t *peer,
+                                               XNAP_XnAP_PDU_t *pdu)
+{
+  UNUSED(stream);
+  UNUSED(peer);
+  UNUSED(inst);
+  LOG_I(XNAP, "[gNB %ld] Received UE Context Release from assoc_id %d\n", instance, assoc_id);
+
+  xnap_ue_context_release_t msg = {0};
+  if (!decode_xnap_ue_context_release(&msg, pdu)) {
+    LOG_E(XNAP, "[gNB %ld] Failed to decode UE Context Release from assoc_id %d\n",
+          instance, assoc_id);
+    return -1;
+  }
+
+  /* the handover is over at the source */
+  xn_ue_data_t ue_data;
+  if (!xn_get_ue_by_xnap_id(XN_ROLE_SOURCE, msg.s_ng_node_ue_xnap_id, &ue_data)) {
+    LOG_W(XNAP, "[gNB %ld] UE Context Release: unknown s_xnap_ue_id %u\n", instance, msg.s_ng_node_ue_xnap_id);
+    return -1;
+  }
+  if (!xn_ue_from_peer(instance, "UE Context Release", &ue_data, assoc_id))
+    return -1;
+  if (msg.t_ng_node_ue_xnap_id != ue_data.t_ng_node_ue_xnap_id) {
+    LOG_W(XNAP,
+          "[gNB %ld] UE Context Release: s_xnap_ue_id %u with t_xnap_ue_id %u, expected %u: dropping\n",
+          instance,
+          msg.s_ng_node_ue_xnap_id,
+          msg.t_ng_node_ue_xnap_id,
+          ue_data.t_ng_node_ue_xnap_id);
+    return -1;
+  }
+  xn_remove_ue_by_xnap_id(msg.s_ng_node_ue_xnap_id);
+  msg.rrc_ue_id = ue_data.rrc_ue_id;
+
+  MessageDef *itti_msg = itti_alloc_new_message(TASK_XNAP, instance, XNAP_UE_CONTEXT_RELEASE);
+  XNAP_UE_CONTEXT_RELEASE(itti_msg) = msg;
+  itti_send_msg_to_task(TASK_RRC_GNB, instance, itti_msg);
+  return 0;
+}
+
 /* Callback table
  * Indexed by [procedureCode][direction-1]
  * where direction is:  0 = initiatingMessage, 1 = successfulOutcome, 2 = unsuccessfulOutcome
@@ -500,7 +547,7 @@ static const xnap_message_decoded_callback xnap_messages_callback[][3] = {
   {0, 0, 0}, /*  3 retrieveUEContext */
   {0, 0, 0}, /*  4 rANPaging */
   {0, 0, 0}, /*  5 xnUAddressIndication */
-  {0, 0, 0}, /*  6 uEContextRelease */
+  {xnap_gNB_handle_ue_context_release, 0, 0}, /*  6 uEContextRelease */
   {0, 0, 0}, /*  7 sNGRANnodeAdditionPreparation */
   {0, 0, 0}, /*  8 sNGRANnodeReconfigurationCompletion */
   {0, 0, 0}, /*  9 mNGRANnodeinitiatedSNGRANnodeModificationPrep */

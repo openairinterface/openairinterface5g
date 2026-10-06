@@ -267,6 +267,52 @@ static void xnap_gNB_generate_sn_status_transfer(instance_t instance, xnap_sn_st
   xnap_gNB_itti_send_sctp_data(instance, peer->assoc_id, buffer, length, XNAP_NON_UE_STREAM_ID);
 }
 
+/* Target gNB: RRC sends UE Context Release — encode and send to source */
+static void xnap_gNB_generate_ue_context_release(instance_t instance, xnap_ue_context_release_t *msg)
+{
+  xnap_gnb_inst_t *inst = xnap_get_inst(instance);
+  AssertFatal(inst != NULL, "Xn instance %ld not found\n", instance);
+
+  xn_ue_data_t ue_data;
+  if (!xn_get_ue(XN_ROLE_TARGET, msg->rrc_ue_id, &ue_data)) {
+    LOG_W(XNAP, "[gNB %ld] UE Context Release: no Xn handover for rrc_ue_id %u, not sent\n", instance, msg->rrc_ue_id);
+    return;
+  }
+  /* the handover is over at the target */
+  xn_remove_ue_by_xnap_id(ue_data.t_ng_node_ue_xnap_id);
+  msg->s_ng_node_ue_xnap_id = ue_data.s_ng_node_ue_xnap_id;
+  msg->t_ng_node_ue_xnap_id = ue_data.t_ng_node_ue_xnap_id;
+
+  xnap_peer_t *peer = xnap_get_peer_by_assoc(inst, ue_data.assoc_id);
+  if (peer == NULL) {
+    LOG_E(XNAP, "[gNB %ld] UE Context Release: no peer for source_assoc_id %d\n",
+          instance, ue_data.assoc_id);
+    return;
+  }
+  if (peer->state != XNAP_PEER_STATE_CONNECTED) {
+    LOG_E(XNAP, "[gNB %ld] UE Context Release: peer assoc_id %d not connected\n",
+          instance, ue_data.assoc_id);
+    return;
+  }
+
+  XNAP_XnAP_PDU_t *pdu = encode_xnap_ue_context_release(msg);
+  AssertFatal(pdu != NULL, "[gNB %ld] encode_xnap_ue_context_release() failed\n", instance);
+
+  uint8_t *buffer = NULL;
+  uint32_t length = 0;
+  int rc = xnap_gNB_encode_pdu(pdu, &buffer, &length);
+  ASN_STRUCT_FREE(asn_DEF_XNAP_XnAP_PDU, pdu);
+  if (rc < 0) {
+    LOG_E(XNAP, "[gNB %ld] Failed to encode UE Context Release (rrc_ue_id %u)\n", instance, msg->rrc_ue_id);
+    return;
+  }
+
+  LOG_I(XNAP, "[gNB %ld] Sending UE Context Release to source assoc_id %d t_xnap_ue_id %u (%u bytes)\n",
+        instance, ue_data.assoc_id, msg->t_ng_node_ue_xnap_id, length);
+
+  xnap_gNB_itti_send_sctp_data(instance, ue_data.assoc_id, buffer, length, XNAP_NON_UE_STREAM_ID);
+}
+
 /* Create the Xn instance, bind a local SCTP listener (for incoming Xn
  * connections), and dial every configured candidate gNB */
 static void xnap_gNB_handle_register_gnb(instance_t instance, xnap_register_gnb_req_t *req)
@@ -461,6 +507,10 @@ void *xnap_task(void *args)
 
       case XNAP_SN_STATUS_TRANSFER:
         xnap_gNB_generate_sn_status_transfer(instance, &XNAP_SN_STATUS_TRANSFER(msg));
+        break;
+
+      case XNAP_UE_CONTEXT_RELEASE:
+        xnap_gNB_generate_ue_context_release(instance, &XNAP_UE_CONTEXT_RELEASE(msg));
         break;
 
       default:

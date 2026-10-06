@@ -1700,6 +1700,13 @@ void rrc_gNB_send_NGAP_UE_CONTEXT_RELEASE_COMPLETE(instance_t instance, uint32_t
   itti_send_msg_to_task(TASK_NGAP, instance, msg);
 }
 
+void rrc_gNB_send_NGAP_UE_CONTEXT_LOCAL_RELEASE(uint32_t gNB_ue_ngap_id)
+{
+  MessageDef *msg = itti_alloc_new_message(TASK_RRC_GNB, 0, NGAP_UE_CONTEXT_LOCAL_RELEASE);
+  NGAP_UE_CONTEXT_LOCAL_RELEASE(msg).gNB_ue_ngap_id = gNB_ue_ngap_id;
+  itti_send_msg_to_task(TASK_NGAP, 0, msg);
+}
+
 void rrc_gNB_send_NGAP_UE_CAPABILITIES_IND(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE, const NR_UECapabilityInformation_t *const ue_cap_info)
 //------------------------------------------------------------------------------
 {

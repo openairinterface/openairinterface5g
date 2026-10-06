@@ -22,6 +22,7 @@
 #define XNAP_HANDOVER_REQ_ACK(mSGpTR)     (mSGpTR)->ittiMsg.xnap_handover_req_ack
 #define XNAP_HANDOVER_PREP_FAILURE(mSGpTR) (mSGpTR)->ittiMsg.xnap_handover_prep_failure
 #define XNAP_SN_STATUS_TRANSFER(mSGpTR)   (mSGpTR)->ittiMsg.xnap_sn_status_transfer
+#define XNAP_UE_CONTEXT_RELEASE(mSGpTR)   (mSGpTR)->ittiMsg.xnap_ue_context_release
 #define XNAP_HANDOVER_CANCEL(mSGpTR)      (mSGpTR)->ittiMsg.xnap_handover_cancel
 
 typedef struct {
@@ -444,6 +445,9 @@ typedef struct {
   uint32_t s_ng_node_ue_xnap_id;
   /* Target NG-RAN node UE XnAP ID (M) */
   uint32_t t_ng_node_ue_xnap_id;
+  /* Routing fields — not part of the XnAP PDU */
+  // RRC UE identity (target: UE to release for; source: looked up from s_xn_ue_id)
+  uint32_t rrc_ue_id;
 } xnap_ue_context_release_t;
 
 /* 3GPP TS 38.423 9.1.1.6 – Handover Cancel */

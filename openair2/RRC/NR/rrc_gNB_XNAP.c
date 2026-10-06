@@ -27,6 +27,7 @@
 #include "intertask_interface.h"
 #include "aper_encoder.h"
 #include "openair2/XNAP/xnap_ids.h"
+#include "openair2/F1AP/f1ap_ids.h"
 
 /** @brief APER-encode the serving cell as an NGAP LastVisitedNGRANCellInformation OCTET STRING.
  *  As per 3GPP TS 38.423 §9.2.3.65, the XnAP UE history entry for NR is the NGAP encoding of
@@ -645,10 +646,74 @@ int rrc_gNB_process_XNAP_SN_STATUS_TRANSFER(gNB_RRC_INST *rrc, instance_t instan
   return 0;
 }
 
-/** @brief Release the UE context at the source after Path Switch Ack (TS 38.423 §9.1.1.5).
- *  Xn UE Context Release message not sent yet. */
+/** @brief Release the UE context at the source after Path Switch Ack (TS 38.423 §9.1.1.5). */
 void rrc_gNB_send_XNAP_UE_CONTEXT_RELEASE(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE)
 {
-  UNUSED(rrc);
-  LOG_W(NR_RRC, "UE %u: Xn UE Context Release not implemented\n", UE->rrc_ue_id);
+  LOG_A(NR_RRC,
+        "Xn HO target: UE %u/RNTI %04x: Path Switch done, sending UE Context Release to the source\n",
+        UE->rrc_ue_id,
+        UE->rnti);
+
+  xnap_ue_context_release_t msg = {
+    .rrc_ue_id = UE->rrc_ue_id,
+  };
+
+  MessageDef *msg_p = itti_alloc_new_message(TASK_RRC_GNB, 0, XNAP_UE_CONTEXT_RELEASE);
+  XNAP_UE_CONTEXT_RELEASE(msg_p) = msg;
+  itti_send_msg_to_task(TASK_XNAP, rrc->module_id, msg_p);
+}
+
+int rrc_gNB_process_XNAP_UE_CONTEXT_RELEASE(gNB_RRC_INST *rrc, instance_t instance, xnap_ue_context_release_t *msg)
+{
+  rrc_gNB_ue_context_t *ue_ctx = rrc_gNB_get_ue_context(rrc, msg->rrc_ue_id);
+  if (ue_ctx == NULL) {
+    LOG_W(NR_RRC, "[gNB %ld] XNAP UE Context Release: unknown UE rrc_ue_id=%u\n",
+          instance, msg->rrc_ue_id);
+    return -1;
+  }
+  gNB_RRC_UE_t *UE = &ue_ctx->ue_context;
+
+  LOG_A(NR_RRC,
+        "Xn HO source: UE %u/RNTI %04x: UE Context Release received (s_xnap_ue_id %u t_xnap_ue_id %u), "
+        "handover complete, releasing the UE\n",
+        UE->rrc_ue_id,
+        UE->rnti,
+        msg->s_ng_node_ue_xnap_id,
+        msg->t_ng_node_ue_xnap_id);
+
+  /* the HO context may already be gone, e.g. after a DU release request */
+  if (UE->ho_context)
+    nr_rrc_finalize_ho(UE);
+
+  if (ue_associated_to_cuup(UE)) {
+    sctp_assoc_t assoc_id = get_existing_cuup_for_ue(UE);
+    e1ap_cause_t cause = {.type = E1AP_CAUSE_RADIO_NETWORK, .value = E1AP_RADIO_CAUSE_NORMAL_RELEASE};
+    e1ap_bearer_release_cmd_t cmd = {
+      .gNB_cu_cp_ue_id = UE->rrc_ue_id,
+      .gNB_cu_up_ue_id = UE->rrc_ue_id,
+      .cause = cause,
+    };
+    rrc->cucp_cuup.bearer_context_release(assoc_id, &cmd);
+  }
+
+  /* the UE is served by the target gNB: release the DU context without RRCRelease to the UE.
+   * special case: the DU might be offline, in which case the f1_ue_data exists
+   * but is set to 0 */
+  if (cu_exists_f1_ue_data(UE->rrc_ue_id) && cu_get_f1_ue_data(UE->rrc_ue_id).du_assoc_id != 0) {
+    f1_ue_data_t ue_f1 = cu_get_f1_ue_data(UE->rrc_ue_id);
+    f1ap_ue_context_rel_cmd_t cmd = {
+      .gNB_CU_ue_id = UE->rrc_ue_id,
+      .gNB_DU_ue_id = ue_f1.secondary_ue,
+      .cause = F1AP_CAUSE_RADIO_NETWORK,
+      .cause_value = 10, // 10 = F1AP_CauseRadioNetwork_normal_release
+    };
+    rrc->mac_rrc.ue_context_release_command(ue_f1.du_assoc_id, &cmd);
+    /* UE will be freed after UE context release complete */
+    UE->xn_released = true;
+  } else {
+    rrc_gNB_send_NGAP_UE_CONTEXT_LOCAL_RELEASE(UE->rrc_ue_id);
+    rrc_remove_ue(rrc, ue_ctx);
+  }
+
+  return 0;
 }
