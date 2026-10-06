@@ -534,6 +534,26 @@ void rrc_gNB_xn_ho_target_abort(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE, const char 
   rrc_remove_ue(rrc, ue_ctx);
 }
 
+/** @brief Target gNB processes Handover Cancel (TS 38.423 §9.1.1.6), also sent by XNAP when the
+ *  Xn association to the source gNB is lost: abort the incoming handover if the UE did not arrive
+ *  yet; a UE already in the target cell stays there. */
+void rrc_gNB_process_XNAP_HANDOVER_CANCEL(gNB_RRC_INST *rrc, const xnap_handover_cancel_t *msg)
+{
+  rrc_gNB_ue_context_t *ue_ctx = rrc_gNB_get_ue_context(rrc, msg->rrc_ue_id);
+  if (ue_ctx == NULL) {
+    LOG_W(NR_RRC, "Xn Handover Cancel: unknown rrc_ue_id %u\n", msg->rrc_ue_id);
+    return;
+  }
+  gNB_RRC_UE_t *UE = &ue_ctx->ue_context;
+  /* no HO context: the UE already completed the HO in the target cell, XNAP drops the
+   * UE Context Release as the XnAP UE IDs of this handover are gone */
+  if (!UE->ho_context || !UE->ho_context->target) {
+    LOG_W(NR_RRC, "UE %u: Xn Handover Cancel but no target handover context — dropping\n", UE->rrc_ue_id);
+    return;
+  }
+  rrc_gNB_xn_ho_target_abort(rrc, UE, "handover cancelled by the source gNB");
+}
+
 /** @brief Send SN Status Transfer (TS 38.423 §9.1.1.4) from source to target via Xn.
  *  Matches ho_status_transfer_t — wired via ue->ho_context->source->ho_status_transfer. */
 int rrc_gNB_send_XNAP_SN_STATUS_TRANSFER(gNB_RRC_INST *rrc,
@@ -623,4 +643,12 @@ int rrc_gNB_process_XNAP_SN_STATUS_TRANSFER(gNB_RRC_INST *rrc, instance_t instan
   }
 
   return 0;
+}
+
+/** @brief Release the UE context at the source after Path Switch Ack (TS 38.423 §9.1.1.5).
+ *  Xn UE Context Release message not sent yet. */
+void rrc_gNB_send_XNAP_UE_CONTEXT_RELEASE(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE)
+{
+  UNUSED(rrc);
+  LOG_W(NR_RRC, "UE %u: Xn UE Context Release not implemented\n", UE->rrc_ue_id);
 }

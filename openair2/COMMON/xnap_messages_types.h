@@ -22,6 +22,7 @@
 #define XNAP_HANDOVER_REQ_ACK(mSGpTR)     (mSGpTR)->ittiMsg.xnap_handover_req_ack
 #define XNAP_HANDOVER_PREP_FAILURE(mSGpTR) (mSGpTR)->ittiMsg.xnap_handover_prep_failure
 #define XNAP_SN_STATUS_TRANSFER(mSGpTR)   (mSGpTR)->ittiMsg.xnap_sn_status_transfer
+#define XNAP_HANDOVER_CANCEL(mSGpTR)      (mSGpTR)->ittiMsg.xnap_handover_cancel
 
 typedef struct {
   // PLMN Identity (M)
@@ -451,6 +452,9 @@ typedef struct {
   uint32_t s_ng_node_ue_xnap_id;
   /* Cause (M) */
   xnap_cause_t cause;
+  /* Routing fields — not part of the XnAP PDU */
+  // target XNAP->RRC: RRC UE identity, looked up from s_xn_ue_id
+  uint32_t rrc_ue_id;
 } xnap_handover_cancel_t;
 
 /* 3GPP TS 38.423 9.1.1.12 – Handover Success */

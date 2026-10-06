@@ -843,14 +843,23 @@ static void nr_rrc_xn_ho_acknowledge(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE)
   free_byte_array(hoCommand);
 }
 
+/** @brief Callback invoked on RRCReconfigurationComplete at target Xn gNB:
+ *         trigger NGAP Path Switch Request to AMF to update the data path. */
+static void nr_rrc_xn_ho_path_switch(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE)
+{
+  LOG_I(NR_RRC, "Xn HO target: UE %d/RNTI %04x: UE in the target cell, Path Switch pending\n", UE->rrc_ue_id, UE->rnti);
+  rrc_gNB_send_NGAP_PATH_SWITCH_REQUEST(rrc, UE);
+}
+
 /** @brief Trigger Xn Handover on the target gNB after E1 bearer setup:
  *         initiate F1 UE Context Setup toward the target DU. */
 void nr_rrc_trigger_xn_ho_target(gNB_RRC_INST *rrc, gNB_RRC_UE_t *ue)
 {
   LOG_D(NR_RRC, "Xn HO target: UE %d: E1 Bearer Context Setup done, starting F1 UE Context Setup\n", ue->rrc_ue_id);
   ho_req_ack_t ack = nr_rrc_xn_ho_acknowledge;
+  ho_success_t success = nr_rrc_xn_ho_path_switch;
   ho_failure_t failure = nr_rrc_xn_ho_failure;
-  if (!nr_initiate_handover(rrc, ue, NULL, &ue->ho_context->target->ue_ho_prep_info, ack, NULL, NULL, failure)) {
+  if (!nr_initiate_handover(rrc, ue, NULL, &ue->ho_context->target->ue_ho_prep_info, ack, success, NULL, failure)) {
     failure(rrc, ue->rrc_ue_id, HO_CAUSE_FAILURE_IN_TARGET);
     return;
   }

@@ -72,6 +72,7 @@
 #include "utils.h"
 #include "x2ap_messages_types.h"
 #include "rrc_gNB_XNAP.h"
+#include "openair3/NGAP/ngap_gNB_mobility_management.h"
 #include "openair2/XNAP/lib/xnap_gNB_mobility_management.h"
 #include "openair2/XNAP/xnap_ids.h"
 #include "xer_encoder.h"
@@ -4147,6 +4148,11 @@ void *rrc_gnb_task(void *args_p)
         rrc_gnb_nrdc_timeout(RC.nrrrc[instance], &NR_RRC_NRDC_TIMEOUT(msg_p));
         break;
 
+      case NGAP_PATH_SWITCH_REQ_ACK:
+        rrc_gNB_process_NGAP_PATH_SWITCH_REQUEST_ACKNOWLEDGE(RC.nrrrc[instance], instance, &NGAP_PATH_SWITCH_REQ_ACK(msg_p));
+        free_ng_path_switch_req_ack(&NGAP_PATH_SWITCH_REQ_ACK(msg_p));
+        break;
+
       /* Messages from XNAP task */
       case XNAP_SETUP_IND:
         rrc_add_xn_candidate(RC.nrrrc[instance], XNAP_SETUP_IND(msg_p).gnb_id, XNAP_SETUP_IND(msg_p).assoc_id);
@@ -4172,6 +4178,10 @@ void *rrc_gnb_task(void *args_p)
 
       case XNAP_SN_STATUS_TRANSFER:
         rrc_gNB_process_XNAP_SN_STATUS_TRANSFER(RC.nrrrc[instance], instance, &XNAP_SN_STATUS_TRANSFER(msg_p));
+        break;
+
+      case XNAP_HANDOVER_CANCEL:
+        rrc_gNB_process_XNAP_HANDOVER_CANCEL(RC.nrrrc[instance], &XNAP_HANDOVER_CANCEL(msg_p));
         break;
 
       default:

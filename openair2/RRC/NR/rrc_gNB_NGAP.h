@@ -89,4 +89,8 @@ int rrc_gNB_send_NGAP_ul_ran_status_transfer(gNB_RRC_INST *rrc,
 
 int rrc_gNB_process_NGAP_DL_RAN_STATUS_TRANSFER(MessageDef *msg_p, instance_t instance);
 
+void rrc_gNB_send_NGAP_PATH_SWITCH_REQUEST(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE);
+
+int rrc_gNB_process_NGAP_PATH_SWITCH_REQUEST_ACKNOWLEDGE(gNB_RRC_INST *rrc, instance_t instance, const ngap_path_switch_req_ack_t *msg);
+
 #endif

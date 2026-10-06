@@ -142,7 +142,8 @@ static void xnap_gNB_generate_handover_prep_failure(instance_t instance, xnap_ha
 }
 
 /* Target gNB: the HandoverRequestAck was not sent: if the peer is up, send a
- * HandoverPreparationFailure so the source ends the handover */
+ * HandoverPreparationFailure so the source ends the handover, and let the target
+ * RRC abort the prepared UE */
 static void xnap_gNB_handover_request_ack_not_sent(instance_t instance, const xn_ue_data_t *ue, bool peer_up)
 {
   const xnap_cause_t cause = {.type = XNAP_CAUSE_RADIO_NETWORK, .value = XNAP_CAUSE_RADIO_NETWORK_LAYER_UNSPECIFIED};
@@ -154,6 +155,13 @@ static void xnap_gNB_handover_request_ack_not_sent(instance_t instance, const xn
                                                 .assoc_id = ue->assoc_id};
     xnap_gNB_generate_handover_prep_failure(instance, &fail);
   }
+  MessageDef *cancel = itti_alloc_new_message(TASK_XNAP, instance, XNAP_HANDOVER_CANCEL);
+  XNAP_HANDOVER_CANCEL(cancel) = (xnap_handover_cancel_t){
+      .s_ng_node_ue_xnap_id = ue->s_ng_node_ue_xnap_id,
+      .cause = cause,
+      .rrc_ue_id = ue->rrc_ue_id,
+  };
+  itti_send_msg_to_task(TASK_RRC_GNB, instance, cancel);
 }
 
 /* Target gNB: target RRC sends ACK — fill the XnAP UE IDs of the handover, send HandoverRequestAck */

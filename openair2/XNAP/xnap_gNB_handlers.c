@@ -32,28 +32,45 @@ void xnap_handle_xn_setup_message(instance_t instance, xnap_peer_t *peer, int sc
         itti_send_msg_to_task(TASK_RRC_GNB, instance, msg);
       }
 
+      const xnap_cause_t cause = {.type = XNAP_CAUSE_TRANSPORT, .value = XNAP_CAUSE_TRANSPORT_LAYER_TRANSPORT_RESOURCE_UNAVAILABLE};
       xn_ue_data_t ues[64];
       int n;
       while ((n = xn_remove_ues_by_assoc(peer->assoc_id, ues, sizeofArray(ues))) > 0) {
         for (int i = 0; i < n; i++) {
           const xn_ue_data_t *ue = &ues[i];
-          /* TODO: release the target RRC UEs of the handovers from this peer */
-          if (ue->role != XN_ROLE_SOURCE)
+          if (ue->role == XN_ROLE_SOURCE) {
+            /* fail the handover prepared towards this peer: the source RRC finalizes it
+             * as for a Handover Preparation Failure, so the UE can be handed over again */
+            LOG_W(XNAP,
+                  "[gNB %ld] Xn peer lost: failing handover of rrc_ue_id %u (s_xnap_ue_id %u)\n",
+                  instance,
+                  ue->rrc_ue_id,
+                  ue->s_ng_node_ue_xnap_id);
+            MessageDef *fail = itti_alloc_new_message(TASK_XNAP, instance, XNAP_HANDOVER_PREP_FAILURE);
+            XNAP_HANDOVER_PREP_FAILURE(fail) = (xnap_handover_preparation_failure_t){
+                .s_ng_node_ue_xnap_id = ue->s_ng_node_ue_xnap_id,
+                .cause = cause,
+                .rrc_ue_id = ue->rrc_ue_id,
+            };
+            itti_send_msg_to_task(TASK_RRC_GNB, instance, fail);
             continue;
-          /* fail the handover prepared towards this peer: the source RRC finalizes it
-           * as for a Handover Preparation Failure, so the UE can be handed over again */
+          }
+          /* cancel the handover from this peer: the target RRC releases the UE if not arrived yet */
           LOG_W(XNAP,
-                "[gNB %ld] Xn peer lost: failing handover of rrc_ue_id %u (s_xnap_ue_id %u)\n",
+                "[gNB %ld] Xn peer lost: cancelling handover of rrc_ue_id %u (t_xnap_ue_id %u)\n",
                 instance,
                 ue->rrc_ue_id,
-                ue->s_ng_node_ue_xnap_id);
-          MessageDef *fail = itti_alloc_new_message(TASK_XNAP, instance, XNAP_HANDOVER_PREP_FAILURE);
-          XNAP_HANDOVER_PREP_FAILURE(fail) = (xnap_handover_preparation_failure_t){
+                ue->t_ng_node_ue_xnap_id);
+          /* no UE was created by RRC for this handover yet */
+          if (ue->rrc_ue_id == 0)
+            continue;
+          MessageDef *cancel = itti_alloc_new_message(TASK_XNAP, instance, XNAP_HANDOVER_CANCEL);
+          XNAP_HANDOVER_CANCEL(cancel) = (xnap_handover_cancel_t){
               .s_ng_node_ue_xnap_id = ue->s_ng_node_ue_xnap_id,
-              .cause = {.type = XNAP_CAUSE_TRANSPORT, .value = XNAP_CAUSE_TRANSPORT_LAYER_TRANSPORT_RESOURCE_UNAVAILABLE},
+              .cause = cause,
               .rrc_ue_id = ue->rrc_ue_id,
           };
-          itti_send_msg_to_task(TASK_RRC_GNB, instance, fail);
+          itti_send_msg_to_task(TASK_RRC_GNB, instance, cancel);
         }
       }
     }
