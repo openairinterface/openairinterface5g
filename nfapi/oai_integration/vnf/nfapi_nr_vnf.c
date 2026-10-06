@@ -281,26 +281,21 @@ int phy_nr_slot_indication(nfapi_nr_slot_indication_scf_t *ind)
     sched_response.UL_dci_req.header.phy_id = PHY_id;
 #ifdef ENABLE_AERIAL
 
-    bool send_slt_resp = false;
     if (sched_response.DL_req.dl_tti_request_body.nPDUs> 0) {
       oai_fapi_dl_tti_req(&sched_response.DL_req);
-      send_slt_resp = true;
     }
     if (sched_response.UL_tti_req.n_pdus > 0) {
       oai_fapi_ul_tti_req(&sched_response.UL_tti_req);
-      send_slt_resp = true;
     }
     if (sched_response.TX_req.Number_of_PDUs > 0) {
       oai_fapi_tx_data_req(&sched_response.TX_req);
-      send_slt_resp = true;
     }
     if (sched_response.UL_dci_req.numPdus > 0) {
       oai_fapi_ul_dci_req(&sched_response.UL_dci_req);
-      send_slt_resp = true;
     }
-    if (send_slt_resp) {
-      oai_fapi_send_end_request(ind->sfn, ind->slot, PHY_id);
-    }
+    // Aerial requires end-of-slot for every cell, including empty slots,
+    // so that one idle cell cannot hold up the entire cell group.
+    oai_fapi_send_end_request(ind->sfn, ind->slot, PHY_id);
 #else
   if (sched_response.DL_req.dl_tti_request_body.nPDUs > 0)
     oai_nfapi_dl_tti_req(&sched_response.DL_req);
