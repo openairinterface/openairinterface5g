@@ -1427,11 +1427,13 @@ static void nr_update_sr(NR_UE_MAC_INST_t *mac, bool BSRsent)
   for (int idx = 0; idx < mac->lc_ordered_list.count && lc_info == NULL; idx++) {
     nr_lcordered_info_t *lc_info_loop = mac->lc_ordered_list.array[idx];
     NR_LC_SCHEDULING_INFO *lc_sched_info = get_scheduling_info_from_lcid(mac, lc_info_loop->lcid);
-    if (lc_sched_info->LCID_buffer_remain)
+    if (lc_sched_info->LCID_buffer_remain > 0)
       lc_info = lc_info_loop;
   }
 
   if (lc_info == NULL) { // all queues are empty
+    // nothing left to report: a pending regular BSR is cancelled together with the SRs
+    sched_info->BSR_reporting_active &= ~NR_BSR_TRIGGER_REGULAR;
     for (int i = 0; i < NR_MAX_SR_ID; i++) {
       nr_sr_info_t *sr = &sched_info->sr_info[i];
       if (sr->active_SR_ID) {
@@ -1446,6 +1448,10 @@ static void nr_update_sr(NR_UE_MAC_INST_t *mac, bool BSRsent)
 
   // if a Regular BSR has been triggered and logicalChannelSR-DelayTimer is not running
   if (BSRsent || nr_timer_is_active(&sched_info->sr_DelayTimer))
+    return;
+
+  // an SR is only triggered while a Regular BSR is pending (TS 38.321 5.4.4)
+  if (!(sched_info->BSR_reporting_active & NR_BSR_TRIGGER_REGULAR))
     return;
 
   // if there is no UL-SCH resource available for a new transmission (ie we are at this point)
@@ -1498,41 +1504,41 @@ static void nr_update_rlc_buffers_status(NR_UE_MAC_INST_t *mac, frame_t frameP, 
 
   mac_rlc_status_resp_t ret[NR_MAX_NUM_LCID] = {0};
   nr_mac_rlc_status_ind(mac->ue_id, frameP, n, ch, ret);
+
+  // TS 38.321 5.4.5: a regular BSR is triggered when UL data becomes available for an LC
+  // belonging to an LCG, and either it has strictly higher priority than every LC (in an LCG)
+  // that already had data, or no LC (in an LCG) had data.
+  // Both are evaluated on the old LCID_buffer_remain, before it is overwritten below.
+  long best_prio_with_data = LONG_MAX; // lowest value = highest priority
+  for (int i = 0; i < n; ++i) {
+    NR_LC_SCHEDULING_INFO *s = get_scheduling_info_from_lcid(mac, ch[i]);
+    if (s->LCGID == NR_INVALID_LCGID || s->LCID_buffer_remain <= 0)
+      continue;
+    long prio = get_lc_info_from_lcid(mac, ch[i])->priority;
+    if (prio < best_prio_with_data)
+      best_prio_with_data = prio;
+  }
+  bool triggered = false;
   for (int i = 0; i < n; ++i) {
     const logical_chan_id_t lcid = ch[i];
     const rlc_buffer_occupancy_t b = ret[i].bytes_in_buffer;
     NR_LC_SCHEDULING_INFO *lc_sched_info = get_scheduling_info_from_lcid(mac, lcid);
     if (b > 0)
       LOG_D(NR_MAC, "[UE %d] LCID %d has %d bytes to transmit at sfn %d.%d\n", mac->ue_id, lcid, b, frameP, slotP);
+    // ch[] is in priority order, so the first trigger is for the highest priority LC
+    if (!triggered && b > 0 && lc_sched_info->LCID_buffer_remain <= 0 && lc_sched_info->LCGID != NR_INVALID_LCGID) {
+      nr_lcordered_info_t *lc_info = get_lc_info_from_lcid(mac, lcid);
+      if (lc_info->priority < best_prio_with_data) {
+        trigger_regular_bsr(mac, lcid, lc_info->sr_DelayTimerApplied);
+        triggered = true;
+      }
+    }
     lc_sched_info->LCID_buffer_remain = b;
   }
 }
 
-/*TS 38.321
-A BSR shall be triggered if any of the following events occur:
-- UL data, for a logical channel which belongs to an LCG, becomes available to the MAC entity; and either
-   => here we don't implement exactly the same, there is no direct relation with new data came in the UE since last BSR
-
-- this UL data belongs to a logical channel with higher priority than the priority of any logical channel
-  containing available UL data which belong to any LCG; or
-  => same, we don't know the last BSR content
-
-- none of the logical channels which belong to an LCG contains any available UL data.
-  in which case the BSR is referred below to as 'Regular BSR';
-
-- UL resources are allocated and number of padding bits is equal to or larger than the size of the Buffer Status
-Report MAC CE plus its subheader, in which case the BSR is referred below to as 'Padding BSR';
-
-- retxBSR-Timer expires, and at least one of the logical channels which belong to an LCG contains UL data, in
-which case the BSR is referred below to as 'Regular BSR';
-
-- periodicBSR-Timer expires, in which case the BSR is referred below to as 'Periodic BSR'.
-
-*/
-
-void nr_update_bsr(NR_UE_MAC_INST_t *mac, uint32_t *LCG_bytes)
+static void nr_update_bsr(NR_UE_MAC_INST_t *mac, uint32_t *LCG_bytes)
 {
-  bool bsr_regular_triggered = mac->scheduling_info.BSR_reporting_active & NR_BSR_TRIGGER_REGULAR;
   for (int i = 0; i < mac->lc_ordered_list.count; i++) {
     nr_lcordered_info_t *lc_info = mac->lc_ordered_list.array[i];
     if (lc_info->rb_suspended)
@@ -1540,16 +1546,9 @@ void nr_update_bsr(NR_UE_MAC_INST_t *mac, uint32_t *LCG_bytes)
     int lcid = lc_info->lcid;
     NR_LC_SCHEDULING_INFO *lc_sched_info = get_scheduling_info_from_lcid(mac, lcid);
     int lcgid = lc_sched_info->LCGID;
-    // check if UL data for a logical channel which belongs to a LCG becomes available for transmission
-    if (lcgid != NR_INVALID_LCGID) {
-      // Update waiting bytes for this LCG
+    // Update waiting bytes for this LCG
+    if (lcgid != NR_INVALID_LCGID)
       LCG_bytes[lcgid] += lc_sched_info->LCID_buffer_remain;
-      if (!bsr_regular_triggered) {
-        bsr_regular_triggered = true;
-        trigger_regular_bsr(mac, lcid, lc_info->sr_DelayTimerApplied);
-        LOG_D(NR_MAC, "[UE %d] MAC BSR Triggered\n", mac->ue_id);
-      }
-    }
   }
 }
 
@@ -2759,9 +2758,11 @@ void nr_ue_ul_scheduler(NR_UE_MAC_INST_t *mac, nr_uplink_indication_t *ul_info)
 
   if(mac->state == UE_CONNECTED)
     nr_update_sr(mac, BSRsent);
-  // Global variables implicit logic
-  // far away, BSR_reporting_active is set
-  mac->scheduling_info.BSR_reporting_active = NR_BSR_TRIGGER_NONE;
+  // Triggered BSRs stay pending until a BSR is included in a transmitted MAC PDU (TS 38.321 5.4.5)
+  if (BSRsent) {
+    mac->scheduling_info.BSR_reporting_active = NR_BSR_TRIGGER_NONE;
+    mac->scheduling_info.regularBSR_trigger_lcid = 0;
+  }
 
   // update Bj for all active lcids before LCP procedure
   if (mac->current_UL_BWP) {
