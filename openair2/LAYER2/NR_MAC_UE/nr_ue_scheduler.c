@@ -2076,8 +2076,11 @@ void nr_ue_get_sdu_mac_ce_pre(NR_UE_MAC_INST_t *mac,
     int size_for_short = sizeof(NR_BSR_SHORT) + sizeof(NR_MAC_SUBHEADER_FIXED);
     if (num_lcg_id_with_data > 1 && buflen >= size_for_long)
       bsr_len = size_for_long;
-    else if ((num_lcg_id_with_data > 0 && buflen >= size_for_short)
-             || mac->scheduling_info.BSR_reporting_active & NR_BSR_TRIGGER_PERIODIC)
+    // Deliberate deviation from TS 38.321 5.4.5: with more than one LCG a regular/periodic
+    // BSR should be Long, but if the grant can't hold it we report a Short BSR
+    // (highest priority LCG) instead of nothing
+    else if (buflen >= size_for_short
+             && (num_lcg_id_with_data > 0 || (mac->scheduling_info.BSR_reporting_active & NR_BSR_TRIGGER_PERIODIC)))
       bsr_len = size_for_short;
   }
   nr_phr_info_t *phr_info = &mac->scheduling_info.phr_info;
@@ -2147,20 +2150,29 @@ static void nr_ue_get_sdu_mac_ce_post(NR_UE_MAC_INST_t *mac,
   for (int lcg_id = 0; lcg_id < NR_MAX_NUM_LCGID; lcg_id++)
     num_lcg_id_with_data += LCG_bytes[lcg_id] > 0;
   int long_bsr_sz = num_lcg_id_with_data + sizeof(NR_BSR_LONG) + sizeof(NR_MAC_SUBHEADER_SHORT);
-  if (num_lcg_id_with_data < 2 && padding_len >= short_bsr_sz) {
+  // regular or periodic BSR triggered
+  bool regular_or_periodic = sched_info->BSR_reporting_active & (NR_BSR_TRIGGER_REGULAR | NR_BSR_TRIGGER_PERIODIC);
+  bool long_fits = padding_len >= long_bsr_sz;
+  /* Short BSR is reported when:
+     - at most one LCG has data (TS 38.321 5.4.5), or
+     - regular/periodic BSR with more than one LCG, but the grant can't hold the Long BSR.
+       This is a deliberate deviation from the spec (which requires Long), so that the gNB
+       still gets the buffer status of the highest priority LCG. Must stay in sync with _pre. */
+  if (padding_len >= short_bsr_sz && (num_lcg_id_with_data < 2 || (regular_or_periodic && !long_fits))) {
     mac_ce_p->bsr.type_bsr = b_short;
     mac_ce_p->bsr.bsr.s.LcgID = lcg_id_bsr_max;
     mac_ce_p->bsr.bsr.s.Buffer_size =
         nr_locate_BsrIndexByBufferSize(NR_SHORT_BSR_TABLE_SIZE, LCG_bytes[lcg_id_bsr_max]);
     LOG_D(NR_MAC,
-          "[UE %d] sfn %d.%d BSR Trigger=0x%x report SHORT BSR with level %d for LCGID %d\n",
+          "[UE %d] sfn %d.%d BSR Trigger=0x%x report SHORT BSR with level %d (%d bytes) for LCGID %d\n",
           mac->ue_id,
           frame,
           slot,
           sched_info->BSR_reporting_active,
           mac_ce_p->bsr.bsr.s.Buffer_size,
+          LCG_bytes[lcg_id_bsr_max],
           lcg_id_bsr_max);
-  } else if (padding_len >= long_bsr_sz) {
+  } else if (long_fits) {
     /* if the number of padding bits is equal to or larger than the size of the Long BSR plus its subheader,
        report Long BSR whatever periodic or regular BSR*/
     mac_ce_p->bsr.type_bsr = b_long;
@@ -2187,7 +2199,8 @@ static void nr_ue_get_sdu_mac_ce_post(NR_UE_MAC_INST_t *mac,
     mac_ce_p->bsr.bsr.s.LcgID = lcg_id_bsr_max;
     mac_ce_p->bsr.bsr.s.Buffer_size =
         nr_locate_BsrIndexByBufferSize(NR_SHORT_BSR_TABLE_SIZE, LCG_bytes[lcg_id_bsr_max]);
-  } else if (padding_len >= sizeof(NR_BSR_LONG) + sizeof(NR_MAC_SUBHEADER_SHORT)) {
+  } else if (padding_len > sizeof(NR_BSR_LONG) + sizeof(NR_MAC_SUBHEADER_SHORT)) {
+    // needs room for the bitmap, the subheader and at least one LCG entry
     mac_ce_p->bsr.type_bsr = b_long_trunc;
     //  Fixme: this should be sorted by (TS 38.321, 5.4.5)
     // the logical channels having data available for
