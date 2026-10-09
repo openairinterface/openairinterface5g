@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: LicenseRef-CSSL-1.0
+# Open5GS NRF config for the rfsim Xn handover pipeline
+
+logger:
+  level: info
+
+nrf:
+  serving:
+    - plmn_id:
+        mcc: 208
+        mnc: 99
+  sbi:
+    server:
+      - address: 127.0.0.10
+        port: 7777

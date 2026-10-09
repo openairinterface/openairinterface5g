@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: LicenseRef-CSSL-1.0
+# Open5GS SMF config for the rfsim Xn handover pipeline
+
+logger:
+  level: info
+
+smf:
+  sbi:
+    server:
+      - address: 127.0.0.4
+        port: 7777
+    client:
+      nrf:
+        - uri: http://127.0.0.10:7777
+  pfcp:
+    server:
+      - address: 127.0.0.4
+    client:
+      upf:
+        - address: 127.0.0.7
+  gtpu:
+    server:
+      - address: 127.0.0.4
+  session:
+    - subnet: 12.1.1.0/24
+      gateway: 12.1.1.1
+      dnn: oai
+  dns:
+    - 8.8.8.8
+  mtu: 1500

@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: LicenseRef-CSSL-1.0
+# Open5GS PCF config for the rfsim Xn handover pipeline
+
+logger:
+  level: info
+
+db_uri: mongodb://192.168.71.131/open5gs
+
+pcf:
+  sbi:
+    server:
+      - address: 127.0.0.13
+        port: 7777
+    client:
+      nrf:
+        - uri: http://127.0.0.10:7777

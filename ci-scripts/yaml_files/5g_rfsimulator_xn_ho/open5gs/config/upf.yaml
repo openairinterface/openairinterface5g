@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: LicenseRef-CSSL-1.0
+# Open5GS UPF config for the rfsim Xn handover pipeline
+
+logger:
+  level: info
+
+upf:
+  pfcp:
+    server:
+      - address: 127.0.0.7
+  gtpu:
+    server:
+      - address: 192.168.71.132
+  session:
+    - subnet: 12.1.1.0/24
+      gateway: 12.1.1.1
+      dnn: oai

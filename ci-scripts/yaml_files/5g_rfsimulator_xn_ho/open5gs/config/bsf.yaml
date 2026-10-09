@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: LicenseRef-CSSL-1.0
+# Open5GS BSF config for the rfsim Xn handover pipeline
+
+logger:
+  level: info
+
+bsf:
+  sbi:
+    server:
+      - address: 127.0.0.15
+        port: 7777
+    client:
+      nrf:
+        - uri: http://127.0.0.10:7777
