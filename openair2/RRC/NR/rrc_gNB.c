@@ -2704,6 +2704,14 @@ void e1_notify_pdcp_status(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE, const ngap_drb_s
   if (!is_cuup_associated(rrc) || !drb_status)
     return;
 
+  /* the DRB ID comes from the peer (SN/RAN Status Transfer): check it before the lookup */
+  const int drb_id = drb_status->drb_id;
+  drb_t *drb = drb_id >= 1 && drb_id <= MAX_DRBS_PER_UE ? get_drb(&UE->drbs, drb_id) : NULL;
+  if (!drb) {
+    LOG_E(NR_RRC, "UE %d: cannot forward PDCP status, unknown DRB %d\n", UE->rrc_ue_id, drb_id);
+    return;
+  }
+
   e1ap_bearer_mod_req_t req = {
       .gNB_cu_cp_ue_id = UE->rrc_ue_id,
       .gNB_cu_up_ue_id = UE->rrc_ue_id,
@@ -2712,12 +2720,10 @@ void e1_notify_pdcp_status(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE, const ngap_drb_s
   DevAssert(num_pdu_sessions > 0);
   req.pduSessionMod = calloc_or_fail(num_pdu_sessions, sizeof(*req.pduSessionMod));
 
-  FOR_EACH_SEQ_ARR(drb_t *, drb, &UE->drbs) {
-    LOG_I(NR_RRC, "Forward PDCP Status to CU-UP (drb_id=%d)\n", drb->drb_id);
-    bearer_context_pdcp_config_t pdcp_config = set_bearer_context_pdcp_config(drb->pdcp_config, rrc->configuration.um_on_default_drb, UE->redcap_cap);
-    DRB_nGRAN_to_mod_t drb_to_mod = get_e1_drb_mod_pdcp_status(drb, &pdcp_config, drb_status);
-    append_e1_drb_mod_req(&req, UE, drb->drb_id, &drb_to_mod);
-  }
+  LOG_I(NR_RRC, "Forward PDCP Status to CU-UP (drb_id=%d)\n", drb_id);
+  bearer_context_pdcp_config_t pdcp_config = set_bearer_context_pdcp_config(drb->pdcp_config, rrc->configuration.um_on_default_drb, UE->redcap_cap);
+  DRB_nGRAN_to_mod_t drb_to_mod = get_e1_drb_mod_pdcp_status(drb, &pdcp_config, drb_status);
+  append_e1_drb_mod_req(&req, UE, drb_id, &drb_to_mod);
 
   e1_send_bearer_modification_request(rrc, UE, &req);
   free_e1ap_context_mod_request(&req);
