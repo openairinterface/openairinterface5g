@@ -60,7 +60,13 @@ static int send_xn_setup_failure(instance_t instance, xnap_peer_t *peer, xnap_ca
   uint32_t length = 0;
   int rc = xnap_gNB_encode_pdu(fail_pdu, &buffer, &length);
   ASN_STRUCT_FREE(asn_DEF_XNAP_XnAP_PDU, fail_pdu);
-  AssertFatal(rc == 0, "[gNB %ld] xnap_gNB_encode_pdu() failed for XnSetupFailure\n", instance);
+  if (rc < 0) {
+    /* the peer is rejected anyway: release the association without the XnSetupFailure */
+    LOG_E(XNAP, "[gNB %ld] Failed to encode XnSetupFailure, closing assoc_id %d\n", instance, peer->assoc_id);
+    xnap_gNB_itti_send_sctp_close_association(instance, peer->assoc_id);
+    xnap_remove_peer(xnap_get_inst(instance), peer);
+    return -1;
+  }
   xnap_gNB_itti_send_sctp_data(instance, peer->assoc_id, buffer, length, XNAP_NON_UE_STREAM_ID);
   return -1;
 }
@@ -129,7 +135,13 @@ static int xnap_gNB_handle_xn_setup_request(instance_t instance,
   uint32_t length = 0;
   int rc = xnap_gNB_encode_pdu(resp_pdu, &buffer, &length);
   ASN_STRUCT_FREE(asn_DEF_XNAP_XnAP_PDU, resp_pdu);
-  AssertFatal(rc == 0, "[gNB %ld] xnap_gNB_encode_pdu() failed for XnSetupResponse\n", instance);
+  if (rc < 0) {
+    /* the peer would wait for the response: release the association, RRC is not notified */
+    LOG_E(XNAP, "[gNB %ld] Failed to encode XnSetupResponse, closing assoc_id %d\n", instance, peer->assoc_id);
+    xnap_gNB_itti_send_sctp_close_association(instance, peer->assoc_id);
+    xnap_remove_peer(inst, peer);
+    return -1;
+  }
 
   xnap_gNB_itti_send_sctp_data(instance, peer->assoc_id, buffer, length, XNAP_NON_UE_STREAM_ID);
 

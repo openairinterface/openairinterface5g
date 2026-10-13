@@ -18,7 +18,7 @@
 #include "xnap_gNB_handlers.h"
 #include "xnap_gNB_encoder.h"
 
-static void xnap_gNB_generate_xn_setup_request(instance_t instance, xnap_gnb_inst_t *inst, const xnap_peer_t *peer)
+static void xnap_gNB_generate_xn_setup_request(instance_t instance, xnap_gnb_inst_t *inst, xnap_peer_t *peer)
 {
   const xnap_setup_req_t *req = &inst->setup_info;
 
@@ -29,7 +29,13 @@ static void xnap_gNB_generate_xn_setup_request(instance_t instance, xnap_gnb_ins
   uint32_t length = 0;
   int rc = xnap_gNB_encode_pdu(pdu, &buffer, &length);
   ASN_STRUCT_FREE(asn_DEF_XNAP_XnAP_PDU, pdu);
-  AssertFatal(rc == 0, "[gNB %ld] xnap_gNB_encode_pdu() failed for XnSetupRequest\n", instance);
+  if (rc < 0) {
+    /* without Xn Setup the association is of no use: release it */
+    LOG_E(XNAP, "[gNB %ld] Failed to encode XnSetupRequest, closing assoc_id %d\n", instance, peer->assoc_id);
+    xnap_gNB_itti_send_sctp_close_association(instance, peer->assoc_id);
+    xnap_remove_peer(inst, peer);
+    return;
+  }
 
   LOG_I(XNAP, "[gNB %ld] Sending XnSetupRequest to peer assoc_id %d (%u bytes)\n",
         instance, peer->assoc_id, length);
