@@ -53,7 +53,7 @@ typedef struct {
   double normalization_ch_factor;
   /// Delays of the taps in mus. length(delays)=nb_taps, ordered by increasing delays
   double *delays;
-  ///length of impulse response. should be set to 11+2*bw*t_max
+  /// length of impulse response in samples: 1 + ceil(sampling_rate * last tap delay) + CHANNEL_SINC_TAIL
   uint channel_length;
   ///channel state vector. size(state) = nb_taps * (n_tx * n_rx);
   fourDimArray_t *a;

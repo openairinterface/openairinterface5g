@@ -59,6 +59,10 @@ static int noise_power_dBFS = INVALID_DBFS_VALUE;
 static const double default_amps_lin[] = {0.3868472, 0.3094778, 0.1547389, 0.0773694, 0.0386847, 0.0193424, 0.0096712, 0.0038685};
 static const double default_amp_lin[] = {1};
 
+// Samples kept after the last tap: the energy of the truncated sinc tail is about 1 / (pi^2 * L)
+// (worst case, half-sample delay), i.e. below -20 dB for L = 11
+#define CHANNEL_SINC_TAIL 11
+
 // Tap powers from linear values, normalized to a total power of 1
 static void init_amps_lin(channel_desc_t *chan_desc, const double *amps_lin)
 {
@@ -120,7 +124,7 @@ static void fill_channel_desc(channel_desc_t *chan_desc, struct complexd *R_sqrt
       const double delta_tau = 0.1;
       for (int i = 0; i < nb_taps; i++)
         chan_desc->delays[i] = i * delta_tau;
-      chan_desc->channel_length = 11 + 2 * chan_desc->sampling_rate * delta_tau * nb_taps;
+      chan_desc->channel_length = 1 + ceil(chan_desc->sampling_rate * delta_tau * (nb_taps - 1)) + CHANNEL_SINC_TAIL;
     }
   }
 
@@ -441,8 +445,8 @@ static void tdlModel(const int tdl_paths,
   chan_desc->delays = malloc(chan_desc->nb_taps * sizeof(*chan_desc->delays));
   for (int i = 0; i < chan_desc->nb_taps; i++)
     chan_desc->delays[i] = tdl_delays[i] * DS_TDL;
-  const int max_delay = chan_desc->sampling_rate * chan_desc->delays[chan_desc->nb_taps - 1];
-  chan_desc->channel_length = 2 * max_delay + 1 + 2 / (M_PI * M_PI) * log(4 * M_PI * max_delay);
+  const int max_delay = ceil(chan_desc->sampling_rate * chan_desc->delays[chan_desc->nb_taps - 1]);
+  chan_desc->channel_length = 1 + max_delay + CHANNEL_SINC_TAIL;
   printf("TDL : %f Ms/s, nb_taps %d, Td %e, channel_length %d\n",
          chan_desc->sampling_rate,
          tdl_paths,
@@ -649,8 +653,8 @@ channel_desc_t *new_channel_desc_scm(uint8_t nb_tx,
 
     case SCM_C: {
       chan_desc->nb_taps = sizeofArray(scm_c_delays);
-      const int max_delay = chan_desc->sampling_rate * scm_c_delays[chan_desc->nb_taps - 1];
-      chan_desc->channel_length = 2 * max_delay + 1 + 2 / (M_PI * M_PI) * log(4 * M_PI * max_delay);
+      const int max_delay = ceil(chan_desc->sampling_rate * scm_c_delays[chan_desc->nb_taps - 1]);
+      chan_desc->channel_length = 1 + max_delay + CHANNEL_SINC_TAIL;
       init_amps(chan_desc, scm_c_amps_dB);
       init_delays(chan_desc, scm_c_delays);
       chan_desc->ricean_factor = 1;
@@ -681,8 +685,8 @@ channel_desc_t *new_channel_desc_scm(uint8_t nb_tx,
     case SCM_D: {
       LOG_W(OCM, "This is not the real SCM-D model! It is just SCM-C with an additional Rice factor!\n");
       chan_desc->nb_taps = sizeofArray(scm_c_delays);
-      const int max_delay = chan_desc->sampling_rate * scm_c_delays[chan_desc->nb_taps - 1];
-      chan_desc->channel_length = 2 * max_delay + 1 + 2 / (M_PI * M_PI) * log(4 * M_PI * max_delay);
+      const int max_delay = ceil(chan_desc->sampling_rate * scm_c_delays[chan_desc->nb_taps - 1]);
+      chan_desc->channel_length = 1 + max_delay + CHANNEL_SINC_TAIL;
       init_amps(chan_desc, scm_c_amps_dB);
       init_delays(chan_desc, scm_c_delays);
       chan_desc->ricean_factor = 0.1;
@@ -750,8 +754,8 @@ channel_desc_t *new_channel_desc_scm(uint8_t nb_tx,
 
     case EPA: {
       chan_desc->nb_taps = sizeofArray(epa_delays);
-      const int max_delay = chan_desc->sampling_rate * epa_delays[chan_desc->nb_taps - 1];
-      chan_desc->channel_length = 2 * max_delay + 1 + 2 / (M_PI * M_PI) * log(4 * M_PI * max_delay);
+      const int max_delay = ceil(chan_desc->sampling_rate * epa_delays[chan_desc->nb_taps - 1]);
+      chan_desc->channel_length = 1 + max_delay + CHANNEL_SINC_TAIL;
       init_amps(chan_desc, epa_amps_dB);
       init_delays(chan_desc, epa_delays);
       chan_desc->ricean_factor = 1;
@@ -775,8 +779,8 @@ channel_desc_t *new_channel_desc_scm(uint8_t nb_tx,
 
     case EPA_low:
       chan_desc->nb_taps = sizeofArray(epa_delays);
-      const int max_delay = chan_desc->sampling_rate * epa_delays[chan_desc->nb_taps - 1];
-      chan_desc->channel_length = 2 * max_delay + 1 + 2 / (M_PI * M_PI) * log(4 * M_PI * max_delay);
+      const int max_delay = ceil(chan_desc->sampling_rate * epa_delays[chan_desc->nb_taps - 1]);
+      chan_desc->channel_length = 1 + max_delay + CHANNEL_SINC_TAIL;
       init_amps(chan_desc, epa_amps_dB);
       init_delays(chan_desc, epa_delays);
       chan_desc->ricean_factor = 1;
@@ -793,8 +797,8 @@ channel_desc_t *new_channel_desc_scm(uint8_t nb_tx,
 
     case EPA_high: {
       chan_desc->nb_taps = sizeofArray(epa_delays);
-      const int max_delay = chan_desc->sampling_rate * epa_delays[chan_desc->nb_taps - 1];
-      chan_desc->channel_length = 2 * max_delay + 1 + 2 / (M_PI * M_PI) * log(4 * M_PI * max_delay);
+      const int max_delay = ceil(chan_desc->sampling_rate * epa_delays[chan_desc->nb_taps - 1]);
+      chan_desc->channel_length = 1 + max_delay + CHANNEL_SINC_TAIL;
       init_amps(chan_desc, epa_amps_dB);
       init_delays(chan_desc, epa_delays);
       chan_desc->ricean_factor = 1;
@@ -812,8 +816,8 @@ channel_desc_t *new_channel_desc_scm(uint8_t nb_tx,
 
     case EPA_medium: {
       chan_desc->nb_taps = sizeofArray(epa_delays);
-      const int max_delay = chan_desc->sampling_rate * epa_delays[chan_desc->nb_taps - 1];
-      chan_desc->channel_length = 2 * max_delay + 1 + 2 / (M_PI * M_PI) * log(4 * M_PI * max_delay);
+      const int max_delay = ceil(chan_desc->sampling_rate * epa_delays[chan_desc->nb_taps - 1]);
+      chan_desc->channel_length = 1 + max_delay + CHANNEL_SINC_TAIL;
       init_amps(chan_desc, epa_amps_dB);
       init_delays(chan_desc, epa_delays);
       chan_desc->ricean_factor = 1;
@@ -831,8 +835,8 @@ channel_desc_t *new_channel_desc_scm(uint8_t nb_tx,
 
     case EVA: {
       chan_desc->nb_taps = sizeofArray(eva_delays);
-      const int max_delay = chan_desc->sampling_rate * eva_delays[chan_desc->nb_taps - 1];
-      chan_desc->channel_length = 2 * max_delay + 1 + 2 / (M_PI * M_PI) * log(4 * M_PI * max_delay);
+      const int max_delay = ceil(chan_desc->sampling_rate * eva_delays[chan_desc->nb_taps - 1]);
+      chan_desc->channel_length = 1 + max_delay + CHANNEL_SINC_TAIL;
       init_amps(chan_desc, eva_amps_dB);
       init_delays(chan_desc, eva_delays);
       chan_desc->ricean_factor = 1;
@@ -856,8 +860,8 @@ channel_desc_t *new_channel_desc_scm(uint8_t nb_tx,
 
     case ETU: {
       chan_desc->nb_taps = sizeofArray(etu_delays);
-      const int max_delay = chan_desc->sampling_rate * etu_delays[chan_desc->nb_taps - 1];
-      chan_desc->channel_length = 2 * max_delay + 1 + 2 / (M_PI * M_PI) * log(4 * M_PI * max_delay);
+      const int max_delay = ceil(chan_desc->sampling_rate * etu_delays[chan_desc->nb_taps - 1]);
+      chan_desc->channel_length = 1 + max_delay + CHANNEL_SINC_TAIL;
       init_amps(chan_desc, etu_amps_dB);
       init_delays(chan_desc, etu_delays);
       chan_desc->ricean_factor = 1;
@@ -881,8 +885,8 @@ channel_desc_t *new_channel_desc_scm(uint8_t nb_tx,
 
     case MBSFN: {
       chan_desc->nb_taps = sizeofArray(mbsfn_delays);
-      const int max_delay = chan_desc->sampling_rate * mbsfn_delays[chan_desc->nb_taps - 1];
-      chan_desc->channel_length = 2 * max_delay + 1 + 2 / (M_PI * M_PI) * log(4 * M_PI * max_delay);
+      const int max_delay = ceil(chan_desc->sampling_rate * mbsfn_delays[chan_desc->nb_taps - 1]);
+      chan_desc->channel_length = 1 + max_delay + CHANNEL_SINC_TAIL;
       init_amps(chan_desc, mbsfn_amps_dB);
       init_delays(chan_desc, mbsfn_delays);
       chan_desc->ricean_factor = 1;
@@ -1202,7 +1206,7 @@ int random_channel(channel_desc_t *desc, uint8_t abstraction_flag)
         anew[aatx][aarx] = (struct complexd){tmp * gaussZiggurat(0.0, 1.0), tmp * gaussZiggurat(0.0, 1.0)};
         if (i == 0 && desc->ricean_factor != 1.0) {
           if (desc->random_aoa==1) {
-            desc->aoa = uniformrandom()*2*M_PI;
+            desc->aoa = uniformrandom() * 2 * M_PI;
           }
 
           // this assumes that both RX and TX have linear antenna arrays with lambda/2 antenna spacing.
