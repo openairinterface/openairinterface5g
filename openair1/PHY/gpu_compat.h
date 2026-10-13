@@ -116,15 +116,29 @@ typedef cudaEvent_t    gpuEvent_t;
 #define gpuStreamSynchronize   hipStreamSynchronize
 #define gpuStreamNonBlocking   hipStreamNonBlocking
 #define gpuStreamCreateWithFlags        hipStreamCreateWithFlags
+#define gpuStreamCreate        hipStreamCreate
+#define gpuStreamWaitEvent     hipStreamWaitEvent
 #define gpuStreamBeginCapture  hipStreamBeginCapture
 #define gpuStreamEndCapture    hipStreamEndCapture
 #define gpuStreamCaptureModeThreadLocal hipStreamCaptureModeThreadLocal
 
 #define gpuEventRecord         hipEventRecord
+#define gpuEventCreate         hipEventCreate
+#define gpuEventCreateWithFlags hipEventCreateWithFlags
+#define gpuEventDisableTiming  hipEventDisableTiming
+#define gpuEventDestroy        hipEventDestroy
+#define gpuEventSynchronize    hipEventSynchronize
+
+#define gpuSetDeviceFlags      hipSetDeviceFlags
+#define gpuDeviceScheduleSpin  hipDeviceScheduleSpin
+#define gpuDeviceScheduleYield hipDeviceScheduleYield
+#define gpuDeviceScheduleBlockingSync hipDeviceScheduleBlockingSync
 
 #define gpuGraph_t             hipGraph_t
 #define gpuGraphExec_t         hipGraphExec_t
 #define gpuGraphInstantiate    hipGraphInstantiate
+#define gpuGraphInstantiateWithFlags hipGraphInstantiateWithFlags
+#define gpuGraphUpload         hipGraphUpload
 #define gpuGraphLaunch         hipGraphLaunch
 #define gpuGraphDestroy        hipGraphDestroy
 #define gpuGraphExecDestroy    hipGraphExecDestroy
@@ -158,6 +172,8 @@ typedef cudaEvent_t    gpuEvent_t;
 #define gpuMemcpyAsync         cudaMemcpyAsync
 
 #define gpuStreamCreateWithFlags        cudaStreamCreateWithFlags
+#define gpuStreamCreate        cudaStreamCreate
+#define gpuStreamWaitEvent     cudaStreamWaitEvent
 #define gpuStreamDestroy       cudaStreamDestroy
 #define gpuStreamSynchronize   cudaStreamSynchronize
 #define gpuStreamNonBlocking   cudaStreamNonBlocking
@@ -166,10 +182,22 @@ typedef cudaEvent_t    gpuEvent_t;
 #define gpuStreamCaptureModeThreadLocal cudaStreamCaptureModeThreadLocal
 
 #define gpuEventRecord         cudaEventRecord
+#define gpuEventCreate         cudaEventCreate
+#define gpuEventCreateWithFlags cudaEventCreateWithFlags
+#define gpuEventDisableTiming  cudaEventDisableTiming
+#define gpuEventDestroy        cudaEventDestroy
+#define gpuEventSynchronize    cudaEventSynchronize
+
+#define gpuSetDeviceFlags      cudaSetDeviceFlags
+#define gpuDeviceScheduleSpin  cudaDeviceScheduleSpin
+#define gpuDeviceScheduleYield cudaDeviceScheduleYield
+#define gpuDeviceScheduleBlockingSync cudaDeviceScheduleBlockingSync
 
 #define gpuGraph_t             cudaGraph_t
 #define gpuGraphExec_t         cudaGraphExec_t
 #define gpuGraphInstantiate    cudaGraphInstantiate
+#define gpuGraphInstantiateWithFlags cudaGraphInstantiateWithFlags
+#define gpuGraphUpload         cudaGraphUpload
 #define gpuGraphLaunch         cudaGraphLaunch
 #define gpuGraphDestroy        cudaGraphDestroy
 #define gpuGraphExecDestroy    cudaGraphExecDestroy
