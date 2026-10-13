@@ -1167,6 +1167,7 @@ set(L2_NR_SRC
   ${NR_RRC_DIR}/rrc_gNB_nsa.c
   ${NR_RRC_DIR}/rrc_gNB_UE_context.c
   ${NR_RRC_DIR}/rrc_gNB_NGAP.c
+  ${NR_RRC_DIR}/rrc_gNB_security.c
   ${NR_RRC_DIR}/rrc_gNB_radio_bearers.c
   ${NR_RRC_DIR}/rrc_gNB_cuup.c
   ${NR_RRC_DIR}/rrc_gNB_du.c
