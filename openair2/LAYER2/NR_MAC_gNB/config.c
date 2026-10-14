@@ -1006,7 +1006,7 @@ void nr_mac_cell_config_scc(nr_cell_sched_t *cell, NR_ServingCellConfigCommon_t 
   cell->radio_config = *config;
   cell->common_channels.mib = get_new_MIB_NR(scc);
   cell->first_MIB = true;
-  cell->ul_next = (fsn_t) {.mu = *scc->ssbSubcarrierSpacing};
+  cell->ul_next = (fsn_t) {.f = UINT16_MAX, .mu = *scc->ssbSubcarrierSpacing};
 
   const int NTN_gNB_Koffset = get_NTN_Koffset(scc);
   const int n = get_slots_per_frame_from_scs(*scc->ssbSubcarrierSpacing);
