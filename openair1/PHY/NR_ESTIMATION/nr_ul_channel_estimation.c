@@ -4,6 +4,9 @@
 
 #include "nr_common.h"
 #include "platform_types.h"
+#include <math.h>
+#include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "nr_ul_estimation.h"
@@ -632,7 +635,7 @@ int nr_pusch_channel_estimation(PHY_VARS_gNB *gNB,
   return 0;
 }
 
-static uint8_t get_srs_fd_cdm(const uint8_t N_ap, const uint8_t K_TC, uint8_t cyclic_shift)
+uint8_t get_srs_fd_cdm(const uint8_t N_ap, const uint8_t K_TC, uint8_t cyclic_shift)
 {
   uint8_t fd_cdm = N_ap;
   switch (N_ap) {
@@ -653,6 +656,302 @@ static uint8_t get_srs_fd_cdm(const uint8_t N_ap, const uint8_t K_TC, uint8_t cy
   return fd_cdm;
 }
 
+// Hann window in Q15, from the cosine recurrence so there is one libm call per window.
+static void srs_noise_window(int n, int16_t *w)
+{
+  const double c1 = cos(2.0 * M_PI / (n - 1));
+  double a = 1.0;
+  double b = c1;
+  for (int i = 0; i < n; i++) {
+    w[i] = (int16_t)lroundf((float)(16383.5 * (1.0 - a)));
+    const double next = 2.0 * c1 * b - a;
+    a = b;
+    b = next;
+  }
+}
+
+static int srs_noise_fft_size(int num_ls)
+{
+  int n = 64;
+  while (n < num_ls && n < NR_SRS_NOISE_MAX_FFT)
+    n <<= 1;
+  return n;
+}
+
+// k-th smallest of a[0..n), reorders a so that a[0..k) <= a[k] <= a(k..n)
+// Does not sort the whole array like qsort(), it only keeps splitting the part that contains the k-th value
+static double quickselect_double(double *a, int n, int k)
+{
+  int lo = 0;
+  int hi = n - 1;
+  while (lo < hi) {
+    const double pivot = a[(lo + hi) / 2];
+    int l = lo;
+    int h = hi;
+    while (l <= h) {
+      while (a[l] < pivot)
+        l++;
+      while (a[h] > pivot)
+        h--;
+      if (l <= h) {
+        const double tmp = a[l];
+        a[l++] = a[h];
+        a[h--] = tmp;
+      }
+    }
+    if (k <= h)
+      hi = h;
+    else if (k >= l)
+      lo = l;
+    else
+      break;
+  }
+  return a[k];
+}
+
+// Compute noise from the delay domain.
+// The channel sits in a few delay bins while the noise is spread over all of them, so the weakest bins hold noise only.
+void nr_srs_noise_accumulate(int p_index,
+                             const nfapi_nr_srs_pdu_t *srs_pdu,
+                             const nr_srs_info_t *nr_srs_info,
+                             const c16_t *srs_ls_estimated_channel,
+                             nr_srs_noise_acc_t *acc,
+                             nr_srs_prg_pow_t *pow_per_prg)
+{
+  const uint64_t subcarrier_offset = srs_pdu->bwp_start * NR_NB_SC_PER_RB;
+  const uint8_t N_ap = 1 << srs_pdu->num_ant_ports;
+  const uint8_t K_TC = 2 << srs_pdu->comb_size;
+  const uint16_t m_SRS_b = get_m_srs(srs_pdu->config_index, srs_pdu->bandwidth_index);
+  const uint16_t M_sc_b_SRS = m_SRS_b * NR_NB_SC_PER_RB / K_TC;
+  const uint8_t fd_cdm = get_srs_fd_cdm(N_ap, K_TC, srs_pdu->cyclic_shift);
+  const uint16_t prg_size = max((int)srs_pdu->beamforming.prg_size, 1);
+  const uint16_t num_prgs = max((int)srs_pdu->beamforming.num_prgs, 1);
+
+  const uint16_t first_sc = subcarrier_offset + nr_srs_info->k_0_p[p_index][0];
+  const uint16_t step = K_TC * fd_cdm;
+
+  // The per PRG signal power wants every estimate, the noise floor only needs enough delay bins
+  const int all_ls = M_sc_b_SRS / fd_cdm;
+  const int num_ls = min(all_ls, NR_SRS_NOISE_MAX_FFT);
+  if (num_ls < NR_SRS_NOISE_MIN_ESTIMATES) {
+    // every pair of the slot has the same num_ls, so no pair reads a floor and nr_srs_snr_per_prg returns early
+    LOG_W(NR_PHY, "SRS: %d LS estimates, cannot read a noise floor\n", num_ls);
+    return;
+  }
+
+  const int nfft = srs_noise_fft_size(num_ls);
+  c16_t freq[NR_SRS_NOISE_MAX_FFT] __attribute__((aligned(32))) = {0};
+  c16_t time[NR_SRS_NOISE_MAX_FFT] __attribute__((aligned(32))) = {0};
+  if (acc->win_len != num_ls) {
+    srs_noise_window(num_ls, acc->win);
+    acc->win_sq = 0;
+    for (int i = 0; i < num_ls; i++)
+      acc->win_sq += (uint64_t)acc->win[i] * acc->win[i];
+    acc->win_len = num_ls;
+  }
+
+  const int16_t *win = acc->win;
+  const uint32_t prg_len = NR_NB_SC_PER_RB * prg_size;
+  uint32_t offset = 0; // subcarrier distance from the first LS estimate
+  int prg = 0;
+  uint64_t pair_sum = 0; // LS power of this rx antenna and port pair, over the whole band
+  uint64_t energy = 0; // sum of |ls*w|^2, the windowed power in LS units
+  c16_t prev = {0, 0};
+  for (int i = 0; i < all_ls; i++) {
+    const c16_t ls = srs_ls_estimated_channel[first_sc + offset];
+
+    // Neighbouring LS estimates sit K_TC*fd_cdm subcarriers apart, which is exactly the span the
+    // despreading sums over, so their correlation measures how much of that sum is coherent.
+    if (i) {
+      acc->corr_re += (int64_t)ls.r * prev.r + (int64_t)ls.i * prev.i;
+      acc->corr_im += (int64_t)ls.i * prev.r - (int64_t)ls.r * prev.i;
+      acc->corr_cnt++;
+    }
+    prev = ls;
+    while (prg < num_prgs - 1 && offset >= (prg + 1) * prg_len)
+      prg++;
+    const uint64_t p = c16amp2(ls);
+    pow_per_prg[prg].pow += p;
+    pow_per_prg[prg].cnt++;
+    pair_sum += p;
+
+    if (i < num_ls) {
+      freq[i] = c16xmulConstShift(ls, win[i], 15);
+      energy += c16amp2(freq[i]);
+    }
+    offset += step;
+  }
+
+  if (energy == 0 || acc->win_sq == 0)
+    return;
+  const uint64_t wsq = acc->win_sq;
+
+  idft(get_idft(nfft), (int16_t *)freq, (int16_t *)time, 1);
+
+  uint32_t power[NR_SRS_NOISE_MAX_FFT];
+  uint64_t total = 0;
+  for (int t = 0; t < nfft; t++) {
+    power[t] = c16amp2(time[t]);
+    total += power[t];
+  }
+  if (total == 0)
+    return;
+
+  // power[t]/total is the share of this bin, scaling it by the windowed energy puts it back in LS units,
+  // so the bins of every antenna and port land on the same scale and simply add up.
+  const double unit = (double)nfft * (double)energy * 1073741824.0 / (double)wsq / (double)total;
+  for (int t = 0; t < nfft; t++)
+    acc->spectrum[t] += power[t] * unit;
+
+  if (acc->cnt < NR_SRS_NOISE_MAX_PAIRS && all_ls > 0)
+    acc->pair_pow[acc->cnt] = (double)pair_sum / all_ls;
+
+  acc->nfft = nfft;
+  acc->num_ls = num_ls;
+  acc->cnt++;
+}
+
+// A noise bin averaged over cnt antenna/port pairs follows Gamma(cnt)/cnt, so the percentile the floor
+// is read at sits below its mean by a factor that depends only on cnt: Wilson-Hilferty in closed form.
+static double srs_noise_quantile_scale(uint32_t cnt, int num_ls, double z)
+{
+  const double a = 1.0 / (9.0 * cnt);
+  const double wh = 1.0 - a - z * sqrt(a);
+  return wh * wh * wh * (1.0 + 5.0 / (num_ls * sqrt((double)cnt)));
+}
+
+// Fills the per PRG SNR and returns the wideband SNR
+uint32_t nr_srs_snr_per_prg(const nfapi_nr_srs_pdu_t *srs_pdu,
+                            uint32_t signal_power_avg,
+                            nr_srs_noise_acc_t *acc,
+                            const nr_srs_prg_pow_t *pow_per_prg,
+                            int16_t *snr_per_prg)
+{
+  const uint8_t N_ap = 1 << srs_pdu->num_ant_ports;
+  const uint8_t K_TC = 2 << srs_pdu->comb_size;
+  const uint8_t fd_cdm = get_srs_fd_cdm(N_ap, K_TC, srs_pdu->cyclic_shift);
+  const uint16_t num_prgs = max((int)srs_pdu->beamforming.num_prgs, 1);
+
+  if (acc->cnt == 0 || acc->nfft == 0)
+    return 1;
+
+  // Only two percentiles are read. Dividing by cnt keeps the order, so only the two selected bins are divided
+  double *bins = acc->spectrum;
+  const int idx1 = (acc->nfft * NR_SRS_NOISE_QUANTILE_NUM) / NR_SRS_NOISE_QUANTILE_DEN;
+  const int idx2 = (acc->nfft * NR_SRS_NOISE_QUANTILE2_NUM) / NR_SRS_NOISE_QUANTILE_DEN;
+  // Two ranks are enough, no full sort: the first select leaves the 20th percentile bin at idx2 with all
+  // smaller bins before it, the second finds the 10th percentile bin (the noise floor) among those
+  const double q2_bin = quickselect_double(bins, acc->nfft, idx2) / acc->cnt;
+  const double floor_bin = quickselect_double(bins, idx2, idx1) / acc->cnt;
+  const double scale_q1 = srs_noise_quantile_scale(acc->cnt, acc->num_ls, NR_SRS_NOISE_QUANTILE_Z);
+
+  // The percentile is noise plus whatever the channel leaves under that bin, so it is an upper
+  // bound. A second percentile gives a second equation: the pedestal cancels in the difference,
+  // leaving the noise times the difference of the two scales. That slope under-reads rather than
+  // over-reads, so it is taken only when it lands below the bound, and never under a quarter of it.
+  double noise = floor_bin / scale_q1;
+  const double scale_q2 = srs_noise_quantile_scale(acc->cnt, acc->num_ls, NR_SRS_NOISE_QUANTILE2_Z);
+  if (scale_q2 > scale_q1) {
+    const double slope = (q2_bin - floor_bin) / (scale_q2 - scale_q1);
+    if (slope < noise && slope > noise * NR_SRS_NOISE_SLOPE_MIN_RATIO)
+      noise = slope;
+  }
+  const int noise_dB_x10 = dB_fixed_x10(max((uint32_t)noise, 1u));
+
+  // The despreading only lifts the signal by fd_cdm where the channel is flat across the
+  // K_TC*fd_cdm subcarriers it sums. Taking that on faith costs 10*log10(fd_cdm) over a channel
+  // that decorrelates inside the span, so the gain is measured from the correlation between
+  // neighbouring estimates: fd_cdm when the channel is flat, 1 when it is gone by the end.
+  uint64_t band_pow = 0;
+  uint32_t band_cnt = 0;
+  for (int prg = 0; prg < num_prgs; prg++) {
+    band_pow += pow_per_prg[prg].pow;
+    band_cnt += pow_per_prg[prg].cnt;
+  }
+  double despread = fd_cdm;
+  if (fd_cdm > 1 && acc->corr_cnt && band_cnt) {
+    const double mean = (double)band_pow / band_cnt;
+    const double r1 = sqrt((double)acc->corr_re * acc->corr_re + (double)acc->corr_im * acc->corr_im) / acc->corr_cnt;
+    double rho = (mean > noise) ? r1 / (mean - noise) : 0.0;
+    if (rho > 1.0)
+      rho = 1.0;
+    if (!(rho > 0.0))
+      rho = 0.0;
+    // rho is measured across the whole span, so one step inside it carries the fd_cdm-th root
+    const double step_rho = pow(rho, 1.0 / fd_cdm);
+    double sum = fd_cdm;
+    for (int d = 1; d < fd_cdm; d++)
+      sum += 2.0 * (fd_cdm - d) * pow(step_rho, d);
+    despread = sum / fd_cdm;
+    if (despread < 1.0)
+      despread = 1.0;
+    if (despread > fd_cdm)
+      despread = fd_cdm;
+  }
+
+  // The LS power is averaged over every rx antenna and port pair, but a pair only carries signal
+  // when its port reaches its antenna, so the mean is diluted by the ones that do not. Counting
+  // the carriers against a threshold does not survive a timing offset: the delay breaks the port
+  // orthogonality over the despreading span, and that leakage is a fixed fraction of the signal,
+  // so it crosses any noise-referenced threshold once the SNR is high enough. The participation
+  // ratio weighs each pair by its own power instead: C for C equal pairs, 1 when one holds
+  // everything, and no threshold anywhere.
+  double excess_sum = 0.0;
+  double excess_sq = 0.0;
+  if (acc->cnt <= NR_SRS_NOISE_MAX_PAIRS) {
+    for (uint32_t i = 0; i < acc->cnt; i++) {
+      const double s = acc->pair_pow[i] - noise;
+      if (s > 0.0) {
+        excess_sum += s;
+        excess_sq += s * s;
+      }
+    }
+  }
+  double carrying = excess_sq > 0.0 ? excess_sum * excess_sum / excess_sq : (double)acc->cnt;
+  if (!(carrying >= 1.0))
+    carrying = 1.0;
+  if (carrying > (double)acc->cnt)
+    carrying = (double)acc->cnt;
+  const double dilution = (double)acc->cnt / carrying;
+
+  for (int prg = 0; prg < num_prgs; prg++) {
+    nr_srs_prg_pow_t w = pow_per_prg[prg];
+    int span = 0;
+
+    while (w.cnt < NR_SRS_NOISE_PRG_MIN_ESTIMATES && span < num_prgs) {
+      span++;
+      for (int s = -1; s <= 1; s += 2) {
+        const int j = prg + s * span;
+        if (j >= 0 && j < num_prgs) {
+          w.pow += pow_per_prg[j].pow;
+          w.cnt += pow_per_prg[j].cnt;
+        }
+      }
+    }
+
+    // The LS estimates carry signal plus noise, so the noise comes off before the ratio. Around and
+    // below 0 dB the two are within their own estimation error, so the difference can land at or
+    // under zero, and dB_fixed_x10 takes a uint32_t. The floor is a ratio rather than an absolute
+    // power, which also bounds what a single faded PRG can report.
+    const double floor_signal = noise * NR_SRS_SNR_MIN_RATIO;
+    const double raw = w.cnt ? ((double)w.pow / w.cnt - noise) * dilution / despread : 0.0;
+    const double signal = max(raw, floor_signal);
+    snr_per_prg[prg] = (dB_fixed_x10(signal) - noise_dB_x10) / 10.0;
+
+    LOG_D(NR_PHY,
+          "SRS-SNR-PRG: rnti %04x, prg %3d, noise %u (%d dB), snr %d\n",
+          srs_pdu->rnti,
+          prg,
+          (uint32_t)noise,
+          noise_dB_x10 / 10,
+          snr_per_prg[prg]);
+  }
+
+  // The wideband SNR is the same estimator over the whole band: same mean, same noise, same scaling
+  const double signal = max(((double)signal_power_avg - noise) * dilution / despread, noise * NR_SRS_SNR_MIN_RATIO);
+  return (dB_fixed_x10(signal) - noise_dB_x10) / 10;
+}
+
 int nr_srs_ls_channel_estimation(int ant,
                                  int p_index,
                                  uint16_t ofdm_symbol_size,
@@ -662,6 +961,7 @@ int nr_srs_ls_channel_estimation(int ant,
                                  const c16_t *srs_generated_signal,
                                  c16_t srs_received_signal[ofdm_symbol_size * N_symb_SRS],
                                  c16_t srs_ls_estimated_channel[ofdm_symbol_size * N_symb_SRS],
+                                 int64_t *ls_peak,
                                  delay_t *delay)
 {
 #ifdef SRS_DEBUG
@@ -698,19 +998,36 @@ int nr_srs_ls_channel_estimation(int ant,
         ls_estimated = (c16_t){0, 0};
         uint16_t subcarrier_cdm = subcarrier;
 
+        // The despreading sums fd_cdm products and the result is then scaled by N_ap/fd_cdm, so the
+        // value on the way out can be several bits wider than one product. Accumulating in 64 bits
+        // and narrowing once at the end keeps every intermediate exact, and the narrowing clamps
+        // rather than wraps: a wrap would send the estimate to the opposite rail and that impulse
+        // spreads over every delay bin, which is what the noise floor is read from.
+        int64_t acc_re = 0;
+        int64_t acc_im = 0;
+
         for (int cdm_idx = 0; cdm_idx < fd_cdm; cdm_idx++) {
           c16_t generated_srs = srs_generated_signal[srs_symbol_offset + subcarrier_cdm];
           c16_t received_srs = srs_received_signal[srs_symbol_offset + subcarrier_cdm];
-          // We know that nr_srs_info->srs_generated_signal_bits bits are enough to represent the real and imaginary parts of
-          // generated_srs. So we only need a nr_srs_info->srs_generated_signal_bits shift to ensure that the result fits into 16
-          // bits.
-          ls_estimated = c16maddConjShift(generated_srs, received_srs, ls_estimated, nr_srs_info->srs_generated_signal_bits);
+          acc_re += (int64_t)generated_srs.r * received_srs.r + (int64_t)generated_srs.i * received_srs.i;
+          acc_im += (int64_t)generated_srs.r * received_srs.i - (int64_t)generated_srs.i * received_srs.r;
 
           // Subcarrier increment
           subcarrier_cdm += K_TC;
         }
-        // scaling for N_ap > fd_cdm : N_ap/fd_cdm
-        ls_estimated = c16mulRealShift(ls_estimated, scale, 0);
+
+        // We know that nr_srs_info->srs_generated_signal_bits bits are enough to represent the real and imaginary parts of
+        // generated_srs, so that shift takes the products back to the scale of the received signal. The scaling for
+        // N_ap > fd_cdm : N_ap/fd_cdm then follows, before the one narrowing to 16 bits.
+        acc_re = (acc_re >> nr_srs_info->srs_generated_signal_bits) * scale;
+        acc_im = (acc_im >> nr_srs_info->srs_generated_signal_bits) * scale;
+
+        // The clamp keeps a wrap from turning one estimate into an impulse across every delay
+        // bin; the peak says how close the received level came to needing it.
+        const int64_t mag = max(llabs(acc_re), llabs(acc_im));
+        if (mag > *ls_peak)
+          *ls_peak = mag;
+        ls_estimated = (c16_t){saturate_int16(acc_re), saturate_int16(acc_im)};
       }
 
       for (int ktc = 0; ktc < K_TC && srs_symbol_offset + subcarrier + ktc < ofdm_symbol_size * N_symb_SRS; ktc++) {

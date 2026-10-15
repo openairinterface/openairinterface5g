@@ -2,6 +2,7 @@
  * SPDX-License-Identifier: LicenseRef-CSSL-1.0
  */
 
+#include <math.h>
 #include "PHY/nr_phy_common/inc/nr_phy_common_srs.h"
 #include "PHY/NR_REFSIG/dmrs_nr.h"
 #include "PHY/NR_REFSIG/ul_ref_seq_nr.h"
@@ -260,12 +261,26 @@ bool generate_srs_nr(const NR_DL_FRAME_PARMS *frame_parms,
     }
   }
 
+  // amp is per subcarrier, which suits the channels that fill the band. The SRS covers only
+  // M_sc_b_SRS of the ofdm_symbol_size subcarriers, so it leaves the IFFT that much quieter, and
+  // the fixed point FFT at the receiver rounds against the full scale and not against the signal,
+  // so its floor ends up right under it. Undoing the factor levels every comb and bandwidth at
+  // amp/sqrt(N_ap) per antenna; the cap keeps a narrow SRS off the rails.
+  const uint32_t srs_sc_total = frame_parms->ofdm_symbol_size;
+  double amp_scaled = (double)amp * sqrt((double)srs_sc_total / (M_sc_b_SRS ? M_sc_b_SRS : 1));
+  const double amp_max = (double)NR_SRS_GEN_MAX_SUBCARRIER * sqrt((double)N_ap);
+  if (amp_scaled > amp_max)
+    amp_scaled = amp_max;
+  if (amp_scaled < (double)amp)
+    amp_scaled = (double)amp;
+  const int32_t amp_eff = (int32_t)lround(amp_scaled);
+
   // Variable initialization
   if(nr_srs_info) {
-    nr_srs_info->srs_generated_signal_bits = log2_approx(amp);
+    nr_srs_info->srs_generated_signal_bits = log2_approx(amp_eff);
   }
   const uint64_t subcarrier_offset = bwp_start * NR_NB_SC_PER_RB;
-  float amp_sqrt_N_ap = amp / sqrt(N_ap);
+  float amp_sqrt_N_ap = amp_eff / sqrt(N_ap);
   int n_b[nr_srs_info->B_SRS + 1];
 
   // Find index of table which is for this SRS length
@@ -357,8 +372,8 @@ bool generate_srs_nr(const NR_DL_FRAME_PARMS *frame_parms,
           .r = shift.r * r_overbar.r - shift.i * r_overbar.i,
           .i = shift.r * r_overbar.i + shift.i * r_overbar.r,
         };
-        c16_t r_amp = {(((int32_t)(amp_sqrt_N_ap * r.r)) >> 15),
-                       (((int32_t)(amp_sqrt_N_ap * r.i)) >> 15)};
+        // Rounding, not truncation
+        c16_t r_amp = {(((int32_t)(amp_sqrt_N_ap * r.r) + (1 << 14)) >> 15), (((int32_t)(amp_sqrt_N_ap * r.i) + (1 << 14)) >> 15)};
 
 #ifdef SRS_DEBUG
         int subcarrier_log = subcarrier - subcarrier_offset;

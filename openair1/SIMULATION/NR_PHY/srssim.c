@@ -579,7 +579,7 @@ int main(int argc, char *argv[])
       start_meas(&gNB->rx_srs_stats);
       uint8_t N_symb_SRS = 1 << srs_pdu.num_symbols;
       uint8_t N_ap = 1 << srs_pdu.num_ant_ports;
-      int16_t snr_per_rb[srs_pdu.bwp_size];
+      int16_t snr_per_prg[max((int)srs_pdu.beamforming.num_prgs, 1)];
       uint16_t timing_advance_offset;
       int16_t timing_advance_offset_nsec[n_rx];
       int srs_est;
@@ -597,7 +597,7 @@ int main(int argc, char *argv[])
                            &srs_est,
                            &snr,
                            srs_estimated_channel_freq,
-                           snr_per_rb,
+                           snr_per_prg,
                            &timing_advance_offset,
                            timing_advance_offset_nsec);
 

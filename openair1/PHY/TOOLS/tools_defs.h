@@ -847,6 +847,16 @@ static inline c16_t c16mulShiftSat(const c16_t a, const c16_t b, const int shift
                  .i = (int16_t)(im > INT16_MAX ? INT16_MAX : im < INT16_MIN ? INT16_MIN : im)};
 }
 
+// Narrows a wide value to int16_t by clamping to [INT16_MIN, INT16_MAX]
+static inline int16_t saturate_int16(int64_t v)
+{
+  if (v > INT16_MAX)
+    return INT16_MAX;
+  if (v < INT16_MIN)
+    return INT16_MIN;
+  return (int16_t)v;
+}
+
 /*!\fn int32_t rotate_cpx_vector(c16_t *x,c16_t alpha,c16_t *y,uint32_t N,uint16_t output_shift)
 This function performs componentwise multiplication of a vector with a complex scalar.
 @param x Vector input (Q1.15)  in the format  |Re0  Im0|,......,|Re(N-1) Im(N-1)|

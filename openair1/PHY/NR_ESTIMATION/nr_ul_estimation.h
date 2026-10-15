@@ -5,7 +5,7 @@
 #ifndef __NR_UL_ESTIMATION_DEFS__H__
 #define __NR_UL_ESTIMATION_DEFS__H__
 
-
+#include <stdint.h>
 #include "PHY/defs_gNB.h"
 /** @addtogroup _PHY_PARAMETER_ESTIMATION_BLOCKS_
  * @{
@@ -69,6 +69,7 @@ int nr_srs_ls_channel_estimation(int ant,
                                  const c16_t *srs_generated_signal,
                                  c16_t srs_received_signal[ofdm_symbol_size * N_symb_SRS],
                                  c16_t srs_ls_estimated_channel[ofdm_symbol_size * N_symb_SRS],
+                                 int64_t *ls_peak,
                                  delay_t *delay);
 
 int nr_srs_channel_interpolation(int p_index,
@@ -84,6 +85,57 @@ int nr_srs_channel_interpolation(int p_index,
                                  c16_t srs_estimated_channel_time_shifted[NR_SRS_IDFT_OVERSAMP_FACTOR * ofdm_symbol_size],
                                  uint32_t *signal_power,
                                  c16_t delay_table[2 * MAX_DELAY_COMP + 1][NR_MAX_OFDM_SYMBOL_SIZE]);
+
+uint8_t get_srs_fd_cdm(const uint8_t N_ap, const uint8_t K_TC, uint8_t cyclic_shift);
+
+#define NR_SRS_NOISE_MAX_FFT 128 // enough delay bins for the floor, and bounds the transform
+#define NR_SRS_NOISE_MIN_ESTIMATES 16 // below this the bins are too few to read a floor
+#define NR_SRS_NOISE_PRG_MIN_ESTIMATES 12 // smallest number of LS estimates behind a PRG power
+#define NR_SRS_NOISE_QUANTILE_DEN 100
+// QUANTILE       5         10        15        20        25
+//   z          1.64485   1.28155   1.03643   0.84162   0.67449
+#define NR_SRS_NOISE_QUANTILE_NUM 10
+#define NR_SRS_NOISE_QUANTILE_Z 1.28155
+#define NR_SRS_NOISE_QUANTILE2_NUM 20
+#define NR_SRS_NOISE_QUANTILE2_Z 0.84162
+#define NR_SRS_NOISE_SLOPE_MIN_RATIO 0.25 // the slope never takes the noise under a quarter of the bound
+#define NR_SRS_NOISE_MAX_PAIRS 64 // rx antennas times SRS ports, 8 by 8 at most
+#define NR_SRS_SNR_MIN_RATIO 0.01 // the reported SNR bottoms out at -20 dB
+
+// Delay bins of the LS estimates, summed over the rx antennas and ports
+typedef struct {
+  double spectrum[NR_SRS_NOISE_MAX_FFT];
+  double pair_pow[NR_SRS_NOISE_MAX_PAIRS]; // mean LS power of each rx antenna and port pair
+  int16_t win[NR_SRS_NOISE_MAX_FFT]; // Hann window
+  uint64_t win_sq; // sum of win^2, Q30
+  int win_len;
+  int64_t ls_peak; // largest LS magnitude
+  int64_t corr_re; // sum of ls[i] * conj(ls[i-1]), the channel correlation over one despreading span
+  int64_t corr_im;
+  uint64_t corr_cnt;
+  int nfft;
+  int num_ls;
+  uint32_t cnt;
+} nr_srs_noise_acc_t;
+
+// LS power of one PRG, summed over the rx antennas and ports
+typedef struct {
+  uint64_t pow;
+  uint32_t cnt;
+} nr_srs_prg_pow_t;
+
+void nr_srs_noise_accumulate(int p_index,
+                             const nfapi_nr_srs_pdu_t *srs_pdu,
+                             const nr_srs_info_t *nr_srs_info,
+                             const c16_t *srs_ls_estimated_channel,
+                             nr_srs_noise_acc_t *acc,
+                             nr_srs_prg_pow_t *pow_per_prg);
+
+uint32_t nr_srs_snr_per_prg(const nfapi_nr_srs_pdu_t *srs_pdu,
+                            uint32_t signal_power_avg,
+                            nr_srs_noise_acc_t *acc,
+                            const nr_srs_prg_pow_t *pow_per_prg,
+                            int16_t *snr_per_prg);
 
 void nr_freq_equalization(NR_DL_FRAME_PARMS *frame_parms,
                           c16_t *rxdataF_comp,
