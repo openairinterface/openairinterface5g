@@ -2,6 +2,8 @@
  * SPDX-License-Identifier: LicenseRef-CSSL-1.0
  */
 
+/* xn-simulator-test: N gNB instances without radio, running Xn Setup and Xn handovers */
+
 #include "common/ran_context.h"
 #include "nfapi/oai_integration/vendor_ext.h"
 #include "openair2/GNB_APP/gnb_config_ng.h"
@@ -9,6 +11,8 @@
 #include "openair2/GNB_APP/gnb_paramdef.h"
 #include "openair2/XNAP/xnap_gNB.h"
 #include "openair3/SCTP/sctp_default_values.h"
+#include "openair3/NAS/NR_UE/nr_nas_msg.h"
+#include "xn-ho-sim.h"
 
 RAN_CONTEXT_t RC;
 THREAD_STRUCT thread_struct;
@@ -25,6 +29,9 @@ static uint16_t *mnc_tab = NULL;
 static uint8_t *mnc_len_tab = NULL;
 
 static xnap_net_config_t *xn_net_config_tab = NULL;
+
+/* --xn-setup-only: stop after Xn Setup, else Xn handovers of a UE stub (xn-ho-sim.c) */
+static bool xn_setup_only = false;
 
 uint32_t gnb_id = 0;
 uint32_t tac = 1;
@@ -51,9 +58,26 @@ ngran_node_t get_node_type()
 
 configmodule_interface_t *uniqCfg = NULL;
 
+/* Load a configuration file in place of the current one. The libconfig backend has
+ * a single instance, so one file at a time; the config module uses argv until it ends. */
+static void switch_config(int argc, char **argv)
+{
+  static char **cfg_argv = NULL;
+  end_configmodule(uniqCfg);
+  /* load_configmodule() reads the current module through config_get_if() */
+  uniqCfg = NULL;
+  free(cfg_argv);
+  cfg_argv = argv;
+  uniqCfg = load_configmodule(argc, argv, CONFIG_ENABLECMDLINEONLY);
+  if (uniqCfg == NULL) {
+    fprintf(stderr, "[SOFTMODEM] Error, configuration module init failed\n");
+    exit(1);
+  }
+}
+
 /* Looks up the Xn/SCTP config cached for this gNB instance at startup (each
- * instance's config file is loaded, extracted, then unloaded in turn, so it
- * is no longer available via config_get_if() by the time Xn registration runs). */
+ * instance's config file is loaded in turn with switch_config(), so it is no
+ * longer available via config_get_if() by the time Xn registration runs). */
 static xnap_net_config_t xn_net_config_from_cache(uint32_t gnb_idx)
 {
   AssertFatal(xn_net_config_tab != NULL && gnb_idx < nb_gnb_inst,
@@ -105,6 +129,8 @@ void *gNB_app_task(void *args_p)
               NGAP_REGISTER_GNB_CNF(msg_p).nb_amf);
         LOG_I(GNB_APP, "[gNB %ld] Starting Xn procedure sequence\n", instance);
         gNB_app_register_xn(instance, &NGAP_REGISTER_GNB_CNF(msg_p));
+        if (!xn_setup_only)
+          xn_ho_sim_ng_setup_done(instance);
         break;
 
       default:
@@ -174,6 +200,15 @@ void *rrc_gnb_task(void *args_p)
   }
 }
 
+/* value of option name, or def */
+static char *get_opt(int argc, char **argv, const char *name, char *def)
+{
+  for (int i = 1; i < argc - 1; i++)
+    if (strcmp(argv[i], name) == 0)
+      return argv[i + 1];
+  return def;
+}
+
 static int extract_conf_files(int argc, char **argv, char **Ofiles, int max_files)
 {
   int n = 0;
@@ -195,6 +230,16 @@ int main(int argc, char **argv)
   char *Ofiles[8];
   int nOfiles = extract_conf_files(argc, argv, Ofiles, sizeofArray(Ofiles));
   nb_gnb_inst = (nOfiles > 0) ? nOfiles : 1;
+  for (int i = 1; i < argc; i++)
+    xn_setup_only |= strcmp(argv[i], "--xn-setup-only") == 0;
+  if (nOfiles < 2) {
+    fprintf(stderr, "Testing Xn setup/handover requires at least 2 gNBs\n");
+    fprintf(stderr,
+            "usage: %s -O <gNB1 config> -O <gNB2 config> [-O <gNB3 config> ...] [--ue-conf <UE config>] [--xn-setup-only]\n"
+            "       [config options, e.g. --log_config.xnap_log_level debug]\n",
+            argv[0]);
+    return EXIT_FAILURE;
+  }
 
   gnb_id_tab = calloc_or_fail(nb_gnb_inst, sizeof(*gnb_id_tab));
   tac_tab = calloc_or_fail(nb_gnb_inst, sizeof(*tac_tab));
@@ -203,20 +248,23 @@ int main(int argc, char **argv)
   mnc_len_tab = calloc_or_fail(nb_gnb_inst, sizeof(*mnc_len_tab));
   xn_net_config_tab = calloc_or_fail(nb_gnb_inst, sizeof(*xn_net_config_tab));
 
-  char **synth_argv = calloc_or_fail(3, sizeof(*synth_argv));
-  int synth_argc;
-  if (nOfiles > 0) {
-    synth_argv[0] = argv[0];
-    synth_argv[1] = "-O";
-    synth_argv[2] = Ofiles[0];
-    synth_argc = 3;
+  /* the first config file and the other options, e.g. --log_config.xnap_log_level debug */
+  char **synth_argv = calloc_or_fail(argc + 2, sizeof(*synth_argv));
+  int synth_argc = 0;
+  synth_argv[synth_argc++] = argv[0];
+  synth_argv[synth_argc++] = "-O";
+  synth_argv[synth_argc++] = Ofiles[0];
+  for (int i = 1; i < argc; i++) {
+    if (strcmp(argv[i], "--xn-setup-only") == 0)
+      continue;
+    if ((strlen(argv[i]) >= 2 && argv[i][1] == 'O') || strcmp(argv[i], "--ue-conf") == 0) {
+      i++;
+      continue;
+    }
+    synth_argv[synth_argc++] = argv[i];
   }
 
-  uniqCfg = load_configmodule(nOfiles > 0 ? synth_argc : argc, nOfiles > 0 ? synth_argv : argv, CONFIG_ENABLECMDLINEONLY);
-  if (uniqCfg == NULL) {
-    fprintf(stderr, "[SOFTMODEM] Error, configuration module init failed\n");
-    return 1;
-  }
+  switch_config(synth_argc, synth_argv);
 
   logInit();
   set_softmodem_sighandler();
@@ -233,25 +281,21 @@ int main(int argc, char **argv)
   AssertFatal(rc >= 0, "Create task for NGAP failed\n");
   rc = itti_create_task(TASK_XNAP, xnap_task, NULL);
   AssertFatal(rc >= 0, "Create task for XNAP failed\n");
-  rc = itti_create_task(TASK_RRC_GNB, rrc_gnb_task, NULL);
+  rc = itti_create_task(TASK_RRC_GNB, xn_setup_only ? rrc_gnb_task : xn_ho_rrc_gnb_task, NULL);
   AssertFatal(rc >= 0, "Create task for RRC failed\n");
   rc = itti_create_task(TASK_GNB_APP, gNB_app_task, NULL);
   AssertFatal(rc >= 0, "Create task for GNB APP failed\n");
 
-  /* --- load, extract, unload each file in turn - fully independent,
-   * never merged, never more than one file open at a time. File 0's
-   * config is already loaded above, so this loop does NOT reload it. */
+  /* --- load and extract each file in turn - fully independent, never
+   * merged, one file loaded at a time. File 0's config is already loaded
+   * above, so this loop does NOT reload it. */
   for (uint32_t i = 0; i < nb_gnb_inst; i++) {
     if (i > 0) {
       char **this_argv = calloc_or_fail(3, sizeof(*this_argv));
       this_argv[0] = argv[0];
       this_argv[1] = "-O";
       this_argv[2] = Ofiles[i];
-      uniqCfg = load_configmodule(3, this_argv, CONFIG_ENABLECMDLINEONLY);
-      if (uniqCfg == NULL) {
-        fprintf(stderr, "[SOFTMODEM] Error, configuration module init failed\n");
-        return 1;
-      }
+      switch_config(3, this_argv);
     }
 
     MessageDef *msg_p = itti_alloc_new_message(TASK_GNB_APP, 0, NGAP_REGISTER_GNB_REQ);
@@ -263,6 +307,13 @@ int main(int argc, char **argv)
     mnc_tab[i] = NGAP_REGISTER_GNB_REQ(msg_p).plmn[0].plmn.mnc;
     mnc_len_tab[i] = NGAP_REGISTER_GNB_REQ(msg_p).plmn[0].plmn.mnc_digit_length;
     xn_net_config_tab[i] = read_ip_config_xn(0);
+    uint64_t cell_id = 0;
+    paramdef_t cell_id_param[] = {{.optname = GNB_CONFIG_STRING_NRCELLID, .u64ptr = &cell_id, .type = TYPE_UINT64}};
+    config_get(uniqCfg, cell_id_param, 1, "gNBs.[0]");
+    char *ngu_ip = NULL;
+    paramdef_t ngu_param[] = {{.optname = GNB_CONFIG_STRING_GNB_IPV4_ADDR_FOR_NGU, .strptr = &ngu_ip, .type = TYPE_STRING}};
+    config_get(uniqCfg, ngu_param, 1, "gNBs.[0]." GNB_CONFIG_STRING_NETWORK_INTERFACES_CONFIG);
+    AssertFatal(ngu_ip != NULL, "no %s in %s\n", GNB_CONFIG_STRING_GNB_IPV4_ADDR_FOR_NGU, Ofiles[i]);
 
     if (i == 0) {
       gnb_id = gnb_id_tab[0];
@@ -277,12 +328,26 @@ int main(int argc, char **argv)
           i,
           gnb_id_tab[i],
           (nOfiles > 0) ? Ofiles[i] : "(default)");
-    itti_send_msg_to_task(TASK_NGAP, i, msg_p);
+    if (xn_setup_only)
+      itti_send_msg_to_task(TASK_NGAP, i, msg_p);
+    else
+      xn_ho_sim_add_gnb(i, msg_p, cell_id, ngu_ip);
+  }
 
-    if (i < nb_gnb_inst - 1) {
-      end_configmodule(uniqCfg);
-      uniqCfg = NULL;
-    }
+  if (!xn_setup_only) {
+    /* the UE stub: NR UE NAS, its identity (uicc0) from its own configuration file */
+    char *ue_conf = get_opt(argc, argv, "--ue-conf", OAI_SOURCE_DIR "/tests/nr-ue-nas-simulator/test.conf");
+    char **ue_argv = calloc_or_fail(4, sizeof(*ue_argv));
+    ue_argv[0] = argv[0];
+    ue_argv[1] = "-O";
+    ue_argv[2] = ue_conf;
+    switch_config(3, ue_argv);
+    nas_init_nrue(1);
+    rc = itti_create_task(TASK_NAS_NRUE, nas_nrue_task, NULL);
+    AssertFatal(rc >= 0, "Create task for NAS UE failed\n");
+    rc = itti_create_task(TASK_RRC_NRUE, xn_ho_rrc_ue_task, NULL);
+    AssertFatal(rc >= 0, "Create task for RRC UE failed\n");
+    xn_ho_sim_start();
   }
 
   printf("TYPE <CTRL-C> TO TERMINATE\n");
