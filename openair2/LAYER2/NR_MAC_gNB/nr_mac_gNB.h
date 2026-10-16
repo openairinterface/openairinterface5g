@@ -651,6 +651,7 @@ typedef struct NR_UE_ul_harq {
   bool is_waiting;
   uint8_t ndi;
   uint8_t round;
+  uint16_t feedback_frame;
   uint16_t feedback_slot;
 
   /// sched_pusch keeps information on MCS etc used for the initial transmission

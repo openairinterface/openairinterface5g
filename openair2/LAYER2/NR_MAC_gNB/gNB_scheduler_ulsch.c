@@ -946,6 +946,50 @@ static void nr_rx_ra_sdu(gNB_MAC_INST *mac,
   return;
 }
 
+static void nr_ul_harq_cleanup_stale(const nr_cell_sched_t *cell, NR_UE_info_t *UE,
+                                     frame_t frame, slot_t slot)
+{
+  NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
+  const int slots_per_frame = cell->frame_structure.numb_slots_frame;
+  const int koffset = get_NTN_Koffset(cell->common_channels.ServingCellConfigCommon);
+  /* Two frames covers normal delivery jitter. For NTN, HARQ feedback
+   * legitimately arrives koffset slots later than on a terrestrial link,
+   * so we add koffset to avoid prematurely freeing valid processes.
+   * koffset is 0 on non-NTN cells, leaving terrestrial behaviour unchanged. */
+  const int harq_stale_slots = 2 * (slots_per_frame + koffset);
+  const int max_abs_slot = MAX_FRAME_NUMBER * slots_per_frame;
+  const int abs_slot = frame * slots_per_frame + slot;
+
+  int harq_pid = sched_ctrl->feedback_ul_harq.head;
+  while (harq_pid >= 0) {
+    NR_UE_ul_harq_t *harq = &sched_ctrl->ul_harq_processes[harq_pid];
+    int expected = harq->feedback_frame * slots_per_frame + harq->feedback_slot;
+    int delta = abs_slot - expected;
+    if (delta < 0)
+      delta += max_abs_slot;
+    if (delta < harq_stale_slots)
+      break; /* head is still fresh; list is FIFO so rest is too */
+    LOG_W(NR_MAC,
+          "%4d.%2d UE 0x%04x: HARQ PID %d feedback lost (grant %d.%d), freeing\n",
+          frame,
+          slot,
+          UE->rnti,
+          harq_pid,
+          harq->feedback_frame,
+          harq->feedback_slot);
+    remove_front_nr_list(&sched_ctrl->feedback_ul_harq);
+    harq->is_waiting = false;
+    harq->feedback_slot = -1;
+    if (harq->round >= cell->ul_bler.harq_round_max - 1)
+      abort_nr_ul_harq(UE, harq_pid);
+    else {
+      harq->round++;
+      add_tail_nr_list(&sched_ctrl->retrans_ul_harq, harq_pid);
+    }
+    harq_pid = sched_ctrl->feedback_ul_harq.head;
+  }
+}
+
 static void _nr_rx_sdu(gNB_MAC_INST *gNB_mac,
                        nr_cell_sched_t *cell,
                        const frame_t frameP,
@@ -1052,6 +1096,7 @@ static void _nr_rx_sdu(gNB_MAC_INST *gNB_mac,
         nr_mac_trigger_ul_failure(&UE->UE_sched_ctrl, UE->current_UL_BWP.scs);
       }
     }
+    nr_ul_harq_cleanup_stale(cell, UE, frameP, slotP);
     handle_nr_ul_harq(cell, UE, current_rnti, harq_pid, sduP == NULL);
   } else {
     nr_rx_ra_sdu(gNB_mac, cell, frameP, slotP, current_rnti, sduP, sdu_lenP, harq_pid, timing_advance, ul_cqi, rssi, data_ind, num_data_ind, rlc_rnti);
@@ -2456,7 +2501,8 @@ void post_process_ulsch(gNB_MAC_INST *nr_mac,
     finish_nr_ul_harq(sched_ctrl, harq_id);
   } else {
     add_tail_nr_list(&sched_ctrl->feedback_ul_harq, harq_id);
-    cur_harq->feedback_slot = sched_pusch->slot;
+    cur_harq->feedback_frame = pusch->frame;
+    cur_harq->feedback_slot = pusch->slot;
     cur_harq->is_waiting = true;
   }
 
