@@ -28,6 +28,8 @@ void L1_nr_prach_procedures(PHY_VARS_gNB *gNB, prach_item_t *prach_id, nfapi_nr_
   rach_ind->sfn = frame;
   rach_ind->slot = slot;
   nfapi_nr_prach_pdu_t *prach_pdu = &prach_id->pdu;
+  // in the L1 RX thread, before phy_procedures_gNB_uespec_RX() reads it for the noise measurement
+  nr_prach_rb_mask_update(gNB, prach_id);
   LOG_D(NR_PHY_RACH, "%d.%d, prachstart slot %d prach entry occas %d\n", frame, slot, prach_id->slot, prach_pdu->num_prach_ocas);
   int N_dur = get_nr_prach_duration(prach_pdu->prach_format);
 

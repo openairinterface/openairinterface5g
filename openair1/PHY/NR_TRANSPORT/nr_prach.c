@@ -256,6 +256,51 @@ bool get_next_nr_prach(spsc_q_t *q, const fsn_t *now, prach_item_t *p)
   return spsc_q_get_if(q, get_current_prach, (void *)now, p, sizeof(*p));
 }
 
+/* PRBs/symbols of a PRACH occasion: the preambles must not be counted as noise in the I0 measurement of the UL slots it
+   covers. Called from L1_nr_prach_procedures(), in the L1 RX thread as phy_procedures_gNB_uespec_RX() that reads it. The RU
+   queues the occasion once its last slot is received, before the L1 RX job of this slot: the earlier slots of a long
+   format are already measured */
+void nr_prach_rb_mask_update(PHY_VARS_gNB *gNB, const prach_item_t *prach)
+{
+  const nfapi_nr_prach_pdu_t *prach_pdu = &prach->pdu;
+  const int fmt = prach_pdu->prach_format;
+  const NR_DL_FRAME_PARMS *fp = &gNB->frame_parms;
+  const nfapi_nr_prach_config_t *cfg = &gNB->gNB_config.prach_config;
+  const nfapi_nr_num_prach_fd_occasions_t *occ = &cfg->num_prach_fd_occasions_list[prach_pdu->num_ra];
+  const int n_symb = get_nr_prach_duration(fmt);
+  const int scs_ra = cfg->prach_sub_c_spacing.value; // 0..3: 15 * 2^mu kHz, 4: 1.25 kHz, 5: 5 kHz
+  const int df_ra = scs_ra < 4 ? 60 << scs_ra : (scs_ra == 4 ? 5 : 20); // in 0.25 kHz
+  const int df_pusch = 60 << fp->numerology_index;
+  const int L_RA = cfg->prach_sequence_length.value ? 139 : 839;
+  // TS 38.211 Table 6.3.3.2-1: N_RB^RA = ceil(L_RA * df_RA / (12 * df_PUSCH))
+  const int nb_prb = (L_RA * df_ra + 12 * df_pusch - 1) / (12 * df_pusch);
+  uint16_t symb_mask = (1 << NR_SYMBOLS_PER_SLOT) - 1; // long formats span whole slots
+  if (fmt >= 4) {
+    // the preambles are only in the num_prach_ocas time occasions, whatever the number of beams
+    int end = prach_pdu->prach_start_symbol + n_symb * prach_pdu->num_prach_ocas;
+    if (end > NR_SYMBOLS_PER_SLOT)
+      end = NR_SYMBOLS_PER_SLOT;
+    symb_mask = SL_to_bitmap(prach_pdu->prach_start_symbol, end - prach_pdu->prach_start_symbol);
+  }
+  for (int s = 0; s < prach->num_slots; s++) {
+    const int abs_slot = prach->frame * fp->slots_per_frame + prach->slot + s;
+    const int f = (abs_slot / fp->slots_per_frame) % 1024;
+    const int sl = abs_slot % fp->slots_per_frame;
+    nr_prach_rb_mask_t *m = &gNB->prach_rb_mask[abs_slot % NR_PRACH_RB_MASK_SLOTS];
+    if (m->frame != f || m->slot != sl) {
+      m->n = 0;
+      m->frame = f;
+      m->slot = sl;
+    }
+    if (m->n < NR_PRACH_RB_MASK_OCC_MAX) {
+      m->occ[m->n].first_prb = occ->k1.value;
+      m->occ[m->n].nb_prb = nb_prb;
+      m->occ[m->n].symb_mask = symb_mask;
+      m->n++;
+    }
+  }
+}
+
 void nr_schedule_rx_prach(PHY_VARS_gNB *gNB, int SFN, int Slot, nfapi_nr_prach_pdu_t *prach_pdu)
 {
   const int fmt = prach_pdu->prach_format;

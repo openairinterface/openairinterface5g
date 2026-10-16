@@ -566,6 +566,8 @@ static void nr_fill_indication(const PHY_VARS_gNB *gNB,
 
 // Function to fill UL RB mask to be used for N0 measurements
 static void fill_ul_rb_mask(PHY_VARS_gNB *gNB,
+                            int frame,
+                            int slot,
                             uint32_t rb_mask_ul[14][MAX_BWP_SIZE],
                             const NR_gNB_PUCCH_job_t *pucch,
                             int n_pucch,
@@ -577,6 +579,19 @@ static void fill_ul_rb_mask(PHY_VARS_gNB *gNB,
   for (int symbol = 0; symbol < 14; symbol++) {
     for (int prb = 0; prb < MAX_BWP_SIZE; prb++) {
       rb_mask_ul[symbol][prb] = gNB->ulprbbl[prb] > 0;
+    }
+  }
+
+  // PRACH occasions: preambles are not noise
+  const nr_prach_rb_mask_t *pm = &gNB->prach_rb_mask[(frame * gNB->frame_parms.slots_per_frame + slot) % NR_PRACH_RB_MASK_SLOTS];
+  if (pm->frame == frame && pm->slot == slot) {
+    for (int i = 0; i < pm->n; i++) {
+      for (int symbol = 0; symbol < 14; symbol++) {
+        if (!(pm->occ[i].symb_mask & (1 << symbol)))
+          continue;
+        for (int prb = pm->occ[i].first_prb; prb < pm->occ[i].first_prb + pm->occ[i].nb_prb && prb < MAX_BWP_SIZE; prb++)
+          rb_mask_ul[symbol][prb] = 1;
+      }
     }
   }
 
@@ -1304,7 +1319,7 @@ int phy_procedures_gNB_uespec_RX(PHY_VARS_gNB *gNB, int frame_rx, int slot_rx, N
   {
     // Mask of occupied RBs, per symbol and PRB
     uint32_t rb_mask_ul[14][MAX_BWP_SIZE] = {0};
-    fill_ul_rb_mask(gNB, rb_mask_ul, pucch, n_pucch, pusch, n_pusch_jobs, srs, n_srs);
+    fill_ul_rb_mask(gNB, frame_rx, slot_rx, rb_mask_ul, pucch, n_pucch, pusch, n_pusch_jobs, srs, n_srs);
 
     int first_symb = 0, num_symb = 0;
     if (frame_parms->frame_type == TDD) {
