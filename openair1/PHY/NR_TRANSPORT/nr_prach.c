@@ -407,13 +407,6 @@ void rx_nr_prach_ru_rep(prach_item_t *p,
 
 rx_prach_out_t rx_nr_prach(const prach_item_t *in, int occasion)
 {
-  rx_prach_out_t out = {};
-  uint16_t preamble_index0 = 0;
-  uint16_t numshift = 0;
-  int first_nonzero_root_idx = 0;
-  bool new_dft = false;
-  int log2_ifft_size = 10;
-
   const int nb_rx = in->nb_rx;
   const int NCS = in->pdu.num_cs;
   const int prach_fmt = in->pdu.prach_format;
@@ -444,11 +437,19 @@ rx_prach_out_t rx_nr_prach(const prach_item_t *in, int occasion)
   if (NCS2 == 0)
     NCS2 = N_ZC;
 
-  int preamble_offset = 0, preamble_offset_old = 99;
-
-  int16_t preamble_shift = 0;
+  int old_offset = INT_MIN;
+  int preamble_offset = 0, preamble_offset_old = 99, preamble_shift = 0, preamble_index0 = 0, numshift = 0,
+      first_nonzero_root_idx = 0;
   const int dft_sz = N_ZC == 839 ? 1024 : 256;
-  int32_t prach_ifft[dft_sz] __attribute__((aligned(32)));
+  uint64_t prach_ifft[dft_sz] __attribute__((aligned(32)));
+
+  // we look only for the max RACH, discard any other one in same slot
+  struct res {
+    uint64_t energy;
+    uint distance;
+    uint preamble;
+  } max = {0, UINT_MAX, 0};
+
   for (int preamble_index = 0; preamble_index < 64; preamble_index++) {
     if (LOG_DEBUGFLAG(DEBUG_PRACH)) {
       int en = dB_fixed(signal_energy((int32_t *)in->prach_buf[0][occasion], N_ZC == 839 ? 840 : 140));
@@ -457,21 +458,17 @@ rx_prach_out_t rx_nr_prach(const prach_item_t *in, int occasion)
     }
     if (in->restricted_set == 0) {
       // This is the relative offset in the root sequence table (5.7.2-4 from 36.211) for the given preamble index
-      preamble_offset = ((NCS==0)? preamble_index : (preamble_index/(N_ZC/NCS)));
-
+      preamble_offset = NCS == 0 ? preamble_index : preamble_index / (N_ZC / NCS);
       if (preamble_offset != preamble_offset_old) {
         preamble_offset_old = preamble_offset;
-        new_dft = true;
         // This is the \nu corresponding to the preamble index
         preamble_shift  = 0;
       } else {
         preamble_shift -= NCS;
-
         if (preamble_shift < 0)
           preamble_shift += N_ZC;
       }
     } else { // This is the high-speed case
-      new_dft = false;
       uint16_t nr_du[NR_PRACH_SEQ_LEN_L - 1];
       nr_fill_du(N_ZC, prach_root_sequence_map, nr_du);
       // set preamble_offset to initial rootSequenceIndex and look if we need more root sequences for this
@@ -479,34 +476,36 @@ rx_prach_out_t rx_nr_prach(const prach_item_t *in, int occasion)
       // Check if all shifts for that root have been processed
       int n_shift_ra = 0, n_shift_ra_bar, d_start = 0;
       if (preamble_index0 == numshift) {
-        bool not_found = true;
-        new_dft = true;
         preamble_index0 -= numshift;
-        while (not_found) {
+        bool found = false;
+        while (!found) {
           // current root depending on rootSequenceIndex
           int index = (in->rootSequenceIndex + preamble_offset) % N_ZC;
           int u = nr_du[prach_root_sequence_map[index]];
-          uint16_t n_group_ra = 0;
+          int n_group_ra = 0;
 
           if (u < (N_ZC / 3) && u >= NCS) {
             n_shift_ra = u / NCS;
-            d_start = (u << 1) + (n_shift_ra * NCS);
+            d_start = u * 2 + n_shift_ra * NCS;
             n_group_ra = N_ZC / d_start;
-            n_shift_ra_bar = max(0, (N_ZC - (u << 1) - (n_group_ra * d_start)) / N_ZC);
+            n_shift_ra_bar = max(0, (N_ZC - u * 2 - n_group_ra * d_start) / N_ZC);
           } else if (u >= (N_ZC / 3) && u <= ((N_ZC - NCS) >> 1)) {
-            n_shift_ra = (N_ZC - (u << 1)) / NCS;
-            d_start = N_ZC - (u << 1) + (n_shift_ra * NCS);
+            n_shift_ra = (N_ZC - u * 2) / NCS;
+            d_start = N_ZC - u * 2 + n_shift_ra * NCS;
             n_group_ra = u / d_start;
-            n_shift_ra_bar = min(n_shift_ra, max(0, (u - (n_group_ra * d_start)) / NCS));
+            n_shift_ra_bar = min(n_shift_ra, max(0, (u - n_group_ra * d_start) / NCS));
           } else {
             n_shift_ra = 0;
             n_shift_ra_bar = 0;
           }
 
           // This is the number of cyclic shifts for the current root u
-          numshift = (n_shift_ra * n_group_ra) + n_shift_ra_bar;
+          numshift = n_shift_ra * n_group_ra + n_shift_ra_bar;
           // skip to next root and recompute parameters if numshift==0
-          numshift > 0 ? not_found = false : preamble_offset++;
+          if (numshift > 0)
+            found = true;
+          else
+            preamble_offset++;
         }
       }
 
@@ -515,98 +514,52 @@ rx_prach_out_t rx_nr_prach(const prach_item_t *in, int occasion)
                            + (preamble_index0 % n_shift_ra) * NCS); // minus because the channel is h(t -\tau + Cv)
       else
         preamble_shift = 0;
-
       if (preamble_shift < 0)
         preamble_shift+=N_ZC;
 
       preamble_index0++;
-
       if (preamble_index == 0)
         first_nonzero_root_idx = preamble_offset;
     }
 
     // Compute DFT of RX signal (conjugate in->rxsigF[occasion], results in conjugate output) for each new rootSequenceIndex
-    if (LOG_DEBUGFLAG(DEBUG_PRACH)) {
-      int en = dB_fixed(signal_energy((int32_t *)in->prach_buf[0][occasion], 840));
-      if (en>60)
-        LOG_D(PHY,
-              "frame %d, slot %d : preamble index %d, NCS %d, N_ZC/NCS %d: offset %d, preamble shift %d , en %d)\n",
-              in->frame,
-              in->slot,
-              preamble_index,
-              NCS,
-              N_ZC / NCS,
-              preamble_offset,
-              preamble_shift,
-              en);
-    }
-
-    LOG_D(NR_PHY_RACH,
-          "PRACH RX preamble_index %d, preamble_offset %d, preamb shift %d new dft %d\n",
-          preamble_index,
-          preamble_offset,
-          preamble_shift,
-          new_dft);
-
-    if (new_dft) {
-      new_dft = false;
-
+    if (preamble_offset - first_nonzero_root_idx != old_offset) {
+      old_offset = preamble_offset - first_nonzero_root_idx;
       c16_t *Xu = in->Xu[preamble_offset - first_nonzero_root_idx];
-      LOG_D(PHY,"PRACH RX new dft preamble_offset-first_nonzero_root_idx %d\n",preamble_offset-first_nonzero_root_idx);
-
+      LOG_D(PHY, "PRACH RX new dft preamble_offset-first_nonzero_root_idx %d\n", preamble_offset - first_nonzero_root_idx);
       memset(prach_ifft, 0, sizeof(prach_ifft));
-      if (LOG_DUMPFLAG(DEBUG_PRACH)) {
-        LOG_M("prach_rxF0.m", "prach_rxF0", in->prach_buf[0][occasion], N_ZC, 1, 1);
-        LOG_M("prach_rxF1.m", "prach_rxF1", in->prach_buf[1][occasion], 6144, 1, 1);
-      }
       c16_t prachF[dft_sz] __attribute__((aligned(32)));
+      // set 0 in unused parts of the frequency domain
+      memset(prachF + N_ZC, 0, sizeof(*prachF) * (dft_sz - N_ZC));
       for (int aa = 0; aa < nb_rx; aa++) {
         // Do componentwise product with Xu* on each antenna
         for (int offset = 0; offset < N_ZC; offset++) {
           prachF[offset] = c16MulConjShift(Xu[offset], in->prach_buf[aa][occasion][offset], 15);
         }
-        memset(prachF + N_ZC, 0, sizeof(*prachF) * (dft_sz - N_ZC));
         // Now do IFFT of size 1024 (N_ZC=839) or 256 (N_ZC=139)
         c16_t prach_ifft_tmp[dft_sz] __attribute__((aligned(32)));
         idft(get_idft(dft_sz), (int16_t *)prachF, (int16_t *)prach_ifft_tmp, 1);
         // compute energy and accumulate over receive antennas
-        for (int i = 0; i < dft_sz; i++)
-          prach_ifft[i] += squaredMod(prach_ifft_tmp[i]);
-
-        if (LOG_DUMPFLAG(DEBUG_PRACH)) {
-          if (aa == 0)
-            LOG_M("prach_rxF_comp0.m","prach_rxF_comp0", prachF, 1024, 1, 1);
-          if (aa == 1)
-            LOG_M("prach_rxF_comp1.m","prach_rxF_comp1", prachF, 1024, 1, 1);
+        for (int i = 0; i < dft_sz; i++) {
+          c64_t tmp = (c64_t){prach_ifft_tmp[i].r, prach_ifft_tmp[i].i};
+          prach_ifft[i] += squaredMod(tmp);
         }
-
-      } // antennas_rx
-
-      // Normalization of energy over ifft and receive antennas
-      if (N_ZC == 839) {
-        log2_ifft_size = 10;
-        for (int i = 0; i < 1024; i++)
-          prach_ifft[i] = (prach_ifft[i]>>log2_ifft_size)/nb_rx;
-      } else {
-        log2_ifft_size = 8;
-        for (int i = 0; i < 256; i++)
-          prach_ifft[i] = (prach_ifft[i]>>log2_ifft_size)/nb_rx;
       }
+    }
 
-    } // new dft
-
-    // check energy in nth time shift, for
-
-    int preamble_shift2 = preamble_shift == 0 ? 0 : (preamble_shift << log2_ifft_size) / N_ZC;
+    // Search window of this preamble: its cyclic shift converted to IFFT bins
+    uint64_t *search = prach_ifft + (preamble_shift * dft_sz) / N_ZC;
 
     for (int i = 0; i < NCS2; i++) {
-      const int peak_bin = preamble_shift2 + i;
-      const int levdB = dB_fixed_times10(prach_ifft[peak_bin]);
-      if (levdB > out.max_preamble_energy || (levdB == out.max_preamble_energy && out.max_preamble_delay_raw > i)) {
-        LOG_D(NR_PHY_RACH, "preamble_index %d, delay %d en %d dB > %d dB\n", preamble_index, i, levdB, out.max_preamble_energy);
-        out.max_preamble_energy = levdB;
-        out.max_preamble_delay_raw = i;
-        out.max_preamble = preamble_index;
+      if (search[i] > max.energy || (search[i] == max.energy && max.distance > i)) {
+        max.energy = search[i];
+        max.distance = i;
+        max.preamble = preamble_index;
+        LOG_D(NR_PHY_RACH,
+              "preamble_index %d, delay %d en %d dB/10\n",
+              preamble_index,
+              i,
+              dB_fixed_times10(max.energy / (dft_sz * nb_rx)));
       }
     }
   } // preamble_index
@@ -626,19 +579,25 @@ rx_prach_out_t rx_nr_prach(const prach_item_t *in, int occasion)
   // Format >3: 2048/2^mu samples @ 30.72 Ms/s, 2048/2^mu * 4 samples @ 122.88 Ms/s
   // By solving:
   // max_preamble_delay * ( (2048/2^mu*(fs/30.72M)) / 256 ) / fs = TA * 16 * 64 / 2^mu * Tc
-  const uint32_t raw_delay = out.max_preamble_delay_raw;
-  const int mu = in->numerology_index;
-  if (in->prach_sequence_length == 0) {
-    const uint32_t mu_scale = 1U << mu;
 
-    if (prach_fmt == 0 || prach_fmt == 1 || prach_fmt == 2)
-      out.max_preamble_delay = (raw_delay * 3U * mu_scale + 1U) / 2U;
-    else if (prach_fmt == 3)
-      out.max_preamble_delay = (raw_delay * 3U * mu_scale + 4U) / 8U;
-  } else {
-    out.max_preamble_delay = (raw_delay + 1U) / 2U;
+  // Energy normalized over the IFFT size and the receive antennas (-900, i.e. 0 in dB x10, for an empty occasion)
+  rx_prach_out_t out = {.max_preamble_energy = dB_fixed_times10(max.energy / (dft_sz * nb_rx))};
+  if (max.energy > 0) {
+    out.max_preamble = max.preamble;
+    out.max_preamble_delay_raw = max.distance;
+    const uint32_t raw_delay = out.max_preamble_delay_raw;
+    const int mu = in->numerology_index;
+    if (in->prach_sequence_length == 0) {
+      const uint32_t mu_scale = 1U << mu;
+
+      if (prach_fmt == 0 || prach_fmt == 1 || prach_fmt == 2)
+        out.max_preamble_delay = (raw_delay * 3U * mu_scale + 1U) / 2U;
+      else if (prach_fmt == 3)
+        out.max_preamble_delay = (raw_delay * 3U * mu_scale + 4U) / 8U;
+    } else {
+      out.max_preamble_delay = (raw_delay + 1U) / 2U;
+    }
   }
-
   stop_meas(in->rx_prach);
   return out;
 }
