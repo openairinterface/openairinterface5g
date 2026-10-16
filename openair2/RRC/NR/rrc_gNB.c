@@ -1657,7 +1657,7 @@ static void rrc_handle_RRCReestablishmentRequest(gNB_RRC_INST *rrc,
         UE->xids[i] = RRC_ACTION_NONE;
     }
 
-    source_ctx->ho_cancel(rrc, UE);
+    source_ctx->ho_cancel(rrc, UE, HO_CAUSE_RADIO_INTERFACE_FAILURE);
     f1u_dl_gtp_rollback(UE);
 
     /* we need the original CellGroupConfig */
@@ -2963,6 +2963,10 @@ void rrc_remove_ue(gNB_RRC_INST *rrc, rrc_gNB_ue_context_t *ue_context_p)
    * are in E1, we also need to free the UE in the CU-CP, so call it twice to
    * cover all cases */
   nr_pdcp_remove_UE(UE->rrc_ue_id);
+  /* Xn handover source: tell the target to release the UE prepared for this handover */
+  xn_ue_data_t xn_ue;
+  if (UE->ho_context && UE->ho_context->source && xn_get_ue(XN_ROLE_SOURCE, UE->rrc_ue_id, &xn_ue))
+    UE->ho_context->source->ho_cancel(rrc, UE, HO_CAUSE_UNSPECIFIED);
   /* the rrc_ue_id is reused: drop the Xn handover of this UE, if any */
   if (xn_remove_ue(UE->rrc_ue_id))
     LOG_W(NR_RRC, "UE %u: removed during an Xn handover\n", UE->rrc_ue_id);

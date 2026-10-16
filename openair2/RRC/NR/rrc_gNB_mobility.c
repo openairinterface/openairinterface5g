@@ -316,7 +316,7 @@ static void nr_rrc_f1_ho_complete(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE)
         source_ctx->cell->assoc_id);
 }
 
-static void nr_rrc_cancel_f1_ho(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE)
+static void nr_rrc_cancel_f1_ho(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE, nr_ho_cause_t cause)
 {
   DevAssert(UE->ho_context != NULL);
   nr_ho_target_cu_t *target_ctx = UE->ho_context->target;
@@ -325,8 +325,14 @@ static void nr_rrc_cancel_f1_ho(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE)
       .gNB_CU_ue_id = UE->rrc_ue_id,
       .gNB_DU_ue_id = target_ctx->du_ue_id,
       .cause = F1AP_CAUSE_RADIO_NETWORK, // better
-      .cause_value = 5, // 5 = F1AP_CauseRadioNetwork_interaction_with_other_procedure
   };
+  switch (cause) {
+    case HO_CAUSE_UNSPECIFIED:
+    case HO_CAUSE_FAILURE_IN_TARGET:
+    case HO_CAUSE_RADIO_INTERFACE_FAILURE: // the target DU UE context is released for any cancel
+      cmd.cause_value = 5; // 5 = F1AP_CauseRadioNetwork_interaction_with_other_procedure
+      break;
+  }
   rrc->mac_rrc.ue_context_release_command(target_ctx->cell->assoc_id, &cmd);
 }
 
@@ -639,12 +645,19 @@ static void nr_rrc_n2_ho_complete(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE)
 
 /** @brief This callback is used by the source gNB to inform the AMF
  *         about the cancellation of an ongoing handover */
-static void nr_rrc_n2_ho_cancel(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE)
+static void nr_rrc_n2_ho_cancel(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE, nr_ho_cause_t cause)
 {
   DevAssert(UE->ho_context);
   DevAssert(UE->ho_context->source);
-  ngap_cause_t cause = {.type = NGAP_CAUSE_RADIO_NETWORK, .value = NGAP_CAUSE_RADIO_NETWORK_HANDOVER_CANCELLED};
-  rrc_gNB_send_NGAP_HANDOVER_CANCEL(rrc->module_id, UE, cause);
+  ngap_cause_t ngap_cause = {.type = NGAP_CAUSE_RADIO_NETWORK};
+  switch (cause) {
+    case HO_CAUSE_UNSPECIFIED:
+    case HO_CAUSE_FAILURE_IN_TARGET:
+    case HO_CAUSE_RADIO_INTERFACE_FAILURE: // the AMF is told the handover is cancelled, whatever the reason
+      ngap_cause.value = NGAP_CAUSE_RADIO_NETWORK_HANDOVER_CANCELLED;
+      break;
+  }
+  rrc_gNB_send_NGAP_HANDOVER_CANCEL(rrc->module_id, UE, ngap_cause);
 }
 
 /** @brief Callback function to trigger NG Handover Failure on the target gNB, to inform the AMF
@@ -662,6 +675,9 @@ void nr_rrc_n2_ho_failure(gNB_RRC_INST *rrc, uint32_t gnb_ue_id, nr_ho_cause_t c
       break;
     case HO_CAUSE_FAILURE_IN_TARGET:
       fail.cause.value = NGAP_CAUSE_RADIO_NETWORK_HO_FAILURE_IN_TARGET_5GC_NGRAN_NODE_OR_TARGET_SYSTEM;
+      break;
+    case HO_CAUSE_RADIO_INTERFACE_FAILURE:
+      fail.cause.value = NGAP_CAUSE_RADIO_NETWORK_FAILURE_IN_RADIO_INTERFACE_PROCEDURE;
       break;
   }
   rrc_gNB_send_NGAP_HANDOVER_FAILURE(rrc, &fail);
@@ -803,10 +819,31 @@ static void nr_rrc_xn_ho_failure(gNB_RRC_INST *rrc, uint32_t gnb_ue_id, nr_ho_ca
     case HO_CAUSE_FAILURE_IN_TARGET: // no failure-in-target cause in XnAP (TS 38.423 §9.2.3.2)
       xn_cause.value = XNAP_CAUSE_RADIO_NETWORK_LAYER_UNSPECIFIED;
       break;
+    case HO_CAUSE_RADIO_INTERFACE_FAILURE:
+      xn_cause.value = XNAP_CAUSE_RADIO_NETWORK_LAYER_FAILURE_IN_THE_RADIO_INTERFACE_PROCEDURE;
+      break;
   }
   rrc_gNB_send_XNAP_HANDOVER_PREP_FAILURE(rrc, gnb_ue_id, 0, xn_cause);
   rrc_gNB_ue_context_t *ue_context_p = rrc_gNB_get_ue_context(rrc, gnb_ue_id);
   rrc_gNB_xn_ho_target_abort(rrc, &ue_context_p->ue_context, "handover preparation failed at target");
+}
+
+/** @brief This callback is used by the source gNB to inform the target gNB
+ *         about the cancellation of an ongoing Xn handover */
+static void nr_rrc_xn_ho_cancel(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE, nr_ho_cause_t cause)
+{
+  xnap_cause_t xn_cause = {.type = XNAP_CAUSE_RADIO_NETWORK};
+  switch (cause) {
+    case HO_CAUSE_UNSPECIFIED:
+    case HO_CAUSE_FAILURE_IN_TARGET: // no failure-in-target cause in XnAP (TS 38.423 §9.2.3.2)
+      xn_cause.value = XNAP_CAUSE_RADIO_NETWORK_LAYER_UNSPECIFIED;
+      break;
+    case HO_CAUSE_RADIO_INTERFACE_FAILURE:
+      xn_cause.value = XNAP_CAUSE_RADIO_NETWORK_LAYER_FAILURE_IN_THE_RADIO_INTERFACE_PROCEDURE;
+      break;
+  }
+  LOG_D(NR_RRC, "Xn HO source: UE %d: cancelling the handover towards the target\n", UE->rrc_ue_id);
+  rrc_gNB_send_XNAP_HANDOVER_CANCEL(rrc, UE->rrc_ue_id, xn_cause);
 }
 
 /** @brief Callback invoked when F1 UE Context Setup is complete during Xn HO:
@@ -917,6 +954,7 @@ void nr_rrc_trigger_xn_ho(gNB_RRC_INST *rrc, gNB_RRC_UE_t *ue, const nr_neighbou
   ue->ho_context->source->cell = source_cell;
   ue->ho_context->source->target_nci = neighbour_config->nrcell_id;
   ue->ho_context->source->ho_status_transfer = rrc_gNB_send_XNAP_SN_STATUS_TRANSFER;
+  ue->ho_context->source->ho_cancel = nr_rrc_xn_ho_cancel;
 
   if (!rrc_gNB_send_XNAP_HANDOVER_REQUEST(rrc, ue, neighbour_config, hoPrepInfo)) {
     LOG_E(NR_RRC, "UE %d: Xn HO failed — could not send HandoverRequest\n", ue->rrc_ue_id);

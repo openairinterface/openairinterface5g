@@ -56,6 +56,9 @@ bool xn_get_ue_by_xnap_id(xn_role_t role, uint32_t xnap_id, xn_ue_data_t *out);
 
 /* Remove the entry of the local XnAP UE ID; returns false if there is none */
 bool xn_remove_ue_by_xnap_id(uint32_t xnap_id);
+/* Remove the entry in role of the handover peer_xnap_id with the peer assoc_id (e.g. Handover Cancel
+ * at target carries the source XnAP UE ID only), copying it to out; returns false if there is none */
+bool xn_remove_ue_by_peer_id(xn_role_t role, sctp_assoc_t assoc_id, uint32_t peer_xnap_id, xn_ue_data_t *out);
 /* Remove up to max entries towards assoc_id (e.g. the Xn peer is lost),
  * copying them to out; returns the number of entries removed */
 int xn_remove_ues_by_assoc(sctp_assoc_t assoc_id, xn_ue_data_t *out, int max);

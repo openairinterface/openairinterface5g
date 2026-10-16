@@ -17,12 +17,13 @@ typedef struct gNB_RRC_UE_s gNB_RRC_UE_t;
 
 typedef struct NR_CellGroupConfig NR_CellGroupConfig_t;
 
-/* cause of a handover preparation failure at the target, mapped to the NGAP or XnAP cause */
+/* cause of a handover failure or cancel, mapped by each handover type to its protocol cause */
 typedef enum {
   HO_CAUSE_UNSPECIFIED,
   HO_CAUSE_FAILURE_IN_TARGET, // failure in the target 5GC/NG-RAN node or target system
+  HO_CAUSE_RADIO_INTERFACE_FAILURE, // failure in the radio interface procedure, e.g. reestablishment
 } nr_ho_cause_t;
-typedef void (*ho_cancel_t)(gNB_RRC_INST *rrc, gNB_RRC_UE_t *ue);
+typedef void (*ho_cancel_t)(gNB_RRC_INST *rrc, gNB_RRC_UE_t *ue, nr_ho_cause_t cause);
 typedef int (*ho_status_transfer_t)(gNB_RRC_INST *rrc,
                                     gNB_RRC_UE_t *UE,
                                     const int n_to_mod,

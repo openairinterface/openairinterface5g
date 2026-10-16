@@ -217,6 +217,16 @@ bool xn_remove_ue_by_xnap_id(uint32_t xnap_id)
   return removed;
 }
 
+bool xn_remove_ue_by_peer_id(xn_role_t role, sctp_assoc_t assoc_id, uint32_t peer_xnap_id, xn_ue_data_t *out)
+{
+  mutexlock(xn_ues.mutex);
+  bool found = table_copy(table_get_by_peer_id(role, assoc_id, peer_xnap_id), role, out);
+  if (found)
+    table_remove(local_id(out));
+  mutexunlock(xn_ues.mutex);
+  return found;
+}
+
 int xn_remove_ues_by_assoc(sctp_assoc_t assoc_id, xn_ue_data_t *out, int max)
 {
   mutexlock(xn_ues.mutex);

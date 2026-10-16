@@ -459,6 +459,8 @@ typedef struct {
   /* Routing fields — not part of the XnAP PDU */
   // target XNAP->RRC: RRC UE identity, looked up from s_xn_ue_id
   uint32_t rrc_ue_id;
+  // source RRC->XNAP: SCTP association to the target gNB
+  sctp_assoc_t assoc_id;
 } xnap_handover_cancel_t;
 
 /* 3GPP TS 38.423 9.1.1.12 – Handover Success */

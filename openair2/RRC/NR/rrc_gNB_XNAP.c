@@ -420,6 +420,7 @@ void rrc_gNB_process_XNAP_HANDOVER_REQ_ACK(gNB_RRC_INST *rrc, const xnap_handove
   if (!buffer.buf || buffer.len == 0) {
     LOG_E(NR_RRC, "UE %d: failed to decode HandoverCommand from Xn HO Request Ack\n", UE->rrc_ue_id);
     free_byte_array(buffer);
+    UE->ho_context->source->ho_cancel(rrc, UE, HO_CAUSE_UNSPECIFIED);
     nr_rrc_finalize_ho(UE);
     return;
   }
@@ -533,6 +534,32 @@ void rrc_gNB_xn_ho_target_abort(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE, const char 
   rrc_gNB_ue_context_t *ue_ctx = rrc_gNB_get_ue_context(rrc, UE->rrc_ue_id);
   nr_rrc_finalize_ho(UE);
   rrc_remove_ue(rrc, ue_ctx);
+}
+
+/** @brief Send Handover Cancel (TS 38.423 §9.1.1.6) from source to target via Xn.
+ *  The handover's XnAP UE IDs are removed here, as RRC may remove the UE before XNAP sends the message */
+void rrc_gNB_send_XNAP_HANDOVER_CANCEL(gNB_RRC_INST *rrc, uint32_t rrc_ue_id, xnap_cause_t cause)
+{
+  xn_ue_data_t xn_ue;
+  /* the remove fails if XNAP removed it meanwhile (Prep Failure, UE Context Release, peer lost) */
+  if (!xn_get_ue(XN_ROLE_SOURCE, rrc_ue_id, &xn_ue) || !xn_remove_ue_by_xnap_id(xn_ue.s_ng_node_ue_xnap_id)) {
+    LOG_W(NR_RRC, "UE %u: no Xn handover, Handover Cancel not sent\n", rrc_ue_id);
+    return;
+  }
+  LOG_I(NR_RRC,
+        "Xn HO source: UE %u: sending Handover Cancel (s_xnap_ue_id %u t_xnap_ue_id %u, cause %d/%d)\n",
+        rrc_ue_id,
+        xn_ue.s_ng_node_ue_xnap_id,
+        xn_ue.t_ng_node_ue_xnap_id,
+        cause.type,
+        cause.value);
+
+  MessageDef *msg_p = itti_alloc_new_message(TASK_RRC_GNB, 0, XNAP_HANDOVER_CANCEL);
+  XNAP_HANDOVER_CANCEL(msg_p) = (xnap_handover_cancel_t){.s_ng_node_ue_xnap_id = xn_ue.s_ng_node_ue_xnap_id,
+                                                         .cause = cause,
+                                                         .rrc_ue_id = rrc_ue_id,
+                                                         .assoc_id = xn_ue.assoc_id};
+  itti_send_msg_to_task(TASK_XNAP, rrc->module_id, msg_p);
 }
 
 /** @brief Target gNB processes Handover Cancel (TS 38.423 §9.1.1.6), also sent by XNAP when the

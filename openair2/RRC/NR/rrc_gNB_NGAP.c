@@ -1614,7 +1614,7 @@ void rrc_gNB_process_HandoverCommand(gNB_RRC_INST *rrc, const ngap_handover_comm
     DevAssert(UE->ho_context);
     DevAssert(UE->ho_context->source);
     DevAssert(UE->ho_context->source->ho_cancel);
-    UE->ho_context->source->ho_cancel(rrc, UE);
+    UE->ho_context->source->ho_cancel(rrc, UE, HO_CAUSE_UNSPECIFIED);
     return;
   }
 

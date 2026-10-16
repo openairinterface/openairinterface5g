@@ -313,6 +313,41 @@ static void xnap_gNB_generate_ue_context_release(instance_t instance, xnap_ue_co
   xnap_gNB_itti_send_sctp_data(instance, ue_data.assoc_id, buffer, length, XNAP_NON_UE_STREAM_ID);
 }
 
+/* Source gNB: RRC cancels the handover — encode and send to target.
+ * The sender resolved the XnAP UE IDs and removed them: the handover is over at the source */
+static void xnap_gNB_generate_handover_cancel(instance_t instance, xnap_handover_cancel_t *msg)
+{
+  xnap_gnb_inst_t *inst = xnap_get_inst(instance);
+  AssertFatal(inst != NULL, "Xn instance %ld not found\n", instance);
+
+  xnap_peer_t *peer = xnap_get_peer_by_assoc(inst, msg->assoc_id);
+  if (peer == NULL) {
+    LOG_E(XNAP, "[gNB %ld] Handover Cancel: no peer for target_assoc_id %d\n", instance, msg->assoc_id);
+    return;
+  }
+  if (peer->state != XNAP_PEER_STATE_CONNECTED) {
+    LOG_E(XNAP, "[gNB %ld] Handover Cancel: peer assoc_id %d not connected\n", instance, msg->assoc_id);
+    return;
+  }
+
+  XNAP_XnAP_PDU_t *pdu = encode_xnap_handover_cancel(msg);
+  AssertFatal(pdu != NULL, "[gNB %ld] encode_xnap_handover_cancel() failed\n", instance);
+
+  uint8_t *buffer = NULL;
+  uint32_t length = 0;
+  int rc = xnap_gNB_encode_pdu(pdu, &buffer, &length);
+  ASN_STRUCT_FREE(asn_DEF_XNAP_XnAP_PDU, pdu);
+  if (rc < 0) {
+    LOG_E(XNAP, "[gNB %ld] Failed to encode Handover Cancel (rrc_ue_id %u)\n", instance, msg->rrc_ue_id);
+    return;
+  }
+
+  LOG_I(XNAP, "[gNB %ld] Sending Handover Cancel to target assoc_id %d s_xnap_ue_id %u (%u bytes)\n",
+        instance, msg->assoc_id, msg->s_ng_node_ue_xnap_id, length);
+
+  xnap_gNB_itti_send_sctp_data(instance, msg->assoc_id, buffer, length, XNAP_NON_UE_STREAM_ID);
+}
+
 /* Create the Xn instance, bind a local SCTP listener (for incoming Xn
  * connections), and dial every configured candidate gNB */
 static void xnap_gNB_handle_register_gnb(instance_t instance, xnap_register_gnb_req_t *req)
@@ -511,6 +546,10 @@ void *xnap_task(void *args)
 
       case XNAP_UE_CONTEXT_RELEASE:
         xnap_gNB_generate_ue_context_release(instance, &XNAP_UE_CONTEXT_RELEASE(msg));
+        break;
+
+      case XNAP_HANDOVER_CANCEL:
+        xnap_gNB_generate_handover_cancel(instance, &XNAP_HANDOVER_CANCEL(msg));
         break;
 
       default:
