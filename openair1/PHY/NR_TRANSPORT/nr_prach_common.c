@@ -59,34 +59,21 @@ void nr_fill_du(uint16_t N_ZC, const uint16_t* prach_root_sequence_map, uint16_t
 void compute_nr_prach_seq(uint8_t short_sequence, uint8_t num_sequences, uint8_t rootSequenceIndex, c16_t X_u[64][839])
 {
   // Compute DFT of x_u => X_u[k] = x_u(inv(u)*k)^* X_u[k] = exp(j\pi u*inv(u)*k*(inv(u)*k+1)/N_ZC)
-  int N_ZC;
-
-  const uint16_t* prach_root_sequence_map;
   LOG_D(PHY,"compute_prach_seq: prach short sequence %x, num_sequences %d, rootSequenceIndex %d\n", short_sequence, num_sequences, rootSequenceIndex);
 
-  N_ZC = (short_sequence) ? NR_PRACH_SEQ_LEN_S : NR_PRACH_SEQ_LEN_L;
-
-  if (short_sequence) {
-    // FIXME cannot be reached
-    prach_root_sequence_map = prach_root_sequence_map_abc;
-  } else {
-    prach_root_sequence_map = prach_root_sequence_map_0_3;
-  }
-
-  LOG_D( PHY, "compute_prach_seq: done init prach_tables\n" );
-
+  const int N_ZC = short_sequence ? NR_PRACH_SEQ_LEN_S : NR_PRACH_SEQ_LEN_L;
+  const uint16_t* prach_root_sequence_map = short_sequence ? prach_root_sequence_map_abc : prach_root_sequence_map_0_3;
   for (int i = 0; i < num_sequences; i++) {
-    int index = (rootSequenceIndex+i) % (N_ZC-1);
-
+    int index = (rootSequenceIndex + i) % (N_ZC - 1);
     if (short_sequence) {
       // prach_root_sequence_map points to prach_root_sequence_map4
-      DevAssert( index < sizeof(prach_root_sequence_map_abc) / sizeof(prach_root_sequence_map_abc[0]) );
+      DevAssert(index < sizeofArray(prach_root_sequence_map_abc));
     } else {
       // prach_root_sequence_map points to prach_root_sequence_map0_3
-      DevAssert( index < sizeof(prach_root_sequence_map_0_3) / sizeof(prach_root_sequence_map_0_3[0]) );
+      DevAssert(index < sizeofArray(prach_root_sequence_map_0_3));
     }
 
-    const uint16_t u = prach_root_sequence_map[index];
+    const uint u = prach_root_sequence_map[index];
     LOG_D(PHY,"prach index %d => u=%d\n",index,u);
     const int inv_u = modulo_multiplicative_inverse(u, N_ZC); // multiplicative inverse of u
 
@@ -95,11 +82,12 @@ void compute_nr_prach_seq(uint8_t short_sequence, uint8_t num_sequences, uint8_t
 
     const int zc_inv_2 = modulo_multiplicative_inverse(2, N_ZC);
     for (int k = 0; k < N_ZC; k++) {
-      const unsigned int j = (((k * (1 + (inv_u * k))) % N_ZC) * zc_inv_2) % N_ZC;
-      const double w = 2 * M_PI * (double)j / N_ZC;
+      const unsigned int j = (((k * (1 + inv_u * k)) % N_ZC) * zc_inv_2) % N_ZC;
+      const double w = 2 * M_PI * j / N_ZC;
       const c16_t ru = {.r = (int16_t)(floor(32767.0 * cos(w))), .i = (int16_t)(floor(32767.0 * sin(w)))};
       // multiply by inverse of 2 (required since ru is exp[j 2\pi n])
       X_u[i][k] = ru;
     }
   }
+  LOG_D(PHY, "compute_prach_seq: done init prach_tables\n");
 }
