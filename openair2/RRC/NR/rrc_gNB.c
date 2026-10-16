@@ -1462,6 +1462,12 @@ static void rrc_handle_RRCSetupRequest(gNB_RRC_INST *rrc,
     rrc_gNB_generate_RRCReject(rrc, ue_context_p);
     return;
   }
+  LOG_UE_EVENT(UE,
+               "Create UE context: CU UE ID %u DU UE ID %u (rnti: %04x, random ue id %lx)\n",
+               UE->rrc_ue_id,
+               msg->gNB_DU_ue_id,
+               UE->rnti,
+               UE->random_ue_identity);
   UE->ongoing_reconfiguration = false;
   UE->measConfig = nr_rrc_get_measconfig(rrc, msg->nr_cellid, UE);
   activate_srb(UE, 1);
@@ -1731,6 +1737,12 @@ fallback_rrc_setup:
   activate_srb(&new->ue_context, 1);
   added = rrc_update_ue_pcell(&new->ue_context, current_cell);
   DevAssert(added);
+  LOG_UE_EVENT(&new->ue_context,
+               "Create UE context: CU UE ID %u DU UE ID %u (rnti: %04x, random ue id %lx)\n",
+               new->ue_context.rrc_ue_id,
+               msg->gNB_DU_ue_id,
+               new->ue_context.rnti,
+               new->ue_context.random_ue_identity);
   rrc_gNB_generate_RRCSetup(0, new, msg->du2cu_rrc_container, msg->du2cu_rrc_container_length);
   return;
 }
