@@ -120,7 +120,7 @@ void dump_nr_I0_stats(FILE *fd, PHY_VARS_gNB *gNB)
       fprintf(fd, "%d.", gNB->measurements.n0_subband_power_avg_perANT_dB[aarx]);
     fprintf(fd, ")");
   }
-  fprintf(fd, "\nPRACH I0 = %d.%d dB\n", gNB->measurements.prach_I0 / 10, gNB->measurements.prach_I0 % 10);
+  fprintf(fd, "\nPRACH I0 = %.1f dB\n", gNB->measurements.prach_I0 / 10.0);
 }
 
 void gNB_I0_measurements(PHY_VARS_gNB *gNB, int slot, int first_symb, int num_symb, uint32_t rb_mask_ul[14][MAX_BWP_SIZE])
