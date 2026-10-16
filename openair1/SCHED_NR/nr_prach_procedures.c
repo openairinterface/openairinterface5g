@@ -103,7 +103,14 @@ void L1_nr_prach_procedures(PHY_VARS_gNB *gNB, prach_item_t *prach_id, nfapi_nr_
               {.preamble_index = res.max_preamble, .timing_advance = res.max_preamble_delay, .preamble_pwr = 0xffffffff}}};
       rach_ind->number_of_pdus++;
     }
-    gNB->measurements.prach_I0 = ((gNB->measurements.prach_I0 * 900) >> 10) + ((res.max_preamble_energy * 124) >> 10);
+    // PRACH noise estimate: from every occasion during the first NUM_PRACH_RX_FOR_NOISE_ESTIMATE ones (the MAC does not
+    // broadcast the MIB before, so they contain only noise), then only from occasions without detected preamble: otherwise
+    // under a sustained RACH load I0 follows the preamble energy, the detection threshold rises above it and the gNB stops
+    // detecting the preambles.
+    // Occasions without any energy (-900, e.g. empty occasions in rfsim without noise) are not noise samples: they would
+    // pull I0 down to -90 dB and make the gNB detect anything.
+    if ((!prach_noise_ready || !prach_above_threshold) && res.max_preamble_energy > -900)
+      gNB->measurements.prach_I0 = ((gNB->measurements.prach_I0 * 900) >> 10) + ((res.max_preamble_energy * 124) >> 10);
     if (frame == 0)
       LOG_I(PHY, "prach_I0 = %.1f dB\n", gNB->measurements.prach_I0 / 10.0);
     if (gNB->prach_energy_counter < NUM_PRACH_RX_FOR_NOISE_ESTIMATE)
