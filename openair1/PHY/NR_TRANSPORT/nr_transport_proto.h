@@ -121,7 +121,7 @@ void nr_schedule_rx_prach(PHY_VARS_gNB *gNB, int SFN, int Slot, nfapi_nr_prach_p
 
 typedef struct rx_prach_out {
   uint16_t max_preamble;
-  uint16_t max_preamble_energy;
+  int max_preamble_energy; // dB x10, -900 when energy is 0: must stay signed
   uint16_t max_preamble_delay;
   uint16_t max_preamble_delay_raw; // raw PRACH correlation-bin delay before TA normalization
 } rx_prach_out_t;

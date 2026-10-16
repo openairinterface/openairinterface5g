@@ -96,7 +96,7 @@ void L1_nr_prach_procedures(PHY_VARS_gNB *gNB, prach_item_t *prach_id, nfapi_nr_
           .symbol_index = prachStartSymbol,
           .slot_index = slot,
           .freq_index = prach_pdu->num_ra,
-          .avg_rssi = (res.max_preamble_energy < 631) ? (128 + (res.max_preamble_energy / 5)) : 254,
+          .avg_rssi = max(0, min(254, 128 + res.max_preamble_energy / 5)), // uint8: the energy is signed
           .avg_snr = 0xff, // invalid for now
           .num_preamble = 1,
           .preamble_list = {
