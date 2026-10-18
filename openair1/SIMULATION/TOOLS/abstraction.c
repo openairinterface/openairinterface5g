@@ -180,7 +180,7 @@ double compute_pbch_sinr(channel_desc_t *desc,
 
         if (desc_i2) {
           S_i2.r += chF[aatx][aarx][f].r * chF2[aatx][aarx][f].r + chF[aatx][aarx][f].i * chF2[aatx][aarx][f].i;
-          S_i2.r += chF[aatx][aarx][f].r * chF2[aatx][aarx][f].i - chF[aatx][aarx][f].i * chF2[aatx][aarx][f].r;
+          S_i2.i += chF[aatx][aarx][f].r * chF2[aatx][aarx][f].i - chF[aatx][aarx][f].i * chF2[aatx][aarx][f].r;
         }
       }
     }
