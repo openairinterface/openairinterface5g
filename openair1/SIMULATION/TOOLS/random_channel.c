@@ -66,16 +66,13 @@ static const double default_amp_lin[] = {1};
 static void allocate_tap_correlation_matrices(channel_desc_t *desc, const struct complexd *matrix)
 {
   const int n_links = desc->nb_tx * desc->nb_rx;
-  const size_t matrix_entries = n_links * n_links;
-
-  desc->R_sqrt = calloc(desc->nb_taps, sizeof(*desc->R_sqrt));
+  allocCast3D(R_sqrt, struct complexd, desc->R_sqrt, desc->nb_taps, n_links, n_links, false);
   for (int tap = 0; tap < desc->nb_taps; ++tap) {
-    desc->R_sqrt[tap] = calloc(matrix_entries, sizeof(**desc->R_sqrt));
     if (matrix != NULL) {
-      memcpy(desc->R_sqrt[tap], matrix, matrix_entries * sizeof(**desc->R_sqrt));
+      memcpy(R_sqrt[tap], matrix, sizeof(R_sqrt[tap]));
     } else {
       for (int link = 0; link < n_links; ++link)
-        desc->R_sqrt[tap][link * n_links + link].r = 1.0;
+        R_sqrt[tap][link][link].r = 1.0;
     }
   }
 }
@@ -85,18 +82,16 @@ static void allocate_tap_correlation_matrices(channel_desc_t *desc, const struct
 static void allocate_clustered_tap_correlation_matrices(channel_desc_t *desc, const struct complexd *cluster_matrices)
 {
   const int n_links = desc->nb_tx * desc->nb_rx;
-  const size_t matrix_entries = n_links * n_links;
   int cluster = 0;
   int subpath = 0;
 
-  desc->R_sqrt = calloc(desc->nb_taps, sizeof(*desc->R_sqrt));
+  allocCast3D(R_sqrt, struct complexd, desc->R_sqrt, desc->nb_taps, n_links, n_links, false);
   for (int tap = 0; tap < desc->nb_taps; ++tap) {
-    desc->R_sqrt[tap] = calloc(matrix_entries, sizeof(**desc->R_sqrt));
     if (cluster_matrices != NULL) {
-      memcpy(desc->R_sqrt[tap], cluster_matrices + cluster * matrix_entries, matrix_entries * sizeof(**desc->R_sqrt));
+      memcpy(R_sqrt[tap], cluster_matrices + cluster * n_links * n_links, sizeof(R_sqrt[tap]));
     } else {
       for (int link = 0; link < n_links; ++link)
-        desc->R_sqrt[tap][link * n_links + link].r = 1.0;
+        R_sqrt[tap][link][link].r = 1.0;
     }
 
     if (++subpath == 3) {
@@ -111,10 +106,10 @@ static void apply_correlation_matrix(const channel_desc_t *desc,
                                      const struct complexd anew[desc->nb_tx][desc->nb_rx],
                                      struct complexd acorr[desc->nb_tx][desc->nb_rx])
 {
-  const int n_links = desc->nb_tx * desc->nb_rx;
+  cast3Darray(R_sqrt, struct complexd, desc->R_sqrt);
   for (int txa = 0; txa < desc->nb_tx; txa++)
     for (int rxa = 0; rxa < desc->nb_rx; rxa++) {
-      const struct complexd *r_row = &desc->R_sqrt[tap][(txa * desc->nb_rx + rxa) * n_links];
+      const struct complexd *r_row = R_sqrt[tap][txa * desc->nb_rx + rxa];
       for (int txa2 = 0; txa2 < desc->nb_tx; txa2++)
         for (int rxa2 = 0; rxa2 < desc->nb_rx; rxa2++) {
           const cd_t tmp = cdMul(anew[txa][rxa], r_row[rxa2 + txa2 * desc->nb_rx]);
@@ -197,9 +192,10 @@ static void fill_channel_desc(channel_desc_t *chan_desc, struct complexd *R_sqrt
 
   allocate_tap_correlation_matrices(chan_desc, R_sqrt);
 
+  cast3Darray(R_sqrt_tap, struct complexd, chan_desc->R_sqrt);
   for (int i = 0; i < nb_taps; i++) {
-    for (int j = 0; j < nb_tx * nb_rx * nb_tx * nb_rx; j += nb_tx * nb_rx + 1) {
-      LOG_D(OCM,"Rsqrt[%d][%d] %f %f\n",i,j,chan_desc->R_sqrt[i][j].r,chan_desc->R_sqrt[i][j].i);
+    for (int j = 0; j < nb_tx * nb_rx; j++) {
+      LOG_D(OCM, "Rsqrt[%d][%d][%d] %f %f\n", i, j, j, R_sqrt_tap[i][j][j].r, R_sqrt_tap[i][j][j].i);
     }
   }
 
@@ -546,10 +542,11 @@ static void tdlModel(const int tdl_paths,
         L[i][j] = L[j][j] > 0 ? v / L[j][j] : 0;
       }
     }
+    cast3Darray(R_sqrt, struct complexd, chan_desc->R_sqrt);
     for (int tap = 0; tap < chan_desc->nb_taps; ++tap) {
       for (int row = 0; row < matrix_size; ++row) {
         for (int col = 0; col < matrix_size; ++col)
-          chan_desc->R_sqrt[tap][row * matrix_size + col].r = L[col][row];
+          R_sqrt[tap][row][col].r = L[col][row];
       }
     }
   }
@@ -1120,9 +1117,6 @@ void free_channel_desc_scm(channel_desc_t *ch) {
 
   free(ch->amps);
   free(ch->delays);
-
-  for (int i = 0; i < ch->nb_taps; ++i)
-    free(ch->R_sqrt[i]);
 
   free(ch->R_sqrt);
   free(ch->Doppler_phase_cur);

@@ -78,8 +78,9 @@ typedef struct {
   int random_aoa;
   ///in Hz. if >0 generate a channel with a Clarke's Doppler profile with a maximum Doppler bandwidth max_Doppler. CURRENTLY NOT IMPLEMENTED!
   double max_Doppler;
-  ///Square root of the full correlation matrix size(R_tx) = nb_taps * (n_tx * n_rx) * (n_tx * n_rx).
-  struct complexd **R_sqrt;
+  /// Square root of the spatial correlation matrix per tap: struct complexd [nb_taps][n_links][n_links],
+  /// n_links = nb_tx * nb_rx, link index tx * nb_rx + rx
+  fourDimArray_t *R_sqrt;
   ///path loss including shadow fading in dB (positive = attenuation)
   double path_loss_dB;
   ///additional delay of channel in samples.
