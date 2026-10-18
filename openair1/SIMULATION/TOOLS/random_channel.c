@@ -626,7 +626,7 @@ double get_normalization_ch_factor(channel_desc_t *desc)
         for (int k = 0; k < desc->channel_length; k++) {
           cd_t ch = {};
           for (int l = 0; l < desc->nb_taps; l++) {
-            const double tmp = M_PI * (k - (desc->delays[l] * desc->sampling_rate) - desc->channel_offset);
+            const double tmp = M_PI * (k - (desc->delays[l] * desc->sampling_rate));
             double s = tmp != 0 ? sin(tmp) / tmp : 1.0;
             ch.r += s * a[l][aatx][aarx].r;
             ch.i += s * a[l][aatx][aarx].i;
@@ -1244,7 +1244,7 @@ int random_channel(channel_desc_t *desc, uint8_t abstraction_flag)
           for (int k = 0; k < desc->channel_length; k++) {
             ch[aatx][aarx][k] = (struct complexd){};
             for (int l = 0; l < desc->nb_taps; l++) {
-              double tmp = M_PI * (k - (desc->delays[l] * desc->sampling_rate) - desc->channel_offset);
+              double tmp = M_PI * (k - (desc->delays[l] * desc->sampling_rate));
               double s = tmp == 0 ? 1.0 : sin(tmp) / tmp;
               ch[aatx][aarx][k].r += s * a[l][aatx][aarx].r;
               ch[aatx][aarx][k].i += s * a[l][aatx][aarx].i;
