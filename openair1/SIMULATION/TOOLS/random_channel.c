@@ -493,7 +493,8 @@ static void tdlModel(const int tdl_paths,
     chan_desc->delays[i] = tdl_delays[i] * DS_TDL;
   const int max_delay = ceil(chan_desc->sampling_rate * chan_desc->delays[chan_desc->nb_taps - 1]);
   chan_desc->channel_length = 1 + max_delay + CHANNEL_SINC_TAIL;
-  printf("TDL : %f Ms/s, nb_taps %d, Td %e, channel_length %d\n",
+  LOG_I(OCM,
+        "TDL : %f Ms/s, nb_taps %d, Td %e, channel_length %d\n",
          chan_desc->sampling_rate,
          tdl_paths,
          chan_desc->delays[chan_desc->nb_taps - 1],
@@ -528,10 +529,27 @@ static void tdlModel(const int tdl_paths,
 
   allocate_tap_correlation_matrices(chan_desc, NULL);
   if (correlation_matrix != NULL) {
+    // apply_correlation_matrix() computes acorr = anew * M, whose covariance is M^T * M: use M = L^T with
+    // R = L * L^T (Cholesky), not R itself. The high correlation matrices are only semi-definite: clamp
+    // the pivots at 0.
+    double L[matrix_size][matrix_size];
+    memset(L, 0, sizeof(L));
+    for (int j = 0; j < matrix_size; j++) {
+      double d = correlation_matrix[j * matrix_size + j];
+      for (int k = 0; k < j; k++)
+        d -= L[j][k] * L[j][k];
+      L[j][j] = d > 0 ? sqrt(d) : 0;
+      for (int i = j + 1; i < matrix_size; i++) {
+        double v = correlation_matrix[i * matrix_size + j];
+        for (int k = 0; k < j; k++)
+          v -= L[i][k] * L[j][k];
+        L[i][j] = L[j][j] > 0 ? v / L[j][j] : 0;
+      }
+    }
     for (int tap = 0; tap < chan_desc->nb_taps; ++tap) {
       for (int row = 0; row < matrix_size; ++row) {
         for (int col = 0; col < matrix_size; ++col)
-          chan_desc->R_sqrt[tap][row * matrix_size + col].r = correlation_matrix[row * matrix_size + col];
+          chan_desc->R_sqrt[tap][row * matrix_size + col].r = L[col][row];
       }
     }
   }
