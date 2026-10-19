@@ -59,7 +59,7 @@ support depends on the NIC.
 
 We tested the category A radio units listed below.
 
-|Vendor                 |Software Version        |
+|Vendor                 |Recommended SW version  |
 |-----------------------|------------------------|
 |VVDN LPRU              |03-v3.0.5               |
 |LiteON RU FR1          |02.00.10                |
@@ -560,37 +560,123 @@ dl_ul_tuning_special_slot=0xfd00000
 
 #### Benetel 550
 
-The OAI configuration file [`gnb.sa.band78.273prb.fhi72.4x4-benetel550.conf`](../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band78.273prb.fhi72.4x4-benetel550.conf) corresponds to:
-- TDD pattern `DDDDDDDSUU`, 5ms
-- Bandwidth 100MHz
+The OAI configuration file [`gnb.sa.band77.273prb.fhi72.4x2-benetel550-dyn-compression.conf`](../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band77.273prb.fhi72.4x2-benetel550-dyn-compression.conf) corresponds to:
+- TDD pattern `DDDDDDDSUU`, 5ms (special slot with 6 DL, 4 guard and 4 UL symbols)
+- Bandwidth 100MHz, center frequency 3950.4MHz (band n77)
 - MTU 9216
-- 4TX4R
+- 4TX2R
+- BFP 9 bit dynamic compression
+- UL 256QAM disabled
 
 ##### RU configuration
 
-After switching on the radio or rebooting, wait for the radio bring up to complete, which you can follow using `tail -f  /tmp/logs/radio_status`. Once you will see `[INFO] Radio bringup complete`, you can configure the RU via editing `/etc/ru_config.cfg`
+After switching on the radio or rebooting, wait for the radio bring up to complete, which you can follow using `tail -f  /tmp/logs/radio_status`. Once you will see `[INFO] Radio bringup complete`, you can configure the RU by editing `/etc/ru_config.cfg`, then start the DU/gNB.
+The following RU configuration corresponds to the gNB configuration file above:
 
 ```bash
-cat /etc/ru_config.cfg
-
-mimo_mode=1_2_3_4_4x4
+mimo_mode=1_2_3_4_4x2
 downlink_scaling=0
+ul_gain_correction=0
 prach_format=short
-compression=static_compressed # if `dynamic_compressed` used, set the `comp_hdr_type` to `dynamic` in the gNB config file
+prach_freq_offset_dynamic=true
+prach_freq_offset=0
+compression=dynamic_compressed
+prach_msg1_freq_start=0
 lf_prach_compression_enable=true
 cplane_per_symbol_workaround=disabled
 cuplane_dl_coupling_sectionID=disabled
 flexran_prach_workaround=disabled
+dpd_reset_timer=43200
+c_plane_du_mac=00:11:22:44:88:99
+u_plane_du_mac=00:11:22:44:88:99
+u_plane_du_vlan_uplink=6
+u_plane_du_vlan_downlink=6
+c_plane_du_vlan=6
+tdd_switching=1500
+bandwidth_hz=100000000
+centre_frequency_hz=3950400000
+tx_power_dbm=24.000000
+tdd_pattern_1=DDDD
+tdd_pattern_2=DDDSUU
+special_slots_symbols=DDDDDDGGGGUUUU
+lf_prach_slot_id=0
 dl_tuning_special_slot=0x13b6
+cplane_per_symbol_timing=false
+non_ideal_c4_timing_enable=false
+m_plane_u_plane_config_v16=false
+synce_enable=false
 ```
 
-In addition, PRACH format 0 is also verified with FW v2.0.5. An example gNB config file can be found at [`gnb.sa.band77.273prb.fhi72.2x2-benetel550-long-prach.conf`](../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band77.273prb.fhi72.2x2-benetel550-long-prach.conf). On the RU side, the following parameters shall be modified:
+###### Compression
+
+The compression type must match on the RU and the gNB. For dynamic compression, set `compression=dynamic_compressed` on the RU and `comp_hdr_type = "dynamic"` in the gNB configuration file.
+For static compression, set `compression=static_compressed` on the RU and remove `comp_hdr_type` from the gNB configuration file (`static` is the default).
+
+For uncompressed 16b mode (tested in 2x2), set the IQ width to 16 in the gNB configuration file (no `comp_hdr_type`):
+```
+pdsch_AntennaPorts_N1      = 1;  # 2x2
+...
+nb_tx = 2;
+nb_rx = 2;
+...
+
+fhi_72 = {
+  ...
+  fh_config = ({
+    ...
+    ru_config = {
+      iq_width = 16;
+      iq_width_prach = 16;
+    };
+    prach_config = {
+      eAxC_offset = 8;
+    };
+  });
+};
+```
+
+On the RU side, modify the following parameters with respect to the configuration above:
+```bash
+mimo_mode=1_3
+compression=static_uncompressed
+```
+
+###### Long PRACH (format 0)
+
+For testing with long PRACH (format 0), on RU side modify the following parameters:
 ```bash
 mimo_mode=1_3
 prach_format=long
 prach_freq_offset_dynamic=false
+compression=static_compressed
 lf_prach_compression_enable=true
 lf_prach_slot_id=0
+```
+And on DU side, with respect to [`gnb.sa.band77.273prb.fhi72.4x2-benetel550-dyn-compression.conf`](../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band77.273prb.fhi72.4x2-benetel550-dyn-compression.conf):
+```
+pdsch_AntennaPorts_N1      = 1;  # 2x2
+prach_ConfigurationIndex   = 7;  # format 0
+prach_RootSequenceIndex_PR = 1;  # L=839
+# msg1_SubcarrierSpacing   = 1;  # remove, derived from prach_ConfigurationIndex (1.25 kHz)
+...
+nb_tx = 2;
+nb_rx = 2;
+...
+fhi_72 = {
+  ...
+  fh_config = ({
+    ...
+    Ta4 = (0, 831);  # format 0 spans more than one slot
+    ru_config = {
+      # no comp_hdr_type: static compression, matching the RU
+      iq_width = 9;
+      iq_width_prach = 9;
+    };
+    prach_config = {
+      eAxC_offset = 8;
+    };
+  });
+};
 ```
 
 #### LITEON
@@ -1556,9 +1642,8 @@ Sample configuration files for OAI gNB, specific to the manufacturer of the radi
 3. Benetel 650 RU:
 [`gnb-du.sa.band77.273prb.fhi72.4x4-benetel650.conf`](../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb-du.sa.band77.273prb.fhi72.4x4-benetel650.conf)
 4. Benetel 550 RU:
-[`gnb.sa.band78.273prb.fhi72.4x4-benetel550.conf`](../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band78.273prb.fhi72.4x4-benetel550.conf)
-[`gnb.sa.band78.273prb.fhi72.4x2-benetel550.conf`](../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band78.273prb.fhi72.4x2-benetel550.conf)
-[`gnb.sa.band78.273prb.fhi72.2x2-benetel550-16b.conf`](../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band78.273prb.fhi72.2x2-benetel550-16b.conf) - tested successfully with E release; with F, UL U-plane fragmentation is not correct
+[`gnb.sa.band77.273prb.fhi72.4x4-benetel550.conf`](../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band77.273prb.fhi72.4x4-benetel550.conf)
+[`gnb.sa.band77.273prb.fhi72.4x2-benetel550-dyn-compression.conf`](../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band77.273prb.fhi72.4x2-benetel550-dyn-compression.conf)
 5. Metanoia RU FR1 (Jura):
 [`gnb.sa.band78.273prb.fhi72.4x4-metanoia.conf`](../targets/PROJECTS/GENERIC-NR-5GC/CONF/gnb.sa.band78.273prb.fhi72.4x4-metanoia.conf)
 6. Metanoia RU FR1 (Cobra):
