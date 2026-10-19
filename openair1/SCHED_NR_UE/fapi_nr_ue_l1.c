@@ -45,6 +45,22 @@ static void configure_dlsch(NR_UE_DLSCH_t *dlsch,
     return;
   }
 
+  /* Retransmission of a TB this HARQ process already decoded (the gNB missed our ACK): its soft
+   * buffer is no longer valid for combining, so decoding again would fail and NACK it every round.
+   * TS 38.321 5.3.2.2: for a TB previously successfully decoded, generate an ACK.
+   * status == NR_SCH_IDLE is enough to know the TB was decoded: downlink_harq_process() sets every
+   * scheduled PID to NR_ACTIVE, a failed decode leaves it NR_ACTIVE, and only a successful decode
+   * (nr_dlsch_decoding()) sets it back to NR_SCH_IDLE. The other NR_SCH_IDLE source,
+   * init_downlink_harq_status() on a PHY resync, cannot reach this check: every resync requested
+   * by the MAC goes through reset_mac_inst(), which sets last_ndi = -1, so the next DCI on each
+   * PID is new data. */
+  if (!dlsch->cw_info.new_data_indicator && dlsch->rnti_type == TYPE_C_RNTI_ && dlsch_harq->status == NR_SCH_IDLE) {
+    dlsch->active = false;
+    LOG_D(PHY, "DLSCH harq pid %d: retransmission of an already decoded TB, ACK again\n", current_harq_pid);
+    update_harq_status(mac, current_harq_pid, cw_idx, 1);
+    return;
+  }
+
   /* Do not clear first_rx on a retransmission: decode never ran still needs to re-segment. */
   if (dlsch->cw_info.new_data_indicator) {
     dlsch_harq->first_rx = true;
@@ -55,13 +71,6 @@ static void configure_dlsch(NR_UE_DLSCH_t *dlsch,
   downlink_harq_process(dlsch_harq, current_harq_pid, dlsch->cw_info.new_data_indicator, dlsch->cw_info.rv, dlsch->rnti_type);
   dlsch_harq->activated_frame = dl_config->sfn;
   dlsch_harq->activated_slot = dl_config->slot;
-  if (dlsch_harq->status != NR_ACTIVE) {
-    // dlsch_harq->status not ACTIVE due to false retransmission
-    // Reset the following flag to skip PDSCH procedures in that case and retrasmit harq status
-    dlsch->active = false;
-    LOG_W(NR_MAC, "dlsch0_harq->status not ACTIVE due to false retransmission harq pid: %d\n", current_harq_pid);
-    update_harq_status(mac, current_harq_pid, cw_idx, dlsch_harq->decodeResult);
-  }
 }
 
 static void configure_ta_command(PHY_VARS_NR_UE *ue, fapi_nr_ta_command_pdu *ta_command_pdu)
