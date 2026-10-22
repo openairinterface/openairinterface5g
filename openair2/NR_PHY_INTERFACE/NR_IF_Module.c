@@ -162,13 +162,8 @@ static void handle_nr_ulsch(NR_UL_IND_t *UL_info)
                 UL_info->phy_id,
                 UL_info->rx_ind.sfn,
                 UL_info->rx_ind.slot,
-                crc->rnti,
-                crc->tb_crc_status ? NULL : rx->pdu,
-                rx->pdu_length,
-                crc->harq_id,
-                crc->timing_advance,
-                crc->ul_cqi,
-                crc->rssi);
+                crc,
+                rx);
     }
     UL_info->rx_ind.number_of_pdus = 0;
     UL_info->crc_ind.number_crcs = 0;

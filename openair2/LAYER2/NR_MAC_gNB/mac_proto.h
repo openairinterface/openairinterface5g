@@ -368,13 +368,8 @@ void nr_rx_sdu(const module_id_t gnb_mod_idP,
                const int CC_idP,
                const frame_t frameP,
                const slot_t subframeP,
-               const rnti_t rntiP,
-               uint8_t * sduP,
-               const uint32_t sdu_lenP,
-               const int8_t harq_pid,
-               const uint16_t timing_advance,
-               const uint8_t ul_cqi,
-               const uint16_t rssi);
+               const nfapi_nr_crc_t *crc,
+               const nfapi_nr_rx_data_pdu_t *rx);
 
 void reset_dl_harq_list(NR_UE_sched_ctrl_t *sched_ctrl);
 
