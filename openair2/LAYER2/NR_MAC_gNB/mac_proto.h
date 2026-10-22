@@ -355,21 +355,27 @@ int nr_write_ce_dlsch_pdu(gNB_MAC_INST *gNB,
                           unsigned char drx_cmd,
                           unsigned char *ue_cont_res_id);
 
-/* \brief Function to indicate a received SDU on ULSCH.
-@param Mod_id Instance ID of gNB
-@param CC_id Component carrier index
-@param rnti RNTI of UE transmitting the SDU
-@param sdu Pointer to received SDU
-@param sdu_len Length of SDU
-@param timing_advance timing advance adjustment after this pdu
-@param ul_cqi Uplink CQI estimate after this pdu (SNR quantized to 8 bits, -64 ... 63.5 dB in .5dB steps)
-*/
-void nr_rx_sdu(const module_id_t gnb_mod_idP,
-               const int CC_idP,
-               const frame_t frameP,
-               const slot_t subframeP,
-               const nfapi_nr_crc_t *crc,
-               const nfapi_nr_rx_data_pdu_t *rx);
+/* \brief Handle a CRC.indication PDU (UL measurements, DTX/UL failure detection).
+   Must precede nr_rx_sdu_rx() of the same PUSCH: the RX part advances RA state
+   (Msg3 done/retx, CFRA completion), after which RA UE measurements (TA, SNR,
+   Msg3 TPC) would be dropped, and frees the UL HARQ process whose sched_pusch
+   is read here. In monolithic mode, NR_UL_indication() guarantees the order;
+   with (n)FAPI the indications are handled in order of arrival, which FAPI does
+   not guarantee, so an L1 sending RX_Data.indication first degrades RA and
+   PUSCH power control. */
+void nr_rx_sdu_crc(const module_id_t gnb_mod_idP,
+                   const int CC_idP,
+                   const frame_t frameP,
+                   const slot_t slotP,
+                   const nfapi_nr_crc_t *crc);
+
+/* \brief Handle an RX_DATA.indication PDU (MAC PDU decoding, UL HARQ, RA
+   progression). rx->pdu is NULL if the CRC failed. */
+void nr_rx_sdu_rx(const module_id_t gnb_mod_idP,
+                  const int CC_idP,
+                  const frame_t frameP,
+                  const slot_t slotP,
+                  const nfapi_nr_rx_data_pdu_t *rx);
 
 void reset_dl_harq_list(NR_UE_sched_ctrl_t *sched_ctrl);
 

@@ -157,13 +157,8 @@ static void handle_nr_ulsch(NR_UL_IND_t *UL_info)
             crc->tb_crc_status ? "error" : "ok",
             crc->tb_crc_status);
 
-      /* if CRC passes, pass PDU, otherwise pass NULL as error indication */
-      nr_rx_sdu(UL_info->module_id,
-                UL_info->phy_id,
-                UL_info->rx_ind.sfn,
-                UL_info->rx_ind.slot,
-                crc,
-                rx);
+      nr_rx_sdu_crc(UL_info->module_id, UL_info->phy_id, UL_info->crc_ind.sfn, UL_info->crc_ind.slot, crc);
+      nr_rx_sdu_rx(UL_info->module_id, UL_info->phy_id, UL_info->rx_ind.sfn, UL_info->rx_ind.slot, rx);
     }
     UL_info->rx_ind.number_of_pdus = 0;
     UL_info->crc_ind.number_crcs = 0;
