@@ -730,6 +730,7 @@ void RCconfig_nr_prs(void)
       LOG_I(PHY, "MutingPattern1 \t\t[%s\b\b]\n", str[5]);
       LOG_I(PHY, "MutingPattern2 \t\t[%s\b\b]\n", str[6]);
       LOG_I(PHY, "-----------------------------------------\n");
+      LOG_I(PHY, "PRS is transmitted according to this configuration, not from FAPI DL_TTI.request PRS PDUs of the MAC\n");
     } // for j
   }
   else

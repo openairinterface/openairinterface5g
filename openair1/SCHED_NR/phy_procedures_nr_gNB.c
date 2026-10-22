@@ -329,18 +329,37 @@ static void nr_generate_csi_rs_gNB(PHY_VARS_gNB *gNB, int slot, const nfapi_nr_d
                               prb_mask_words);
 }
 
-static void nr_generate_prs_gNB(PHY_VARS_gNB *gNB, int slot, int slot_prs, prs_config_t *prs_config, int prb_mask_words)
+static nfapi_nr_dl_tti_prs_pdu_rel16_t get_prs_pdu(const prs_config_t *prs_config)
+{
+  return (nfapi_nr_dl_tti_prs_pdu_rel16_t){.combSize = prs_config->CombSize,
+                                           .combOffset = prs_config->REOffset,
+                                           .nIdPrs = prs_config->NPRSID,
+                                           .numSymbols = prs_config->NumPRSSymbols,
+                                           .firstSymbol = prs_config->SymbolStart,
+                                           .numRbs = prs_config->NumRB,
+                                           .startRb = prs_config->RBOffset,
+                                           .symbolPuncturingBitmap = 0x3FFF};
+}
+
+static void nr_generate_prs_gNB(PHY_VARS_gNB *gNB,
+                                int slot,
+                                int slot_prs,
+                                const nfapi_nr_dl_tti_prs_pdu_rel16_t *prs_pdu,
+                                int prb_mask_words)
 {
   const NR_DL_FRAME_PARMS *fp = &gNB->frame_parms;
-  nr_generate_prs(slot_prs, gNB->common_vars.txdataF[0], AMP, prs_config, fp);
+  if (!nr_generate_prs(slot_prs, gNB->common_vars.txdataF[0], AMP, prs_pdu, fp))
+    return;
 
   if (!gNB->phase_comp)
     return;
 
   uint64_t local_phase_comp_prb_mask[fp->symbols_per_slot][prb_mask_words];
   memset(local_phase_comp_prb_mask, 0, sizeof(local_phase_comp_prb_mask));
-  for (int symbol = prs_config->SymbolStart; symbol < prs_config->SymbolStart + prs_config->NumPRSSymbols; symbol++)
-    mark_prb_range(&local_phase_comp_prb_mask[0][0], prb_mask_words, symbol, prs_config->RBOffset, prs_config->NumRB);
+  for (int symbol = prs_pdu->firstSymbol; symbol < prs_pdu->firstSymbol + prs_pdu->numSymbols; symbol++) {
+    if (prs_pdu->symbolPuncturingBitmap & (1 << symbol))
+      mark_prb_range(&local_phase_comp_prb_mask[0][0], prb_mask_words, symbol, prs_pdu->startRb, prs_pdu->numRbs);
+  }
 
   c16_t *prs_txdataF[] = {gNB->common_vars.txdataF[0]};
   apply_nr_rotation_TX_masked(fp, prs_txdataF, 1, fp->symbol_rotation[0], slot, &local_phase_comp_prb_mask[0][0], prb_mask_words);
@@ -376,7 +395,8 @@ void phy_procedures_gNB_TX(PHY_VARS_gNB *gNB,
       {
         int slot_prs = (slot - i * prs_config->PRSResourceTimeGap + fp->slots_per_frame) % fp->slots_per_frame;
         LOG_D(PHY,"gNB_TX: frame %d, slot %d, slot_prs %d, PRS Resource ID %d\n",frame, slot, slot_prs, rsc_id);
-        nr_generate_prs_gNB(gNB, slot, slot_prs, prs_config, prb_mask_words);
+        const nfapi_nr_dl_tti_prs_pdu_rel16_t prs_pdu = get_prs_pdu(prs_config);
+        nr_generate_prs_gNB(gNB, slot, slot_prs, &prs_pdu, prb_mask_words);
       }
     }
   }
@@ -396,6 +416,9 @@ void phy_procedures_gNB_TX(PHY_VARS_gNB *gNB,
         break;
       case NFAPI_NR_DL_TTI_CSI_RS_PDU_TYPE:
         nr_generate_csi_rs_gNB(gNB, slot, &dl_tti_pdu->csi_rs_pdu, prb_mask_words);
+        break;
+      case NFAPI_NR_DL_TTI_PRS_PDU_TYPE:
+        nr_generate_prs_gNB(gNB, slot, slot, &dl_tti_pdu->prs_pdu.prs_pdu_rel16, prb_mask_words);
         break;
       case NFAPI_NR_DL_TTI_PDSCH_PDU_TYPE: {
         int tx_data_idx = dl_tti_pdu->pdsch_pdu.pdsch_pdu_rel15.pduIndex;
