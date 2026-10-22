@@ -178,25 +178,49 @@ static void fill_dl_tti_request_ssb_pdu(nfapi_nr_dl_tti_ssb_pdu_rel15_t *pdu)
   pdu->param_v4.spatialStreamIndex = rand16_range(0, MAX_NUM_SPATIAL_STREAMS);
 }
 
+static void fill_dl_tti_request_prs_pdu(nfapi_nr_dl_tti_prs_pdu_rel16_t *pdu)
+{
+  const uint8_t comb_sizes[] = {2, 4, 6, 12};
+  const uint8_t num_symbols[] = {2, 4, 6, 12};
+  pdu->subcarrierSpacing = rand8_range(0, 4);
+  pdu->cyclicPrefix = rand8_range(0, 1);
+  pdu->nIdPrs = rand16_range(0, 4095);
+  pdu->pduIndex = rand16();
+  pdu->combSize = comb_sizes[rand8_range(0, 3)];
+  pdu->combOffset = rand8_range(0, pdu->combSize - 1);
+  pdu->numSymbols = num_symbols[rand8_range(0, 3)];
+  pdu->firstSymbol = rand8_range(0, 12);
+  pdu->numRbs = 4 * rand16_range(6, 68); // 24 -> 272, multiples of 4
+  pdu->startRb = rand16_range(0, 2176);
+  pdu->symbolPuncturingBitmap = rand16_range(0, 0x3FFF); // bits 14 and 15 are reserved
+  pdu->spatialStreamIndexPresent = rand8_range(0, 1);
+  pdu->spatialStreamIndex = rand16_range(0, MAX_NUM_SPATIAL_STREAMS);
+  fill_dl_tti_request_beamforming(&pdu->precodingAndBeamforming);
+  pdu->prsPowerOffset = rands16_range(-32767, 32767);
+}
+
 static void fill_dl_tti_request(nfapi_nr_dl_tti_request_t *msg)
 {
   msg->SFN = rand16_range(0, 1023);
   msg->Slot = rand16_range(0, 159);
-  int available_PDUs = rand8_range(4, 16); // Minimum 4 PDUs in order to test at least one of each
+  int available_PDUs = rand8_range(5, 16); // Minimum 5 PDUs in order to test at least one of each
   msg->dl_tti_request_body.nPDUs = available_PDUs;
   msg->dl_tti_request_body.nGroup = rand8();
 
   int pdu = 0;
-  int num_PDCCH = rand8_range(1, available_PDUs - 3);
+  int num_PDCCH = rand8_range(1, available_PDUs - 4);
 
   available_PDUs -= num_PDCCH;
-  int num_PDSCH = rand8_range(1, available_PDUs - 2);
+  int num_PDSCH = rand8_range(1, available_PDUs - 3);
 
   available_PDUs -= num_PDSCH;
-  int num_CSI_RS = rand8_range(1, available_PDUs - 1);
+  int num_CSI_RS = rand8_range(1, available_PDUs - 2);
 
   available_PDUs -= num_CSI_RS;
-  int num_SSB = available_PDUs;
+  int num_SSB = rand8_range(1, available_PDUs - 1);
+
+  available_PDUs -= num_SSB;
+  int num_PRS = available_PDUs;
 
   for (int i = 0; i < num_PDCCH; ++pdu, ++i) {
     msg->dl_tti_request_body.dl_tti_pdu_list[pdu].PDUType = NFAPI_NR_DL_TTI_PDCCH_PDU_TYPE;
@@ -220,6 +244,12 @@ static void fill_dl_tti_request(nfapi_nr_dl_tti_request_t *msg)
     msg->dl_tti_request_body.dl_tti_pdu_list[pdu].PDUType = NFAPI_NR_DL_TTI_SSB_PDU_TYPE;
     msg->dl_tti_request_body.dl_tti_pdu_list[pdu].PDUSize = rand16();
     fill_dl_tti_request_ssb_pdu(&msg->dl_tti_request_body.dl_tti_pdu_list[pdu].ssb_pdu.ssb_pdu_rel15);
+  }
+
+  for (int i = 0; i < num_PRS; ++pdu, ++i) {
+    msg->dl_tti_request_body.dl_tti_pdu_list[pdu].PDUType = NFAPI_NR_DL_TTI_PRS_PDU_TYPE;
+    msg->dl_tti_request_body.dl_tti_pdu_list[pdu].PDUSize = rand16();
+    fill_dl_tti_request_prs_pdu(&msg->dl_tti_request_body.dl_tti_pdu_list[pdu].prs_pdu.prs_pdu_rel16);
   }
 }
 

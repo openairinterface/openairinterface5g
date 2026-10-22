@@ -1165,6 +1165,43 @@ typedef struct {
   nfapi_nr_dl_tti_ssb_pdu_rel15_t ssb_pdu_rel15;
 } nfapi_nr_dl_tti_ssb_pdu;
 
+/// PRS PDU, SCF 222.10.00 Table 3.4.2.4a-1
+typedef struct {
+  /// subcarrierSpacing, Value: 0->4
+  uint8_t subcarrierSpacing;
+  /// Cyclic prefix type, 0: Normal; 1: Extended
+  uint8_t cyclicPrefix;
+  /// n_ID,seq^PRS, Value: 0->4095
+  uint16_t nIdPrs;
+  /// PDU index incremented for each PRS PDU sent in TX control message, Value: 0->65535
+  uint16_t pduIndex;
+  /// Transmission comb size, Value: 2, 4, 6, 12
+  uint8_t combSize;
+  /// Transmission comb offset, Value: 0->(combSize - 1)
+  uint8_t combOffset;
+  /// Number of symbols, Value: 2, 4, 6, 12
+  uint8_t numSymbols;
+  /// Symbol offset, Value: 0->12
+  uint8_t firstSymbol;
+  /// PRS bandwidth in RBs, Value: 24->272, multiples of 4
+  uint16_t numRbs;
+  /// PRB offset with respect to subcarrier 0 (dl-PRS-StartPRB), Value: 0->2176
+  uint16_t startRb;
+  /// Bitmap of punctured PRS symbols, bit n = 0: symbol n punctured, 1: symbol n transmitted
+  uint16_t symbolPuncturingBitmap;
+  /// Whether spatialStreamIndex is signalled, 0: false, 1: true
+  uint8_t spatialStreamIndexPresent;
+  /// Spatial stream index, present if and only if spatialStreamIndexPresent is true
+  uint16_t spatialStreamIndex;
+  nfapi_nr_tx_precoding_and_beamforming_t precodingAndBeamforming;
+  /// Ratio of PRS EPRE to SSS EPRE, Value: -32767->32767 in 0.001 dB steps; -32768 reserved
+  int16_t prsPowerOffset;
+} nfapi_nr_dl_tti_prs_pdu_rel16_t;
+
+typedef struct {
+  nfapi_nr_dl_tti_prs_pdu_rel16_t prs_pdu_rel16;
+} nfapi_nr_dl_tti_prs_pdu;
+
 typedef struct {
   nfapi_nr_dl_tti_csi_rs_pdu_rel15_t csi_rs_pdu_rel15;
 } nfapi_nr_dl_tti_csi_rs_pdu;
@@ -1186,6 +1223,7 @@ typedef struct {
   nfapi_nr_dl_tti_pdsch_pdu      pdsch_pdu;
   nfapi_nr_dl_tti_csi_rs_pdu     csi_rs_pdu;
   nfapi_nr_dl_tti_ssb_pdu        ssb_pdu;
+  nfapi_nr_dl_tti_prs_pdu        prs_pdu;
   };
 } nfapi_nr_dl_tti_request_pdu_t;
 
@@ -1544,6 +1582,7 @@ typedef enum {
   NFAPI_NR_DL_TTI_PDSCH_PDU_TYPE  = 1,
   NFAPI_NR_DL_TTI_CSI_RS_PDU_TYPE = 2,
   NFAPI_NR_DL_TTI_SSB_PDU_TYPE    = 3,
+  NFAPI_NR_DL_TTI_PRS_PDU_TYPE    = 5,
 } nfapi_nr_dl_tti_pdu_type_e;
 
 typedef enum {
