@@ -355,8 +355,8 @@ int nr_prs_channel_estimation(uint8_t gNB_id,
 
     const int dft_sz = NR_PRS_IDFT_OVERSAMP_FACTOR * symb_sz;
     c16_t chT_interpol[dft_sz] __attribute__((aligned(32)));
+    c16_t chF_interpol[dft_sz] __attribute__((aligned(32)));
     {
-      c16_t chF_interpol[dft_sz] __attribute__((aligned(32)));
       memset(chF_interpol, 0, sizeof(chF_interpol));
       // Place PRS channel estimates in FFT shifted format
       const int first_half = symb_sz - frame_parms->first_carrier_offset;
@@ -430,12 +430,13 @@ int nr_prs_channel_estimation(uint8_t gNB_id,
       T_INT(rxAnt),
       T_BUFFER(rxdataF[rxAnt], frame_parms->samples_per_slot_wCP * sizeof(c16_t)));
 
-    T(T_UE_PHY_DL_CHANNEL_ESTIMATE,
+    T(T_UE_PHY_PRS_CHANNEL_ESTIMATE,
       T_INT(gNB_id),
       T_INT(rsc_id),
       T_INT(proc->frame_rx),
       T_INT(proc->nr_slot_rx),
       T_INT(rxAnt),
+      T_BUFFER(chF_interpol, dft_sz * sizeof(c16_t)),
       T_BUFFER(chT_interpol, dft_sz * sizeof(c16_t)));
   }
 
