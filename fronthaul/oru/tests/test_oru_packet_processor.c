@@ -3090,9 +3090,10 @@ typedef struct {
   uint16_t beam_id;
   const uint8_t *ext;
   size_t ext_len;
+  bool all_prbs; // numPrbc 0 (all carrier PRBs) instead of 20
 } test_section3_t;
 
-// Sends one 4-symbol, 20-PRB PRACH (Type 3) C-Plane message for PRACH stream 0 at symbol sym carrying n sections, with
+// Sends one 4-symbol PRACH (Type 3) C-Plane message for PRACH stream 0 at symbol sym carrying n sections, with
 // numOfSections set to num_sections.
 static void send_prach_cplane(void *ctx, uint64_t sym, int num_sections, const test_section3_t *sec, int n)
 {
@@ -3125,7 +3126,7 @@ static void send_prach_cplane(void *ctx, uint64_t sym, int num_sections, const t
     s->hdr.u.s3.beamId = sec[i].beam_id;
     s->hdr.u.s3.ef = sec[i].ext_len > 0;
     s->hdr.u1.common.sectionId = sec[i].section_id;
-    s->hdr.u1.common.numPrbc = 20;
+    s->hdr.u1.common.numPrbc = sec[i].all_prbs ? 0 : 20;
     xran_swap_be64_inplace(s);
     if (sec[i].ext_len > 0) {
       uint8_t *dst = (uint8_t *)rte_pktmbuf_append(mbuf, sec[i].ext_len);
@@ -3326,6 +3327,100 @@ void test_prach_multi_section_message(void)
   printf("PRACH multi-section C-Plane message passed!\n");
 }
 
+// ext1 and ext11 on the sections of a Section Type 3 (PRACH) message are decoded, with the same walk Type 1 uses and
+// ext11 bundles counted in the section's PRBs. A malformed extension is counted and the section is still registered with
+// its beamId.
+void test_prach_section_extensions(void)
+{
+  printf("Testing PRACH C-Plane section extensions 1 and 11...\n");
+  void *ctx = init_prach_test_ctx();
+  set_num_bf_weights(ctx, 2);
+  const int num_symbols_per_frame = 10 * 2 * 14;
+  const int slot_in_frame = (1035 % num_symbols_per_frame) / 14;
+  const int symbol = 1035 % 14;
+  // Each case uses the same slot of a later frame, which releases the previous case's job
+  uint64_t target_sym = 1035;
+  oru_packet_processor_stats_t stats;
+
+  // ext1, BFP 8-bit, exponent 0, 2 weights
+  const uint8_t ext1[] = {XRAN_CP_SECTIONEXTCMD_1, 2, 0x81, 0x00, 4, (uint8_t)-4, 100, (uint8_t)-100};
+  const test_section3_t with_ext1 = {1, 5, ext1, sizeof(ext1)};
+  send_prach_cplane(ctx, target_sym, 1, &with_ext1, 1);
+  assert(get_prach_beam_id(ctx, slot_in_frame, 0, symbol) == 5);
+  get_packet_processor_stats(ctx, &stats);
+  assert(stats.cplane_ext1_received == 1 && stats.cplane_err_sect_ext1 == 0);
+
+  // ext1 carrying fewer weights than configured: an ext1 error, the section is kept
+  set_num_bf_weights(ctx, 4);
+  target_sym += num_symbols_per_frame;
+  handle_absolute_symbol_tick(ctx, target_sym - 5); // beam lookups resolve the symbol nearest to now
+  send_prach_cplane(ctx, target_sym, 1, &with_ext1, 1);
+  assert(get_prach_beam_id(ctx, slot_in_frame, 0, symbol) == 5);
+  get_packet_processor_stats(ctx, &stats);
+  assert(stats.cplane_ext1_received == 2 && stats.cplane_err_sect_ext1 == 1);
+  set_num_bf_weights(ctx, 2);
+
+  // ext11 with weights: 20 PRBs, 2 per bundle, 10 bundles
+  uint8_t ext[EXT11_TEST_BUF_SIZE];
+  size_t len = build_ext11(ext, false, false, 2, 10, 2);
+  test_section3_t with_ext11 = {2, 6, ext, len};
+  target_sym += num_symbols_per_frame;
+  handle_absolute_symbol_tick(ctx, target_sym - 5); // beam lookups resolve the symbol nearest to now
+  send_prach_cplane(ctx, target_sym, 1, &with_ext11, 1);
+  assert(get_prach_beam_id(ctx, slot_in_frame, 0, symbol) == 6);
+  get_packet_processor_stats(ctx, &stats);
+  assert(stats.cplane_ext11_received == 1 && stats.cplane_err_sect_ext11 == 0);
+
+  // disableBFWs = 1: beamIds only, 4 PRBs per bundle, 5 bundles
+  with_ext11.ext_len = build_ext11(ext, false, true, 4, 5, 0);
+  target_sym += num_symbols_per_frame;
+  handle_absolute_symbol_tick(ctx, target_sym - 5); // beam lookups resolve the symbol nearest to now
+  send_prach_cplane(ctx, target_sym, 1, &with_ext11, 1);
+  get_packet_processor_stats(ctx, &stats);
+  assert(stats.cplane_ext11_received == 2 && stats.cplane_err_sect_ext11 == 0);
+
+  // bundleOffset 1 adds a bundle: 11 bundles decode, 10 don't
+  with_ext11.ext_len = build_ext11(ext, false, false, 2, 11, 2);
+  ext[3] |= 1;
+  target_sym += num_symbols_per_frame;
+  handle_absolute_symbol_tick(ctx, target_sym - 5); // beam lookups resolve the symbol nearest to now
+  send_prach_cplane(ctx, target_sym, 1, &with_ext11, 1);
+  get_packet_processor_stats(ctx, &stats);
+  assert(stats.cplane_ext11_received == 3 && stats.cplane_err_sect_ext11 == 0);
+  with_ext11.ext_len = build_ext11(ext, false, false, 2, 10, 2);
+  ext[3] |= 1;
+  target_sym += num_symbols_per_frame;
+  handle_absolute_symbol_tick(ctx, target_sym - 5); // beam lookups resolve the symbol nearest to now
+  send_prach_cplane(ctx, target_sym, 1, &with_ext11, 1);
+  assert(get_prach_beam_id(ctx, slot_in_frame, 0, symbol) == 6);
+  get_packet_processor_stats(ctx, &stats);
+  assert(stats.cplane_ext11_received == 4 && stats.cplane_err_sect_ext11 == 1);
+
+  // numPrbc 0 is all 100 carrier PRBs: 10 bundles of 10 PRBs
+  with_ext11.ext_len = build_ext11(ext, false, true, 10, 10, 0);
+  with_ext11.all_prbs = true;
+  target_sym += num_symbols_per_frame;
+  handle_absolute_symbol_tick(ctx, target_sym - 5); // beam lookups resolve the symbol nearest to now
+  send_prach_cplane(ctx, target_sym, 1, &with_ext11, 1);
+  get_packet_processor_stats(ctx, &stats);
+  assert(stats.cplane_ext11_received == 5 && stats.cplane_err_sect_ext11 == 1);
+  with_ext11.all_prbs = false;
+
+  // 16-bit extLen past the end of the packet: an ext11 error, not counted as received, the section is kept
+  with_ext11.ext_len = build_ext11(ext, false, false, 2, 10, 2);
+  ext[1] = 1;
+  target_sym += num_symbols_per_frame;
+  handle_absolute_symbol_tick(ctx, target_sym - 5); // beam lookups resolve the symbol nearest to now
+  send_prach_cplane(ctx, target_sym, 1, &with_ext11, 1);
+  assert(get_prach_beam_id(ctx, slot_in_frame, 0, symbol) == 6);
+  get_packet_processor_stats(ctx, &stats);
+  assert(stats.cplane_ext11_received == 5 && stats.cplane_err_sect_ext11 == 2);
+  assert(stats.cplane_err_sect_ext1 == 1 && stats.cplane_err_sect_ext_chain == 0 && stats.cplane_err_hdr == 0);
+
+  cleanup_packet_processor(ctx);
+  printf("PRACH C-Plane section extensions 1 and 11 passed!\n");
+}
+
 int main(int argc, char **argv)
 {
   setup_dpdk(argc, argv);
@@ -3387,6 +3482,8 @@ int main(int argc, char **argv)
   test_prach_occasions();
   usleep(10000);
   test_prach_multi_section_message();
+  usleep(10000);
+  test_prach_section_extensions();
   usleep(10000);
   test_hyper_frame_calculation();
   usleep(10000);
