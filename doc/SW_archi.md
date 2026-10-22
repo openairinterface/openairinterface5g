@@ -31,7 +31,8 @@ rx_func_implem[rx_func]
     subgraph NR_UL_indication
       handle_nr_rach
       --> handle_nr_uci
-      --> handle_nr_ulsch
+      --> handle_nr_crc
+      --> handle_nr_rx
       --> gNB_dlsch_ulsch_scheduler
       --> NR_Schedule_response
     end 
@@ -107,8 +108,9 @@ if the input is a UE RACH detection
 * handle_nr_uci()  
 handles uplink control information, i.e., for the moment HARQ feedback.
 
-* handle_nr_ulsch()  
-handles ulsch data prepared by nr_fill_indication()
+* `handle_nr_crc()`: handles FAPI CRC.indication messages.
+
+* `handle_nr_rx()`: handles RX_data.indication messages.
 
 * gNB_dlsch_ulsch_scheduler ()  
 the **scheduler** is called here, see dedicated chapter

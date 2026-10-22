@@ -116,7 +116,7 @@ static bool crc_sfn_slot_matcher(void *wanted, void *candidate)
   return ind->sfn == ctx->sfn && ind->slot == ctx->slot;
 }
 
-static void handle_nr_ulsch(NR_UL_IND_t *UL_info)
+static void handle_nr_crc(NR_UL_IND_t *UL_info)
 {
   if(NFAPI_MODE == NFAPI_MODE_PNF) {
     if (UL_info->crc_ind.number_crcs > 0) {
@@ -124,7 +124,19 @@ static void handle_nr_ulsch(NR_UL_IND_t *UL_info)
       oai_nfapi_nr_crc_indication(&UL_info->crc_ind);
       UL_info->crc_ind.number_crcs = 0;
     }
+    return;
+  }
 
+  for (int i = 0; i < UL_info->crc_ind.number_crcs; i++) {
+    const nfapi_nr_crc_t *crc = &UL_info->crc_ind.crc_list[i];
+    nr_rx_sdu_crc(UL_info->module_id, UL_info->phy_id, UL_info->crc_ind.sfn, UL_info->crc_ind.slot, crc);
+  }
+  UL_info->crc_ind.number_crcs = 0;
+}
+
+static void handle_nr_rx(NR_UL_IND_t *UL_info)
+{
+  if(NFAPI_MODE == NFAPI_MODE_PNF) {
     if (UL_info->rx_ind.number_of_pdus > 0) {
       LOG_D(PHY,"UL_info->rx_ind.number_of_pdus:%d RX_IND:SFN/Slot:%d.%d \n", UL_info->rx_ind.number_of_pdus, UL_info->rx_ind.sfn, UL_info->rx_ind.slot);
       oai_nfapi_nr_rx_data_indication(&UL_info->rx_ind);
@@ -133,36 +145,11 @@ static void handle_nr_ulsch(NR_UL_IND_t *UL_info)
     return;
   }
 
-  if (UL_info->rx_ind.number_of_pdus > 0 && UL_info->crc_ind.number_crcs > 0) {
-    AssertFatal(UL_info->rx_ind.number_of_pdus == UL_info->crc_ind.number_crcs,
-                "number_of_pdus %d, number_crcs %d\n",
-                UL_info->rx_ind.number_of_pdus, UL_info->crc_ind.number_crcs);
-    for (int i = 0; i < UL_info->rx_ind.number_of_pdus; i++) {
-      const nfapi_nr_rx_data_pdu_t *rx = &UL_info->rx_ind.pdu_list[i];
-      const nfapi_nr_crc_t *crc = &UL_info->crc_ind.crc_list[i];
-      LOG_D(NR_PHY, "UL_info->crc_ind.pdu_list[%d].rnti:%04x "
-                    "UL_info->rx_ind.pdu_list[%d].rnti:%04x\n",
-                    i, crc->rnti, i, rx->rnti);
-      AssertFatal(crc->rnti == rx->rnti, "mis-match between CRC RNTI %04x and RX RNTI %04x\n", crc->rnti, rx->rnti);
-
-      AssertFatal(crc->harq_id == rx->harq_id,
-                  "mis-match between CRC HARQ ID %04x and RX HARQ ID %04x\n",
-                  crc->harq_id,
-                  rx->harq_id);
-
-      LOG_D(NR_MAC,
-            "%4d.%2d Calling rx_sdu (CRC %s/tb_crc_status %d)\n",
-            UL_info->frame,
-            UL_info->slot,
-            crc->tb_crc_status ? "error" : "ok",
-            crc->tb_crc_status);
-
-      nr_rx_sdu_crc(UL_info->module_id, UL_info->phy_id, UL_info->crc_ind.sfn, UL_info->crc_ind.slot, crc);
-      nr_rx_sdu_rx(UL_info->module_id, UL_info->phy_id, UL_info->rx_ind.sfn, UL_info->rx_ind.slot, rx);
-    }
-    UL_info->rx_ind.number_of_pdus = 0;
-    UL_info->crc_ind.number_crcs = 0;
+  for (int i = 0; i < UL_info->rx_ind.number_of_pdus; i++) {
+    const nfapi_nr_rx_data_pdu_t *rx = &UL_info->rx_ind.pdu_list[i];
+    nr_rx_sdu_rx(UL_info->module_id, UL_info->phy_id, UL_info->rx_ind.sfn, UL_info->rx_ind.slot, rx);
   }
+  UL_info->rx_ind.number_of_pdus = 0;
 }
 
 static void handle_nr_srs(NR_UL_IND_t *UL_info)
@@ -448,7 +435,8 @@ static void NR_UL_indication(NR_UL_IND_t *UL_info)
   if (UL_info->rach_ind.number_of_pdus > 0)
     handle_nr_rach(UL_info);
   handle_nr_uci(UL_info);
-  handle_nr_ulsch(UL_info);
+  handle_nr_crc(UL_info);
+  handle_nr_rx(UL_info);
   handle_nr_srs(UL_info);
   handle_nr_srs_toa_vendor_ext(UL_info);
 
