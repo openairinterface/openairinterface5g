@@ -6,8 +6,40 @@
 #include "PHY/TOOLS/tools_defs.h"
 #include "sim.h"
 
+#if defined(__AVX512F__)
+#include <simde/x86/avx512/add.h>
+#include <simde/x86/avx512/fmadd.h>
+#include <simde/x86/avx512/fnmadd.h>
+#include <simde/x86/avx512/mul.h>
+#include <simde/x86/avx512/permutex2var.h>
+#include <simde/x86/avx512/permutexvar.h>
+#include <simde/x86/avx512/setzero.h>
+#include <simde/x86/avx512/xor.h>
+#include <simde/x86/avx512/extract.h>
+#include <simde/x86/avx512/cast.h>
+#endif
+#if defined(__AVX2__)
+#include <simde/x86/avx2.h>
+#include <simde/x86/fma.h>
+#endif
+
+/* SIMD loops: AVX512 on blocks of its width, then AVX2 on what remains, then scalar code on the tail.
+ * VEC_ALIGN: largest block (in output samples) of the vector loops of the convolutions, the scalar head
+ * stops on a multiple of it so that the vector loops can use "i < (n & ~(width - 1))" */
+#if defined(__AVX512F__)
+#define VEC_ALIGN 16
+#elif defined(__AVX2__)
+#define VEC_ALIGN 8
+#else
+#define VEC_ALIGN 1
+#endif
+
 //#define DEBUG_CH
 //#define DOPPLER_DEBUG
+
+/* The convolutions are vectorized over the output samples: a block of consecutive samples is computed
+ * for all the taps. The first samples (at least channel_length - 1: taps before the first TX sample, up to
+ * a multiple of VEC_ALIGN) and the samples after the last full block are computed by the scalar code. */
 
 uint8_t multipath_channel_nosigconv(channel_desc_t *desc)
 {
@@ -18,106 +50,49 @@ uint8_t multipath_channel_nosigconv(channel_desc_t *desc)
 void interleave_channel_output(float **rx_sig_re, float **rx_sig_im, float **output_interleaved, int nb_rx, int num_samples)
 {
   for (int i = 0; i < nb_rx; i++) {
-    for (int j = 0; j < num_samples; j++) {
-      output_interleaved[i][2 * j] = rx_sig_re[i][j];
-      output_interleaved[i][2 * j + 1] = rx_sig_im[i][j];
+    const float *re = rx_sig_re[i], *im = rx_sig_im[i];
+    float *out = output_interleaved[i];
+    int j = 0;
+#if defined(__AVX512F__)
+    const simde__m512i lo = simde_mm512_set_epi32(23, 7, 22, 6, 21, 5, 20, 4, 19, 3, 18, 2, 17, 1, 16, 0);
+    const simde__m512i hi = simde_mm512_set_epi32(31, 15, 30, 14, 29, 13, 28, 12, 27, 11, 26, 10, 25, 9, 24, 8);
+    for (; j < (num_samples & ~15); j += 16) {
+      const simde__m512 r = simde_mm512_loadu_ps(re + j), m = simde_mm512_loadu_ps(im + j);
+      simde_mm512_storeu_ps(out + 2 * j, simde_mm512_permutex2var_ps(r, lo, m));
+      simde_mm512_storeu_ps(out + 2 * j + 16, simde_mm512_permutex2var_ps(r, hi, m));
+    }
+#endif
+#if defined(__AVX2__)
+    for (; j < (num_samples & ~7); j += 8) {
+      const simde__m256 r = simde_mm256_loadu_ps(re + j), m = simde_mm256_loadu_ps(im + j);
+      const simde__m256 l = simde_mm256_unpacklo_ps(r, m); // r0 i0 r1 i1 | r4 i4 r5 i5
+      const simde__m256 h = simde_mm256_unpackhi_ps(r, m); // r2 i2 r3 i3 | r6 i6 r7 i7
+      simde_mm256_storeu_ps(out + 2 * j, simde_mm256_permute2f128_ps(l, h, 0x20));
+      simde_mm256_storeu_ps(out + 2 * j + 8, simde_mm256_permute2f128_ps(l, h, 0x31));
+    }
+#endif
+    for (; j < num_samples; j++) {
+      out[2 * j] = re[j];
+      out[2 * j + 1] = im[j];
     }
   }
 }
 
-//#define CHANNEL_SSE
-
-#ifdef CHANNEL_SSE
-void __attribute__((no_sanitize_address)) multipath_channel(channel_desc_t *desc,
-                                                            double **tx_sig_re,
-                                                            double **tx_sig_im,
-                                                            double **rx_sig_re,
-                                                            double **rx_sig_im,
-                                                            uint32_t length,
-                                                            uint8_t keep_channel,
-                                                            int log_channel)
+/* one output sample i of the double precision convolution, only the taps l <= i (tx[i - l]) */
+static inline struct complexd mp_sample_d(struct complexd *const *chans, int nb_tx, int len, double **tx_re, double **tx_im, int i)
 {
-  int i, ii, j, l;
-  // int simd_length;
-  // int simd_length, tail_start;
-  simde__m128d rx_tmp128_re, rx_tmp128_im, tx128_re, tx128_im, ch128_r, ch128_i, path_gain128;
-
-  double path_gain = pow(10, -desc->path_loss_dB / 20);
-  uint64_t dd = desc->channel_offset;
-
-  path_gain128 = simde_mm_set1_pd(path_gain);
-
-  if (keep_channel == 0) {
-    random_channel(desc, 0);
-  }
-
-  // simd_length = (length - dd) / 2;
-  // tail_start = simd_length * 2;
-  allocCast3D(ch, struct complexd, desc->ch, desc->nb_tx, desc->nb_rx, desc->channel_length, false);
-
-  for (i = 0; i < (int)(length - dd); i += 2) {
-    for (ii = 0; ii < desc->nb_rx; ii++) {
-      rx_tmp128_re = simde_mm_setzero_pd();
-      rx_tmp128_im = simde_mm_setzero_pd();
-
-      for (i = 0; i < (int)(length - dd); i += 2) {
-        for (ii = 0; ii < desc->nb_rx; ii++) {
-          rx_tmp128_re = simde_mm_setzero_pd();
-          rx_tmp128_im = simde_mm_setzero_pd();
-          for (j = 0; j < desc->nb_tx; j++) {
-            for (l = 0; l < (int)desc->channel_length; l++) {
-              double tx_re[2] = {0.0, 0.0}, tx_im[2] = {0.0, 0.0};
-              if ((i - l) >= 0)
-                tx_re[0] = tx_sig_re[j][i - l];
-              if ((i + 1 - l) >= 0)
-                tx_re[1] = tx_sig_re[j][i + 1 - l];
-              if ((i - l) >= 0)
-                tx_im[0] = tx_sig_im[j][i - l];
-              if ((i + 1 - l) >= 0)
-                tx_im[1] = tx_sig_im[j][i + 1 - l];
-              tx128_re = simde_mm_loadu_pd(tx_re);
-              tx128_im = simde_mm_loadu_pd(tx_im);
-              ch128_r = simde_mm_set1_pd(ch[j][ii][l].r);
-              ch128_i = simde_mm_set1_pd(ch[j][ii][l].i);
-              rx_tmp128_re =
-                  simde_mm_add_pd(rx_tmp128_re,
-                                  simde_mm_sub_pd(simde_mm_mul_pd(tx128_re, ch128_r), simde_mm_mul_pd(tx128_im, ch128_i)));
-              rx_tmp128_im =
-                  simde_mm_add_pd(rx_tmp128_im,
-                                  simde_mm_add_pd(simde_mm_mul_pd(tx128_re, ch128_i), simde_mm_mul_pd(tx128_im, ch128_r)));
-            }
-          }
-          simde_mm_storeu_pd(&rx_sig_re[ii][i + dd], simde_mm_mul_pd(rx_tmp128_re, path_gain128));
-          simde_mm_storeu_pd(&rx_sig_im[ii][i + dd], simde_mm_mul_pd(rx_tmp128_im, path_gain128));
-        }
-      }
-    } // ii
-  } // i
-
-  // Handle the final sample if the length is odd
-  if ((length - dd) % 2) {
-    int i_tail = length - dd - 1;
-    for (ii = 0; ii < desc->nb_rx; ii++) {
-      struct complexd rx_tmp = {0};
-      for (j = 0; j < desc->nb_tx; j++) {
-        struct complexd *chan = ch[j][ii];
-        for (l = 0; l < (int)desc->channel_length; l++) {
-          if ((i_tail - l) >= 0) {
-            struct complexd tx;
-            tx.r = tx_sig_re[j][i_tail - l];
-            tx.i = tx_sig_im[j][i_tail - l];
-            rx_tmp.r += (tx.r * chan[l].r) - (tx.i * chan[l].i);
-            rx_tmp.i += (tx.i * chan[l].r) + (tx.r * chan[l].i);
-          }
-        }
-      }
-      rx_sig_re[ii][i_tail + dd] = rx_tmp.r * path_gain;
-      rx_sig_im[ii][i_tail + dd] = rx_tmp.i * path_gain;
+  struct complexd rx_tmp = {0};
+  const int end = min(len, i + 1);
+  for (int j = 0; j < nb_tx; j++) {
+    const struct complexd *chan = chans[j];
+    for (int l = 0; l < end; l++) {
+      const struct complexd tx = {tx_re[j][i - l], tx_im[j][i - l]};
+      rx_tmp.r += tx.r * chan[l].r - tx.i * chan[l].i;
+      rx_tmp.i += tx.i * chan[l].r + tx.r * chan[l].i;
     }
   }
+  return rx_tmp;
 }
-
-#else
 
 void __attribute__((no_sanitize_address)) multipath_channel(channel_desc_t *desc,
                                                             double **tx_sig_re,
@@ -152,30 +127,60 @@ void __attribute__((no_sanitize_address)) multipath_channel(channel_desc_t *desc
   if (desc->max_Doppler != 0.0) {
     get_cexp_doppler(cexp_doppler, desc, length);
   }
+  if (dd >= length)
+    return; // no output sample
+  const int n_out = (int)(length - dd);
+  const int len = desc->channel_length;
+  const int nb_tx = desc->nb_tx;
   allocCast3D(ch, struct complexd, desc->ch, desc->nb_tx, desc->nb_rx, desc->channel_length, false);
-  for (int i = 0; i < ((int)length - dd); i++) {
-    for (int ii = 0; ii < desc->nb_rx; ii++) {
-      struct complexd rx_tmp = {0};
-      for (int j = 0; j < desc->nb_tx; j++) {
-        struct complexd *chan = ch[j][ii];
-        int end = min(desc->channel_length, i + 1); // taps l <= i only (tx[i - l])
-        for (int l = 0; l < end; l++) {
-          struct complexd tx = (struct complexd){tx_sig_re[j][i - l], tx_sig_im[j][i - l]};
-          rx_tmp.r += tx.r * chan[l].r - tx.i * chan[l].i;
-          rx_tmp.i += tx.i * chan[l].r + tx.r * chan[l].i;
-#if 0
-          if (i==0 && log_channel == 1) {
-            printf("channel[%d][%d][%d] = %f dB \t(%e, %e)\n",
-                   ii, j, l, 10 * log10(pow(chan[l].r, 2.0) + pow(chan[l].i, 2.0)), chan[l].r, chan[l].i);
-	        }
+  for (int ii = 0; ii < desc->nb_rx; ii++) {
+    struct complexd *chans[nb_tx];
+    for (int j = 0; j < nb_tx; j++)
+      chans[j] = ch[j][ii];
+    double *out_re = rx_sig_re[ii] + dd, *out_im = rx_sig_im[ii] + dd;
+    int i = 0;
+    // samples with taps before the first TX sample
+    for (; i < min((len - 1 + VEC_ALIGN - 1) & ~(VEC_ALIGN - 1), n_out); i++) {
+      const struct complexd rx_tmp = mp_sample_d(chans, nb_tx, len, tx_sig_re, tx_sig_im, i);
+      out_re[i] = rx_tmp.r * path_gain;
+      out_im[i] = rx_tmp.i * path_gain;
+    }
+#if defined(__AVX512F__)
+    const simde__m512d gain = simde_mm512_set1_pd(path_gain);
+    for (; i < (n_out & ~7); i += 8) {
+      simde__m512d acc_re = simde_mm512_setzero_pd(), acc_im = simde_mm512_setzero_pd();
+      for (int j = 0; j < nb_tx; j++) {
+        const double *tr = tx_sig_re[j] + i, *ti = tx_sig_im[j] + i;
+        for (int l = 0; l < len; l++) {
+          const simde__m512d xr = simde_mm512_loadu_pd(tr - l), xi = simde_mm512_loadu_pd(ti - l);
+          const simde__m512d cr = simde_mm512_set1_pd(chans[j][l].r), ci = simde_mm512_set1_pd(chans[j][l].i);
+          acc_re = simde_mm512_fnmadd_pd(xi, ci, simde_mm512_fmadd_pd(xr, cr, acc_re));
+          acc_im = simde_mm512_fmadd_pd(xr, ci, simde_mm512_fmadd_pd(xi, cr, acc_im));
+        }
+      }
+      simde_mm512_storeu_pd(out_re + i, simde_mm512_mul_pd(acc_re, gain));
+      simde_mm512_storeu_pd(out_im + i, simde_mm512_mul_pd(acc_im, gain));
+    }
 #endif
-        } // l
-      } // j
-#if 0
-      if (desc->max_Doppler != 0.0)
-        rx_tmp = cdMul(rx_tmp, cexp_doppler[i]);
+#if defined(__AVX2__)
+    const simde__m256d gain2 = simde_mm256_set1_pd(path_gain);
+    for (; i < (n_out & ~3); i += 4) {
+      simde__m256d acc_re = simde_mm256_setzero_pd(), acc_im = simde_mm256_setzero_pd();
+      for (int j = 0; j < nb_tx; j++) {
+        const double *tr = tx_sig_re[j] + i, *ti = tx_sig_im[j] + i;
+        for (int l = 0; l < len; l++) {
+          const simde__m256d xr = simde_mm256_loadu_pd(tr - l), xi = simde_mm256_loadu_pd(ti - l);
+          const simde__m256d cr = simde_mm256_set1_pd(chans[j][l].r), ci = simde_mm256_set1_pd(chans[j][l].i);
+          acc_re = simde_mm256_fnmadd_pd(xi, ci, simde_mm256_fmadd_pd(xr, cr, acc_re));
+          acc_im = simde_mm256_fmadd_pd(xr, ci, simde_mm256_fmadd_pd(xi, cr, acc_im));
+        }
+      }
+      simde_mm256_storeu_pd(out_re + i, simde_mm256_mul_pd(acc_re, gain2));
+      simde_mm256_storeu_pd(out_im + i, simde_mm256_mul_pd(acc_im, gain2));
+    }
 #endif
-
+    for (; i < n_out; i++) {
+      const struct complexd rx_tmp = mp_sample_d(chans, nb_tx, len, tx_sig_re, tx_sig_im, i);
 #ifdef DOPPLER_DEBUG
       printf("[k %2i] cexp_doppler = (%7.4f, %7.4f), abs(cexp_doppler) = %.4f\n",
              i,
@@ -183,23 +188,33 @@ void __attribute__((no_sanitize_address)) multipath_channel(channel_desc_t *desc
              cexp_doppler[i].i,
              sqrt(cexp_doppler[i].r * cexp_doppler[i].r + cexp_doppler[i].i * cexp_doppler[i].i));
 #endif
-
-      rx_sig_re[ii][i + dd] = rx_tmp.r * path_gain;
-      rx_sig_im[ii][i + dd] = rx_tmp.i * path_gain;
+      out_re[i] = rx_tmp.r * path_gain;
+      out_im[i] = rx_tmp.i * path_gain;
 #ifdef DEBUG_CH
       if ((i % 32) == 0) {
-        printf("rx aa %d: %f, %f  =>  %e, %e\n", ii, rx_tmp.r, rx_tmp.i, rx_sig_re[ii][i - dd], rx_sig_im[ii][i - dd]);
+        printf("rx aa %d: %f, %f  =>  %e, %e\n", ii, rx_tmp.r, rx_tmp.i, out_re[i], out_im[i]);
       }
 #endif
-      // rx_sig_re[ii][i] = sqrt(.5)*(tx_sig_re[0][i] + tx_sig_re[1][i]);
-      // rx_sig_im[ii][i] = sqrt(.5)*(tx_sig_im[0][i] + tx_sig_im[1][i]);
-
-    } // ii
-  } // i
+    }
+  } // ii
 }
-#endif
 
-#ifdef CHANNEL_SSE
+/* one output sample i of the single precision convolution on interleaved TX samples, only the taps l <= i */
+static inline struct complexf mp_sample_f(const struct complexf *const *chans, int nb_tx, int len, float **tx, int i)
+{
+  struct complexf rx_tmp = {0.0f, 0.0f};
+  const int end = min(len, i + 1);
+  for (int j = 0; j < nb_tx; j++) {
+    const struct complexf *chan = chans[j];
+    for (int l = 0; l < end; l++) {
+      const struct complexf x = {tx[j][2 * (i - l)], tx[j][2 * (i - l) + 1]};
+      rx_tmp.r += (x.r * chan[l].r) - (x.i * chan[l].i);
+      rx_tmp.i += (x.i * chan[l].r) + (x.r * chan[l].i);
+    }
+  }
+  return rx_tmp;
+}
+
 void __attribute__((no_sanitize_address)) multipath_channel_float(channel_desc_t *desc,
                                                                   float **tx_sig_interleaved,
                                                                   float **rx_sig_re,
@@ -207,113 +222,6 @@ void __attribute__((no_sanitize_address)) multipath_channel_float(channel_desc_t
                                                                   uint32_t length,
                                                                   uint8_t keep_channel,
                                                                   int log_channel)
-{
-  int i, ii, j, l;
-  simde__m128 rx_tmp128_re, rx_tmp128_im, tx128_re, tx128_im, ch128_r, ch128_i, path_gain128;
-  uint64_t dd = desc->channel_offset;
-
-  if (keep_channel == 0) {
-    random_channel(desc, 0);
-  }
-
-  struct complexd cexp_doppler[length];
-  if (desc->max_Doppler != 0.0) {
-    get_cexp_doppler(cexp_doppler, desc, length);
-  }
-
-  if (dd >= length) {
-    return; // No samples to process
-  }
-  allocCast3D(ch, struct complexd, desc->ch, desc->nb_tx, desc->nb_rx, desc->channel_length, false);
-  for (i = 0; i <= (int)(length - dd) - 4; i += 4) {
-    for (ii = 0; ii < desc->nb_rx; ii++) {
-      rx_tmp128_re = simde_mm_setzero_ps();
-      rx_tmp128_im = simde_mm_setzero_ps();
-
-      for (j = 0; j < desc->nb_tx; j++) {
-        for (l = 0; l < (int)desc->channel_length; l++) {
-          int idx = i - l;
-          if (idx >= 0) {
-            // Load 2 complex numbers (4 floats) => {I0, Q0, I1, Q1}
-            simde__m128 vec0 = simde_mm_loadu_ps(&tx_sig_interleaved[j][2 * idx]);
-            simde__m128 vec1 = simde_mm_loadu_ps(&tx_sig_interleaved[j][2 * (idx + 2)]);
-            tx128_re = simde_mm_shuffle_ps(vec0, vec1, SIMDE_MM_SHUFFLE(2, 0, 2, 0)); // {I0,I1,I2,I3}
-            tx128_im = simde_mm_shuffle_ps(vec0, vec1, SIMDE_MM_SHUFFLE(3, 1, 3, 1)); // {Q0,Q1,Q2,Q3}
-          } else {
-            tx128_re = simde_mm_setzero_ps();
-            tx128_im = simde_mm_setzero_ps();
-          }
-
-          ch128_r = simde_mm_set1_ps((float)ch[j][ii][l].r);
-          ch128_i = simde_mm_set1_ps((float)ch[j][ii][l].i);
-
-          // re = (tx_re * ch_r) - (tx_im * ch_i)
-          rx_tmp128_re = simde_mm_add_ps(rx_tmp128_re,
-                                         simde_mm_sub_ps(simde_mm_mul_ps(tx128_re, ch128_r), simde_mm_mul_ps(tx128_im, ch128_i)));
-          // im = (tx_re * ch_i) + (tx_im * ch_r)
-          rx_tmp128_im = simde_mm_add_ps(rx_tmp128_im,
-                                         simde_mm_add_ps(simde_mm_mul_ps(tx128_re, ch128_i), simde_mm_mul_ps(tx128_im, ch128_r)));
-        }
-      }
-
-#if 0
-            if (desc->max_Doppler != 0.0) {
-                float doppler_re[4] = {(float)cexp_doppler[i].r, (float)cexp_doppler[i+1].r, (float)cexp_doppler[i+2].r, (float)cexp_doppler[i+3].r};
-                float doppler_im[4] = {(float)cexp_doppler[i].i, (float)cexp_doppler[i+1].i, (float)cexp_doppler[i+2].i, (float)cexp_doppler[i+3].i};
-                
-                simde__m128 doppler128_r = simde_mm_loadu_ps(doppler_re);
-                simde__m128 doppler128_i = simde_mm_loadu_ps(doppler_im);
-
-                simde__m128 temp_re = rx_tmp128_re;
-                simde__m128 temp_im = rx_tmp128_im;
-
-                rx_tmp128_re = simde_mm_sub_ps(simde_mm_mul_ps(temp_re, doppler128_r), simde_mm_mul_ps(temp_im, doppler128_i));
-                rx_tmp128_im = simde_mm_add_ps(simde_mm_mul_ps(temp_im, doppler128_r), simde_mm_mul_ps(temp_re, doppler128_i));
-            }
-#endif
-      simde_mm_storeu_ps(&rx_sig_re[ii][i + dd], rx_tmp128_re);
-      simde_mm_storeu_ps(&rx_sig_im[ii][i + dd], rx_tmp128_im);
-    }
-  }
-
-  // Handle remaining samples (tail loop) that are not a multiple of 4
-  for (; i < (int)(length - dd); i++) {
-    for (ii = 0; ii < desc->nb_rx; ii++) {
-      struct complexf rx_tmp = {0.0f, 0.0f};
-      for (j = 0; j < desc->nb_tx; j++) {
-        struct complexd *chan = ch[j][ii];
-        for (l = 0; l < (int)desc->channel_length; l++) {
-          if ((i - l) >= 0) {
-            struct complexf tx;
-            tx.r = tx_sig_interleaved[j][2 * (i - l)];
-            tx.i = tx_sig_interleaved[j][2 * (i - l) + 1];
-            rx_tmp.r += (tx.r * (float)chan[l].r) - (tx.i * (float)chan[l].i);
-            rx_tmp.i += (tx.i * (float)chan[l].r) + (tx.r * (float)chan[l].i);
-          }
-        }
-      }
-#if 0
-            if (desc->max_Doppler != 0.0) {
-                struct complexf doppler_factor = {(float)cexp_doppler[i].r, (float)cexp_doppler[i].i};
-                struct complexf temp = rx_tmp;
-                rx_tmp.r = (temp.r * doppler_factor.r) - (temp.i * doppler_factor.i);
-                rx_tmp.i = (temp.i * doppler_factor.r) + (temp.r * doppler_factor.i);
-            }
-#endif
-      rx_sig_re[ii][i + dd] = rx_tmp.r;
-      rx_sig_im[ii][i + dd] = rx_tmp.i;
-    }
-  }
-}
-
-#else
-void multipath_channel_float(channel_desc_t *desc,
-                             float **tx_sig_interleaved,
-                             float **rx_sig_re,
-                             float **rx_sig_im,
-                             uint32_t length,
-                             uint8_t keep_channel,
-                             int log_channel)
 {
   uint64_t dd = desc->channel_offset;
 
@@ -330,81 +238,122 @@ void multipath_channel_float(channel_desc_t *desc,
     return;
   }
 
+  const int n_out = (int)(length - dd);
+  const int len = desc->channel_length;
+  const int nb_tx = desc->nb_tx;
   allocCast3D(ch, struct complexd, desc->ch, desc->nb_tx, desc->nb_rx, desc->channel_length, false);
-  for (int i = 0; i < ((int)length - dd); i++) {
-    for (int ii = 0; ii < desc->nb_rx; ii++) {
-      struct complexf rx_tmp = {0.0f, 0.0f};
-
-      for (int j = 0; j < desc->nb_tx; j++) {
-        struct complexd *chan = ch[j][ii];
-
-        for (int l = 0; l < (int)desc->channel_length; l++) {
-          if ((i - l) >= 0) {
-            struct complexf tx;
-            tx.r = tx_sig_interleaved[j][2 * (i - l)];
-            tx.i = tx_sig_interleaved[j][2 * (i - l) + 1];
-            rx_tmp.r += (tx.r * (float)chan[l].r) - (tx.i * (float)chan[l].i);
-            rx_tmp.i += (tx.i * (float)chan[l].r) + (tx.r * (float)chan[l].i);
-          }
-        } // l (channel_length)
-      } // j (nb_tx)
-
-#if 0
-            if (desc->max_Doppler != 0.0) {
-                // Perform complex multiplication: rx_tmp = rx_tmp * cexp_doppler[i]
-                struct complexf doppler_factor = {(float)cexp_doppler[i].r, (float)cexp_doppler[i].i};
-                struct complexf temp = rx_tmp;
-                rx_tmp.r = (temp.r * doppler_factor.r) - (temp.i * doppler_factor.i);
-                rx_tmp.i = (temp.i * doppler_factor.r) + (temp.r * doppler_factor.i);
-            }
+  // single precision copy of the taps of one RX antenna
+  struct complexf taps[nb_tx][len];
+  for (int ii = 0; ii < desc->nb_rx; ii++) {
+    const struct complexf *chans[nb_tx];
+    for (int j = 0; j < nb_tx; j++) {
+      for (int l = 0; l < len; l++)
+        taps[j][l] = (struct complexf){(float)ch[j][ii][l].r, (float)ch[j][ii][l].i};
+      chans[j] = taps[j];
+    }
+    float *out_re = rx_sig_re[ii] + dd, *out_im = rx_sig_im[ii] + dd;
+    int i = 0;
+    for (; i < min((len - 1 + VEC_ALIGN - 1) & ~(VEC_ALIGN - 1), n_out); i++) {
+      const struct complexf rx_tmp = mp_sample_f(chans, nb_tx, len, tx_sig_interleaved, i);
+      out_re[i] = rx_tmp.r;
+      out_im[i] = rx_tmp.i;
+    }
+    /* Accumulate on interleaved samples {re, im, re, im...}: x * c = x * c.r + swap(x) * {-c.i, c.i}.
+     * Two accumulators of consecutive samples, deinterleaved once per block. */
+#if defined(__AVX512F__)
+    const simde__m512 neg_even = simde_mm512_castsi512_ps(simde_mm512_set_epi32(0,
+                                                                                INT32_MIN,
+                                                                                0,
+                                                                                INT32_MIN,
+                                                                                0,
+                                                                                INT32_MIN,
+                                                                                0,
+                                                                                INT32_MIN,
+                                                                                0,
+                                                                                INT32_MIN,
+                                                                                0,
+                                                                                INT32_MIN,
+                                                                                0,
+                                                                                INT32_MIN,
+                                                                                0,
+                                                                                INT32_MIN));
+    const simde__m512i deint = simde_mm512_set_epi32(15, 13, 11, 9, 7, 5, 3, 1, 14, 12, 10, 8, 6, 4, 2, 0);
+    for (; i < (n_out & ~15); i += 16) {
+      simde__m512 acc0 = simde_mm512_setzero_ps(), acc1 = simde_mm512_setzero_ps();
+      for (int j = 0; j < nb_tx; j++) {
+        const float *x = tx_sig_interleaved[j] + 2 * i;
+        for (int l = 0; l < len; l++) {
+          const simde__m512 cr = simde_mm512_set1_ps(chans[j][l].r);
+          const simde__m512 ci = simde_mm512_xor_ps(simde_mm512_set1_ps(chans[j][l].i), neg_even);
+          const simde__m512 x0 = simde_mm512_loadu_ps(x - 2 * l), x1 = simde_mm512_loadu_ps(x - 2 * l + 16);
+          acc0 = simde_mm512_fmadd_ps(simde_mm512_shuffle_ps(x0, x0, 0xB1), ci, simde_mm512_fmadd_ps(x0, cr, acc0));
+          acc1 = simde_mm512_fmadd_ps(simde_mm512_shuffle_ps(x1, x1, 0xB1), ci, simde_mm512_fmadd_ps(x1, cr, acc1));
+        }
+      }
+      // {r0 i0 ... r7 i7} -> {r0..r7 | i0..i7}
+      const simde__m512 d0 = simde_mm512_permutexvar_ps(deint, acc0), d1 = simde_mm512_permutexvar_ps(deint, acc1);
+      simde_mm256_storeu_ps(out_re + i, simde_mm512_castps512_ps256(d0));
+      simde_mm256_storeu_ps(out_im + i, simde_mm512_extractf32x8_ps(d0, 1));
+      simde_mm256_storeu_ps(out_re + i + 8, simde_mm512_castps512_ps256(d1));
+      simde_mm256_storeu_ps(out_im + i + 8, simde_mm512_extractf32x8_ps(d1, 1));
+    }
 #endif
-      rx_sig_re[ii][i + dd] = rx_tmp.r;
-      rx_sig_im[ii][i + dd] = rx_tmp.i;
-
-    } // ii (nb_rx)
-  } // i (length)
+#if defined(__AVX2__)
+    const simde__m256 neg_even2 =
+        simde_mm256_castsi256_ps(simde_mm256_set_epi32(0, INT32_MIN, 0, INT32_MIN, 0, INT32_MIN, 0, INT32_MIN));
+    const simde__m256i deint2 = simde_mm256_set_epi32(7, 5, 3, 1, 6, 4, 2, 0);
+    for (; i < (n_out & ~7); i += 8) {
+      simde__m256 acc0 = simde_mm256_setzero_ps(), acc1 = simde_mm256_setzero_ps();
+      for (int j = 0; j < nb_tx; j++) {
+        const float *x = tx_sig_interleaved[j] + 2 * i;
+        for (int l = 0; l < len; l++) {
+          const simde__m256 cr = simde_mm256_set1_ps(chans[j][l].r);
+          const simde__m256 ci = simde_mm256_xor_ps(simde_mm256_set1_ps(chans[j][l].i), neg_even2);
+          const simde__m256 x0 = simde_mm256_loadu_ps(x - 2 * l), x1 = simde_mm256_loadu_ps(x - 2 * l + 8);
+          acc0 = simde_mm256_fmadd_ps(simde_mm256_shuffle_ps(x0, x0, 0xB1), ci, simde_mm256_fmadd_ps(x0, cr, acc0));
+          acc1 = simde_mm256_fmadd_ps(simde_mm256_shuffle_ps(x1, x1, 0xB1), ci, simde_mm256_fmadd_ps(x1, cr, acc1));
+        }
+      }
+      // {r0 i0 ... r3 i3} -> {r0..r3 | i0..i3}
+      const simde__m256 d0 = simde_mm256_permutevar8x32_ps(acc0, deint2), d1 = simde_mm256_permutevar8x32_ps(acc1, deint2);
+      simde_mm_storeu_ps(out_re + i, simde_mm256_castps256_ps128(d0));
+      simde_mm_storeu_ps(out_im + i, simde_mm256_extractf128_ps(d0, 1));
+      simde_mm_storeu_ps(out_re + i + 4, simde_mm256_castps256_ps128(d1));
+      simde_mm_storeu_ps(out_im + i + 4, simde_mm256_extractf128_ps(d1, 1));
+    }
+#endif
+    for (; i < n_out; i++) {
+      const struct complexf rx_tmp = mp_sample_f(chans, nb_tx, len, tx_sig_interleaved, i);
+      out_re[i] = rx_tmp.r;
+      out_im[i] = rx_tmp.i;
+    }
+  } // ii (nb_rx)
 }
 
-#endif
-
 // \f$\mathbf{y} = y + \mathbf{x}\f$
-#ifdef CHANNEL_SSE
-void __attribute__((no_sanitize_address)) add_rx_signals(float **y_re,
-                                                         float **y_im,
-                                                         float **x_re,
-                                                         float **x_im,
-                                                         int n_rx,
-                                                         int length)
+void add_rx_signals(float **y_re, float **y_im, float **x_re, float **x_im, int n_rx, int length)
 {
   for (int aarx = 0; aarx < n_rx; aarx++) {
     int i = 0;
-    for (; i <= length - 4; i += 4) {
-      // Add real values
-      simde__m128 vec_re_x = simde_mm_loadu_ps(&x_re[aarx][i]);
-      simde__m128 vec_re_y = simde_mm_loadu_ps(&y_re[aarx][i]);
-      simde_mm_storeu_ps(&y_re[aarx][i], simde_mm_add_ps(vec_re_y, vec_re_x));
-
-      // Add imaginary values
-      simde__m128 vec_im_x = simde_mm_loadu_ps(&x_im[aarx][i]);
-      simde__m128 vec_im_y = simde_mm_loadu_ps(&y_im[aarx][i]);
-      simde_mm_storeu_ps(&y_im[aarx][i], simde_mm_add_ps(vec_im_y, vec_im_x));
+#if defined(__AVX512F__)
+    for (; i < (length & ~15); i += 16) {
+      simde_mm512_storeu_ps(&y_re[aarx][i],
+                            simde_mm512_add_ps(simde_mm512_loadu_ps(&y_re[aarx][i]), simde_mm512_loadu_ps(&x_re[aarx][i])));
+      simde_mm512_storeu_ps(&y_im[aarx][i],
+                            simde_mm512_add_ps(simde_mm512_loadu_ps(&y_im[aarx][i]), simde_mm512_loadu_ps(&x_im[aarx][i])));
     }
-
-    // Add remaining samples
+#endif
+#if defined(__AVX2__)
+    for (; i < (length & ~7); i += 8) {
+      simde_mm256_storeu_ps(&y_re[aarx][i],
+                            simde_mm256_add_ps(simde_mm256_loadu_ps(&y_re[aarx][i]), simde_mm256_loadu_ps(&x_re[aarx][i])));
+      simde_mm256_storeu_ps(&y_im[aarx][i],
+                            simde_mm256_add_ps(simde_mm256_loadu_ps(&y_im[aarx][i]), simde_mm256_loadu_ps(&x_im[aarx][i])));
+    }
+#endif
     for (; i < length; i++) {
       y_re[aarx][i] += x_re[aarx][i];
       y_im[aarx][i] += x_im[aarx][i];
     }
   }
 }
-#else
-void add_rx_signals(float **y_re, float **y_im, float **x_re, float **x_im, int n_rx, int length)
-{
-  for (int aarx = 0; aarx < n_rx; aarx++) {
-    for (int i = 0; i < length; i++) {
-      y_re[aarx][i] += x_re[aarx][i];
-      y_im[aarx][i] += x_im[aarx][i];
-    }
-  }
-}
-#endif

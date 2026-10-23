@@ -1661,11 +1661,6 @@ set (SIMUSRC
 add_library(SIMU STATIC ${SIMUSRC} )
 target_include_directories(SIMU PUBLIC ${OPENAIR1_DIR}/SIMULATION/TOOLS ${OPENAIR1_DIR}/SIMULATION/RF)
 
-option(CHANNEL_SSE "Enable SSE optimizations for channel simulation" OFF)
-if(CHANNEL_SSE)
-    message(STATUS "SSE-optimized channel simulation enabled.")
-    target_compile_definitions(SIMU PRIVATE CHANNEL_SSE)
-endif()
 
 if(CUDA_FOUND)
   set_property(TARGET SIMU PROPERTY CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES})
