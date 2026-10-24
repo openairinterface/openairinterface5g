@@ -333,7 +333,12 @@ void phy_procedures_nrUE_TX(PHY_VARS_NR_UE *ue, const UE_nr_rxtx_proc_t *proc, n
 
   const int samplesF_per_slot = ue->frame_parms.symbols_per_slot * ue->frame_parms.ofdm_symbol_size;
   c16_t txdataF_buf[ue->frame_parms.nb_antennas_tx * samplesF_per_slot] __attribute__((aligned(32)));
-  memset(txdataF_buf, 0, sizeof(txdataF_buf));
+  /* the RE mapping below writes only the REs of the channels: zero the slot only when there is one. Else no symbol is used
+     and nr_tx_rotation_and_ofdm_mod() zeroes the time samples without reading txdataF */
+  const bool ul_channel = phy_data->ulsch.status == NR_ACTIVE || phy_data->pucch_vars.active[0] || phy_data->pucch_vars.active[1]
+                          || phy_data->srs_vars.active;
+  if (ul_channel)
+    memset(txdataF_buf, 0, sizeof(txdataF_buf));
   c16_t *txdataF[ue->frame_parms.nb_antennas_tx]; /* workaround to be compatible with current txdataF usage in all tx procedures. */
   for(int i=0; i< ue->frame_parms.nb_antennas_tx; ++i)
     txdataF[i] = &txdataF_buf[i * samplesF_per_slot];
