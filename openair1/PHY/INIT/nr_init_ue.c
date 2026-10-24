@@ -536,6 +536,7 @@ void init_phy_nr_measurements(PHY_VARS_NR_UE *ue)
   measurements->search_new_cells_pending = false;
   measurements->last_blind_slot = -1;
   measurements->last_slot = -1;
+  measurements->last_meas_slot = -1;
 }
 
 void clean_UE_harq(PHY_VARS_NR_UE *UE)

@@ -46,6 +46,9 @@
 #include "T.h"
 #include "instrumentation.h"
 
+/// minimum time between two measurements of the neighboring cells (TS 38.133 9.2.5.1)
+#define NR_UE_MEAS_PERIOD_MS 200
+
 static const unsigned int gain_table[31] = {100,  112,  126,  141,  158,  178,  200,  224,  251, 282,  316,
                                             359,  398,  447,  501,  562,  631,  708,  794,  891, 1000, 1122,
                                             1258, 1412, 1585, 1778, 1995, 2239, 2512, 2818, 3162};
@@ -1168,9 +1171,16 @@ int pbch_processing(PHY_VARS_NR_UE *ue, const UE_nr_rxtx_proc_t *proc, nr_phy_da
 
   PHY_NR_MEASUREMENTS *measurements = &ue->measurements;
 
-  // Measurements on known neighboring cells
-  if (check_neighboring_cells_task(ue, measurements->meas_request_pending)) {
+  // Measurements on known neighboring cells, at most once per measurement period: TS 38.133 9.2.5.1, the intra-frequency
+  // SSB measurement period is at least 200 ms
+  const int spf = ue->frame_parms.slots_per_frame;
+  const int cycle = 1024 * spf;
+  const int now = proc->frame_rx * spf + proc->nr_slot_rx;
+  const bool meas_period_elapsed =
+      measurements->last_meas_slot < 0 || (now - measurements->last_meas_slot + cycle) % cycle >= NR_UE_MEAS_PERIOD_MS * spf / 10;
+  if (meas_period_elapsed && check_neighboring_cells_task(ue, measurements->meas_request_pending)) {
     measurements->meas_request_pending = true;
+    measurements->last_meas_slot = now;
     nr_meas_task_args_t *args = create_meas_task_args(proc, ue);
     task_t t = {.func = nr_ue_meas_neighboring_cell, .args = args};
     pushTpool(&get_nrUE_params()->Tpool, t);
