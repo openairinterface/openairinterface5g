@@ -1184,7 +1184,18 @@ void *UE_thread(void *arg)
     // RX slot processing. We launch and forget.
     notifiedFIFO_elt_t *newRx = newNotifiedFIFO_elt(sizeof(nr_rxtx_thread_data_t), curMsg.proc.nr_slot_tx, NULL, UE_dl_processing);
     nr_rxtx_thread_data_t *curMsgRx = (nr_rxtx_thread_data_t *)NotifiedFifoData(newRx);
-    *curMsgRx = (nr_rxtx_thread_data_t){.proc = curMsg.proc, .UE = UE};
+    /* not zeroing the whole message: 10 KB per slot and per UE are the search space configurations, that the scheduled
+       response writes entirely, up to nb_search_space */
+    curMsgRx->proc = curMsg.proc;
+    curMsgRx->UE = UE;
+    curMsgRx->writeBlockSize = 0;
+    curMsgRx->next_barrier = NULL;
+    curMsgRx->absolute_deadline_us = 0;
+    curMsgRx->ul_actors = NULL;
+    nr_phy_data_t *phy_data_rx = &curMsgRx->phy_data;
+    _Static_assert(offsetof(nr_phy_data_t, phy_pdcch_config) == 0, "phy_pdcch_config must be the first field");
+    phy_data_rx->phy_pdcch_config.nb_search_space = 0;
+    memset(&phy_data_rx->dlsch_config, 0, sizeof(*phy_data_rx) - offsetof(nr_phy_data_t, dlsch_config));
     int ret = UE_dl_preprocessing(UE, &curMsgRx->proc, tx_wait_for_dlsch, &curMsgRx->phy_data, &stats_printed);
     if (ret != INT_MAX)
       shiftForNextFrame = ret;
