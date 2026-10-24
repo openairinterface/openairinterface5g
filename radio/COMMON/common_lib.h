@@ -547,6 +547,7 @@ int load_lib(openair0_device_t *device, openair0_config_t *openair0_cfg, rau_typ
 typedef struct PHY_VARS_NR_UE_s PHY_VARS_NR_UE;
 typedef int (*nrue_ru_write_t)(PHY_VARS_NR_UE *UE, openair0_timestamp_t timestamp, void **txp, int nsamps, int nbAnt, int flags);
 
+/// txp NULL writes silence: the write is counted, no sample is added
 /// writer: index of the writer, in [0, nb_writers)
 int openair0_write_reorder_common(nrue_ru_write_t nrue_ru_write,
                                   PHY_VARS_NR_UE *UE,

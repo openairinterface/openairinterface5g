@@ -292,6 +292,7 @@ int nr_ue_slot_select(const fapi_nr_config_request_t *cfg, int nr_slot)
   return NR_MIXED_SLOT;
 }
 
+/* txp NULL: nothing is transmitted in the slot, the reorder ring counts the write without adding samples */
 static void RU_write(nr_rxtx_thread_data_t *rxtxD, bool sl_tx_action, c16_t **txp)
 {
   int writeBlockSize = rxtxD->writeBlockSize;
@@ -377,12 +378,12 @@ static void RU_write(nr_rxtx_thread_data_t *rxtxD, bool sl_tx_action, c16_t **tx
 
     writeTimestamp += num_zero_samples;
     writeBlockSize -= num_zero_samples;
-    for (int ant = 0; ant < fp->nb_antennas_tx; ant++)
+    for (int ant = 0; txp && ant < fp->nb_antennas_tx; ant++)
       txp[ant] += num_zero_samples;
   }
 
   // pre-compensate UL frequency offset
-  if (flags != TX_BURST_INVALID && get_nrUE_params()->cont_fo_comp) {
+  if (txp && flags != TX_BURST_INVALID && get_nrUE_params()->cont_fo_comp) {
     double ul_freq_offset = -UE->freq_offset * ((double)fp->ul_CarrierFreq / (double)fp->dl_CarrierFreq);
     if (get_nrUE_params()->cont_fo_comp == 2) // different from LO frequency error compensation, Doppler UL pre-compensation has to be negative
       ul_freq_offset = -ul_freq_offset;
@@ -409,6 +410,7 @@ void processSlotTX(void *arg)
   PHY_VARS_NR_UE *UE = rxtxD->UE;
   nr_phy_data_tx_t phy_data = {0};
   bool sl_tx_action = false;
+  bool transmit = true; // false: no signal in this slot
 
   if (UE->if_inst)
     UE->if_inst->slot_indication(UE->Mod_id, true);
@@ -465,17 +467,18 @@ void processSlotTX(void *arg)
       }
       dynamic_barrier_join(rxtxD->next_barrier);
 
-      phy_procedures_nrUE_TX(UE, proc, &phy_data, txp);
+      transmit = phy_procedures_nrUE_TX(UE, proc, &phy_data, txp);
     }
   } else {
     dynamic_barrier_join(rxtxD->next_barrier);
+    transmit = UE->sl_mode == SL_MODE2_SUPPORTED; // DL slot
   }
   // Note: SL non-transmit slots used to leave a stale waveform in txData here (a
   // previous frame's PSCCH), which the peer kept decoding. This was previously
   // worked around with an explicit memset of txp; it is now handled by always
   // calling phy_procedures_nrUE_SL_TX() above, whose OFDM modulator zeros this
   // slot's txData when no channel is scheduled.
-  RU_write(rxtxD, sl_tx_action, txp);
+  RU_write(rxtxD, sl_tx_action, transmit ? txp : NULL);
   if (UE->sl_mode == SL_MODE2_SUPPORTED && proc->tx_slot_type == NR_SIDELINK_SLOT)
     dynamic_barrier_join(rxtxD->next_barrier);
   TracyCZoneEnd(ctx);
@@ -711,12 +714,8 @@ void dummyWrite(PHY_VARS_NR_UE *UE, openair0_timestamp_t timestamp, int writeBlo
   if (UE->sl_mode == SL_MODE2_SUPPORTED)
     fp = &UE->SL_UE_PHY_PARAMS.sl_frame_params;
 
-  c16_t *dummy_tx[fp->nb_antennas_tx];
-  c16_t dummy_tx_data[writeBlockSize];
-  memset(dummy_tx_data, 0, sizeof(dummy_tx_data));
-  for (int i = 0; i < fp->nb_antennas_tx; i++)
-    dummy_tx[i] = dummy_tx_data;
-  int tmp = nrue_ru_write_reorder(UE, timestamp, (void **)dummy_tx, writeBlockSize, fp->nb_antennas_tx, 4);
+  // no samples: silence
+  int tmp = nrue_ru_write_reorder(UE, timestamp, NULL, writeBlockSize, fp->nb_antennas_tx, 4);
   AssertFatal(writeBlockSize == tmp, "write to reorder function failed %d", tmp);
 }
 

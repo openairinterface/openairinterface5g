@@ -319,7 +319,8 @@ int openair0_write_reorder_common(nrue_ru_write_t nrue_ru_write,
   if (skip < nsamps) {
     const openair0_timestamp_t ts = timestamp + skip;
     const int n = nsamps - skip;
-    for (int a = 0; a < nbAnt; a++) {
+    // txp NULL: silence, the ring holds zeros where nobody added samples
+    for (int a = 0; txp && a < nbAnt; a++) {
       c16_t *out = ((c16_t *)ctx->ring[a]) + ts % ctx->sz;
       c16adds(((c16_t *)txp[a]) + skip, out, out, n);
     }
