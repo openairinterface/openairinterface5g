@@ -261,6 +261,7 @@ typedef struct {
 
 typedef struct {
   pthread_mutex_t mread;
+  pthread_cond_t cread; // signaled when the oldest client timestamp advances
   uint64_t *last_timestamp;
   c16_t **rxbuf;
   int sz;

@@ -318,6 +318,8 @@ void nrue_init_openair0(void)
       read_data_t *rd = &ru->rd;
       int ret = pthread_mutex_init(&rd->mread, NULL);
       AssertFatal(!ret, "errno: %s\n", strerror(ret));
+      ret = pthread_cond_init(&rd->cread, NULL);
+      AssertFatal(!ret, "errno: %s\n", strerror(ret));
       rd->sz = ring_elements(frame_parms->samples_per_frame, sizeof(c16_t));
       rd->grain = 2048; // arbitrary read size, chosen to fit in a ethernet jumbo frame
       rd->last_ts = 0;
@@ -440,6 +442,14 @@ static void nrue_ru_count_time(int card, int nsamps)
     time_manager_iq_samples(nsamps, openair0_cfg_g[0].sample_rate);
 }
 
+static uint64_t oldest_client_timestamp(const read_data_t *rd, int nb_clients)
+{
+  uint64_t min = UINT64_MAX;
+  for (int i = 0; i < nb_clients; i++)
+    min = min(min, rd->last_timestamp[i]);
+  return min;
+}
+
 int nrue_ru_read(PHY_VARS_NR_UE *UE, openair0_timestamp_t *ptimestamp, void **buff, int nsamps, int num_antennas)
 {
   openair0_device_t *dev = &nrue_rus.openair0_dev[UE->rf_map.card];
@@ -448,64 +458,65 @@ int nrue_ru_read(PHY_VARS_NR_UE *UE, openair0_timestamp_t *ptimestamp, void **bu
 
   int ret;
   if (ru->nb_clients > 1) {
-    // if this client timestamp is above all other clients, let's wait another client make a read
     const int this_ue = UE->ru_client;
-    LOG_D(PHY, "read for ue %d of %d samples we wait this ue is the first\n", this_ue, nsamps);
-    do {
-      pthread_mutex_lock(&rd->mread);
-      uint64_t min = INT64_MAX;
-      for (int i = 0; i < ru->nb_clients; i++)
-        if (min > rd->last_timestamp[i])
-          min = rd->last_timestamp[i];
-      if (min == rd->last_timestamp[this_ue]) {
-        AssertFatal(nsamps < rd->sz, "too large write for the ring buffer %d %d\n", nsamps, rd->sz);
-        // acquire enough blocks to be above the need end
-        while (rd->last_ts < rd->last_timestamp[this_ue] + nsamps) {
-          /* rfsim: the gNB sends the samples we wait for only after receiving our TX up to about the same time.
-             The UEs write TX at least rx_to_tx slots after the RX they read, so a sample range one UE did not
-             write (TA change, resync, ...) would wait forever for its writer: send all TX before this read.
-             The simulated time does not have to follow the wall clock: first wait for the UEs whose TX is
-             still being processed, else their slot is dropped (late write), a DTX for the gNB */
-          if (IS_SOFTMODEM_RFSIM && rd->last_ts)
-            openair0_write_reorder_flush_common(nrue_ru_write,
-                                                UE,
-                                                dev,
-                                                ru->nb_clients,
-                                                UE->frame_parms.nb_antennas_tx,
-                                                rd->last_ts + rd->grain - dev->firstTS,
-                                                100);
-          openair0_timestamp_t tmp_timestamp;
-          void *tmp[ru->nb_rx];
-          for (int i = 0; i < ru->nb_rx; i++)
-            tmp[i] = rd->rxbuf[i] + (rd->last_ts % rd->sz);
-          const bool first = !rd->last_ts;
-          ret = dev->trx_read_func(dev, &tmp_timestamp, tmp, rd->grain, num_antennas);
-          AssertFatal(ret == rd->grain, "read from rf board failed %d", ret);
-          nrue_ru_count_time(UE->rf_map.card, ret);
-          if (first) // the first grain was read at index 0: move it where its timestamp belongs
-            for (int i = 0; i < ru->nb_rx; i++)
-              memmove(rd->rxbuf[i] + (tmp_timestamp % rd->sz), rd->rxbuf[i], ret * sizeof(c16_t));
-          rd->last_ts = tmp_timestamp + ret;
-          if (!dev->firstTS_initialized) {
-            dev->firstTS = tmp_timestamp;
-            dev->firstTS_initialized = true;
-          }
-        }
-        if (!rd->last_timestamp[this_ue])
-          rd->last_timestamp[this_ue] = rd->last_ts - nsamps;
+    AssertFatal(nsamps + rd->grain <= rd->sz, "too large read for the ring buffer %d %d\n", nsamps, rd->sz);
+    pthread_mutex_lock(&rd->mread);
+    // the ring holds one frame: only the clients at the oldest timestamp read, the others wait for them
+    uint64_t min;
+    while ((min = oldest_client_timestamp(rd, ru->nb_clients)) != rd->last_timestamp[this_ue])
+      pthread_cond_wait(&rd->cread, &rd->mread);
+    LOG_D(PHY, "read for ue %d of %d samples, this ue is the oldest\n", this_ue, nsamps);
+    // acquire enough blocks to be above the need end
+    while (rd->last_ts < rd->last_timestamp[this_ue] + nsamps) {
+      /* rfsim: the gNB sends the samples we wait for only after receiving our TX up to about the same time.
+         The UEs write TX at least rx_to_tx slots after the RX they read, so a sample range one UE did not
+         write (TA change, resync, ...) would wait forever for its writer: send all TX before this read.
+         The simulated time does not have to follow the wall clock: first wait for the UEs whose TX is
+         still being processed, else their slot is dropped (late write), a DTX for the gNB */
+      if (IS_SOFTMODEM_RFSIM && rd->last_ts)
+        openair0_write_reorder_flush_common(nrue_ru_write,
+                                            UE,
+                                            dev,
+                                            ru->nb_clients,
+                                            UE->frame_parms.nb_antennas_tx,
+                                            rd->last_ts + rd->grain - dev->firstTS,
+                                            100);
+      openair0_timestamp_t tmp_timestamp;
+      void *tmp[ru->nb_rx];
+      for (int i = 0; i < ru->nb_rx; i++)
+        tmp[i] = rd->rxbuf[i] + (rd->last_ts % rd->sz);
+      const bool first = !rd->last_ts;
+      ret = dev->trx_read_func(dev, &tmp_timestamp, tmp, rd->grain, num_antennas);
+      AssertFatal(ret == rd->grain, "read from rf board failed %d", ret);
+      nrue_ru_count_time(UE->rf_map.card, ret);
+      if (first) // the first grain was read at index 0: move it where its timestamp belongs
         for (int i = 0; i < ru->nb_rx; i++)
-          memcpy(buff[i], rd->rxbuf[i] + (rd->last_timestamp[this_ue] % rd->sz), nsamps * sizeof(c16_t));
-        LOG_D(PHY, "ue %d sent %d samples for ts %ld\n", this_ue, nsamps, rd->last_timestamp[this_ue]);
-        *ptimestamp = rd->last_timestamp[this_ue] - dev->firstTS;
-        rd->last_timestamp[this_ue] += nsamps;
-        int ret = pthread_mutex_unlock(&rd->mread);
-        AssertFatal(!ret, "errno: %s\n", strerror(ret));
-        return nsamps;
-      } else {
-        pthread_mutex_unlock(&rd->mread);
-        usleep(100);
+          memmove(rd->rxbuf[i] + (tmp_timestamp % rd->sz), rd->rxbuf[i], ret * sizeof(c16_t));
+      rd->last_ts = tmp_timestamp + ret;
+      if (!dev->firstTS_initialized) {
+        dev->firstTS = tmp_timestamp;
+        dev->firstTS_initialized = true;
       }
-    } while (true);
+    }
+    if (!rd->last_timestamp[this_ue])
+      rd->last_timestamp[this_ue] = rd->last_ts - nsamps;
+    const uint64_t ts = rd->last_timestamp[this_ue];
+    pthread_mutex_unlock(&rd->mread);
+
+    /* copy out of the lock, concurrently with the other clients: the device reads above overwrite only samples
+       older than the oldest client timestamp, and this client keeps ts until its copy is done */
+    for (int i = 0; i < ru->nb_rx; i++)
+      memcpy(buff[i], rd->rxbuf[i] + (ts % rd->sz), nsamps * sizeof(c16_t));
+    LOG_D(PHY, "ue %d sent %d samples for ts %ld\n", this_ue, nsamps, ts);
+    *ptimestamp = ts - dev->firstTS;
+
+    pthread_mutex_lock(&rd->mread);
+    rd->last_timestamp[this_ue] = ts + nsamps;
+    if (oldest_client_timestamp(rd, ru->nb_clients) != min)
+      pthread_cond_broadcast(&rd->cread);
+    ret = pthread_mutex_unlock(&rd->mread);
+    AssertFatal(!ret, "errno: %s\n", strerror(ret));
+    return nsamps;
   } else {
     openair0_timestamp_t tmp_timestamp;
     ret = dev->trx_read_func(dev, &tmp_timestamp, buff, nsamps, num_antennas);
