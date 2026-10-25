@@ -285,6 +285,30 @@ static void nr_ul_port_select_default(const nr_ul_sched_params_t *params, nr_ul_
   }
 }
 
+/* number of RBs to send the pending data of an UL candidate, between min_rbSize and max_rbSize */
+static uint16_t ul_needed_rbs(const nr_ul_candidate_t *cand, int min_rbSize, int max_rbSize)
+{
+  const NR_pusch_dmrs_t *dmrs_info = &cand->sched_pusch.dmrs_info;
+  const NR_UE_UL_BWP_t *current_BWP = &cand->UE->current_UL_BWP;
+  uint16_t Rt;
+  uint8_t Qt;
+  update_ul_ue_R_Qm(cand->sched_pusch.mcs, current_BWP->mcs_table, current_BWP->pusch_Config, &Rt, &Qt);
+  uint32_t tb_size;
+  uint16_t rbs = 0;
+  nr_find_nb_rb(Qt,
+                Rt,
+                current_BWP->transform_precoding,
+                cand->sched_pusch.nrOfLayers,
+                cand->sched_pusch.tda_info.nrOfSymbols,
+                dmrs_info->N_PRB_DMRS * dmrs_info->num_dmrs_symb,
+                cand->pending_bytes,
+                min_rbSize,
+                max_rbSize,
+                &tb_size,
+                &rbs);
+  return rbs;
+}
+
 int nr_ul_proportional_fair(const nr_ul_sched_params_t *params, nr_ul_candidate_t *candidates, int n_candidates)
 {
   int n_scheduled = 0;
@@ -379,24 +403,8 @@ int nr_ul_proportional_fair(const nr_ul_sched_params_t *params, nr_ul_candidate_
 
     // calculate the number of RBs that UE would like to have. Power limitation
     // is later
-    NR_pusch_dmrs_t dmrs_info = cand->sched_pusch.dmrs_info;
-    NR_UE_UL_BWP_t *current_BWP = &cand->UE->current_UL_BWP;
-    uint16_t Rt;
-    uint8_t Qt;
-    update_ul_ue_R_Qm(cand->sched_pusch.mcs, current_BWP->mcs_table, current_BWP->pusch_Config, &Rt, &Qt);
-    uint32_t tb_size;
     uint16_t *want = &rbs_ue[ue_it - order];
-    nr_find_nb_rb(Qt,
-                  Rt,
-                  current_BWP->transform_precoding,
-                  cand->sched_pusch.nrOfLayers,
-                  cand->sched_pusch.tda_info.nrOfSymbols,
-                  dmrs_info.N_PRB_DMRS * dmrs_info.num_dmrs_symb,
-                  cand->pending_bytes,
-                  min_rb,
-                  max_rbSize,
-                  &tb_size,
-                  want);
+    *want = ul_needed_rbs(cand, min_rb, max_rbSize);
     if (n < n_remain_ue) {
       // for the first n_remain_ue UEs: account number of RBs
       // so excess RBs not used by some UEs could be given to others
