@@ -27,7 +27,6 @@
 #include "position_interface.h"
 #include "nr_phy_common.h"
 #include "PHY/MODULATION/nr_modulation.h"
-#include "common/utils/time_manager/time_manager.h"
 #include "log.h"
 
 /*
@@ -1171,10 +1170,6 @@ void *UE_thread(void *arg)
     // start of normal case, the UE is in sync
     absolute_slot++;
     TracyCFrameMark;
-
-    // pretend we have 1 iq sample per slot
-    // and so nb_slot_frame * 100 iq samples per second (1 frame being 10ms)
-    time_manager_iq_samples(1, nb_slot_frame * 100);
 
     int slot_nr = absolute_slot % nb_slot_frame;
     nr_rxtx_thread_data_t curMsg = {0};

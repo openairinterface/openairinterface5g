@@ -8,6 +8,7 @@
 #include "common/config/config_paramdesc.h"
 #include "common/config/config_userapi.h"
 #include "openair1/PHY/phy_extern_nr_ue.h"
+#include "common/utils/time_manager/time_manager.h"
 
 /* NR UE RU configuration section name */
 #define CONFIG_STRING_NRUE_RU_LIST "RUs"
@@ -431,6 +432,14 @@ int nrue_ru_adjust_rx_gain(PHY_VARS_NR_UE *UE, int gain_change)
   return gain_change;
 }
 
+/* rfsim: the PDCP and RLC timers of all the UEs of the process run on the samples read from the device of the
+   first RU, the simulated time, once whatever the number of UEs */
+static void nrue_ru_count_time(int card, int nsamps)
+{
+  if (card == 0)
+    time_manager_iq_samples(nsamps, openair0_cfg_g[0].sample_rate);
+}
+
 int nrue_ru_read(PHY_VARS_NR_UE *UE, openair0_timestamp_t *ptimestamp, void **buff, int nsamps, int num_antennas)
 {
   openair0_device_t *dev = &nrue_rus.openair0_dev[UE->rf_map.card];
@@ -472,6 +481,7 @@ int nrue_ru_read(PHY_VARS_NR_UE *UE, openair0_timestamp_t *ptimestamp, void **bu
           const bool first = !rd->last_ts;
           ret = dev->trx_read_func(dev, &tmp_timestamp, tmp, rd->grain, num_antennas);
           AssertFatal(ret == rd->grain, "read from rf board failed %d", ret);
+          nrue_ru_count_time(UE->rf_map.card, ret);
           if (first) // the first grain was read at index 0: move it where its timestamp belongs
             for (int i = 0; i < ru->nb_rx; i++)
               memmove(rd->rxbuf[i] + (tmp_timestamp % rd->sz), rd->rxbuf[i], ret * sizeof(c16_t));
@@ -499,6 +509,7 @@ int nrue_ru_read(PHY_VARS_NR_UE *UE, openair0_timestamp_t *ptimestamp, void **bu
   } else {
     openair0_timestamp_t tmp_timestamp;
     ret = dev->trx_read_func(dev, &tmp_timestamp, buff, nsamps, num_antennas);
+    nrue_ru_count_time(UE->rf_map.card, ret);
     if (!dev->firstTS_initialized) {
       dev->firstTS = tmp_timestamp;
       dev->firstTS_initialized = true;
