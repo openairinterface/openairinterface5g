@@ -192,7 +192,7 @@ static int8_t handle_pcch(NR_UE_MAC_INST_t *mac, nr_downlink_indication_t *dl_in
 static int8_t handle_dlsch(NR_UE_MAC_INST_t *mac, nr_downlink_indication_t *dl_info, int pdu_id)
 {
   fapi_nr_rx_indication_body_t *rx = &dl_info->rx_ind->rx_indication_body[pdu_id];
-  if (mac->ra.ra_state != nrRA_WAIT_RAR) // no HARQ for MSG2
+  if (rx->pdu_type != FAPI_NR_RX_PDU_TYPE_RAR) // no HARQ for Msg2
     update_harq_status(mac, rx->pdsch_pdu.harq_pid, rx->pdsch_pdu.cw_idx, rx->pdsch_pdu.ack_nack);
   if (!rx->pdsch_pdu.ack_nack)
     return 0;
