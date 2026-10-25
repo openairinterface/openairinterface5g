@@ -483,7 +483,7 @@ int nrue_ru_write(PHY_VARS_NR_UE *UE, openair0_timestamp_t timestamp, void **buf
 int nrue_ru_write_reorder(PHY_VARS_NR_UE *UE, openair0_timestamp_t timestamp, void **txp, int nsamps, int nbAnt, int flags)
 {
   openair0_device_t *device = &nrue_rus.openair0_dev[UE->rf_map.card];
-  return openair0_write_reorder_common(nrue_ru_write, UE, device, timestamp, txp, nsamps, nbAnt, flags);
+  return openair0_write_reorder_common(nrue_ru_write, UE, device, timestamp, txp, nsamps, 0, 1, nbAnt, flags);
 }
 
 void nrue_ru_write_reorder_clear_context(PHY_VARS_NR_UE *UE)

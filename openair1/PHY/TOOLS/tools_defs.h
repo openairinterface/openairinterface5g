@@ -274,10 +274,26 @@ __attribute__((always_inline)) static inline c16_t c32x16cumulVectVectWithSteps(
 
   __attribute__((always_inline)) inline cd_t cdMul(const cd_t a, const cd_t b)
   {
-    return (cd_t) {
-        .r = a.r * b.r - a.i * b.i,
-        .i = a.r * b.i + a.i * b.r
-    };
+    return (cd_t){.r = a.r * b.r - a.i * b.i, .i = a.r * b.i + a.i * b.r};
+  }
+
+  static __attribute__((always_inline)) inline void c16adds(const c16_t *in1, const c16_t *in2, c16_t *out, int sz)
+  {
+    int i = 0;
+#ifdef __AVX512BW__
+    for (; i < (sz & ~15); i += 16)
+      _mm512_storeu_si512((__m512i *)(out + i),
+                          _mm512_adds_epi16(_mm512_loadu_si512((__m512i *)(in1 + i)), _mm512_loadu_si512((__m512i *)(in2 + i))));
+#endif
+    for (; i < (sz & ~7); i += 8)
+      simde_mm256_storeu_si256((simde__m256i *)(out + i),
+                               simde_mm256_adds_epi16(simde_mm256_loadu_si256((simde__m256i *)(in1 + i)),
+                                                      simde_mm256_loadu_si256((simde__m256i *)(in2 + i))));
+    for (; i < sz; i++) { // saturate like the SIMD loops
+      const int r = in1[i].r + in2[i].r, im = in1[i].i + in2[i].i;
+      out[i].r = r > INT16_MAX ? INT16_MAX : r < INT16_MIN ? INT16_MIN : r;
+      out[i].i = im > INT16_MAX ? INT16_MAX : im < INT16_MIN ? INT16_MIN : im;
+    }
   }
 
   /**
