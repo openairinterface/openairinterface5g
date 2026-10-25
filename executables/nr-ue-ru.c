@@ -311,6 +311,20 @@ void nrue_init_openair0(void)
     cfg->clock_source = ru->clock_source;
     cfg->time_source = ru->time_source;
     cfg->tune_offset = ru->tune_offset;
+
+    if (ru->nb_clients > 1) {
+      // RX samples shared by the UEs of this RU: one frame ring, read from the device in grains
+      read_data_t *rd = &ru->rd;
+      int ret = pthread_mutex_init(&rd->mread, NULL);
+      AssertFatal(!ret, "errno: %s\n", strerror(ret));
+      rd->sz = ring_elements(frame_parms->samples_per_frame, sizeof(c16_t));
+      rd->grain = 2048; // arbitrary read size, chosen to fit in a ethernet jumbo frame
+      rd->last_ts = 0;
+      rd->last_timestamp = calloc_or_fail(ru->nb_clients, sizeof(*rd->last_timestamp));
+      rd->rxbuf = calloc_or_fail(ru->nb_rx, sizeof(*rd->rxbuf));
+      for (int i = 0; i < ru->nb_rx; i++)
+        rd->rxbuf[i] = create_ring(rd->sz * sizeof(c16_t));
+    }
   }
 }
 
@@ -319,14 +333,17 @@ void nrue_ru_start(void)
   for (int ru_id = 0; ru_id < nrue_rus.count; ru_id++) {
     openair0_config_t *cfg = &openair0_cfg_g[ru_id];
     openair0_device_t *dev = &nrue_rus.openair0_dev[ru_id];
-
-    dev->host_type = RAU_HOST;
-    int tmp = openair0_device_load(dev, cfg);
-    AssertFatal(tmp == 0, "Could not load the device %d\n", ru_id);
-    int tmp2 = dev->trx_start_func(dev);
-    AssertFatal(tmp2 == 0, "Could not start the device %d\n", ru_id);
-    if (usrp_tx_thread == 1)
-      dev->trx_write_init(dev);
+    // every configured RU, as nrue_init_openair0(): a UE can move to an RU without client (nrue_ru_set_freq()), and UE 0
+    // writes silence on the RUs no UE uses (nrue_ru_write())
+    if (nrue_rus.cfg[ru_id].nb_cells) {
+      dev->host_type = RAU_HOST;
+      int tmp = openair0_device_load(dev, cfg);
+      AssertFatal(tmp == 0, "Could not load the device %d\n", ru_id);
+      int tmp2 = dev->trx_start_func(dev);
+      AssertFatal(tmp2 == 0, "Could not start the device %d\n", ru_id);
+      if (usrp_tx_thread == 1)
+        dev->trx_write_init(dev);
+    }
   }
 }
 
@@ -417,35 +434,76 @@ int nrue_ru_adjust_rx_gain(PHY_VARS_NR_UE *UE, int gain_change)
 int nrue_ru_read(PHY_VARS_NR_UE *UE, openair0_timestamp_t *ptimestamp, void **buff, int nsamps, int num_antennas)
 {
   openair0_device_t *dev = &nrue_rus.openair0_dev[UE->rf_map.card];
-  openair0_timestamp_t tmp_timestamp;
-  int ret = dev->trx_read_func(dev, &tmp_timestamp, buff, nsamps, num_antennas);
-  if (!dev->firstTS_initialized) {
-    dev->firstTS = tmp_timestamp;
-    dev->firstTS_initialized = true;
-  }
-  *ptimestamp = tmp_timestamp - dev->firstTS;
+  nrUE_RU_params_t *ru = nrue_rus.cfg + UE->rf_map.card;
+  read_data_t *rd = &ru->rd;
 
-  if (UE->Mod_id != 0)
-    return ret;
-
-  // UE 0 needs to read from all RUs that are not used by any other UE
-
-  void *tmp_buf[num_antennas];
-  uint32_t tmp_samples[nsamps];
-  for (int ant = 0; ant < num_antennas; ant++)
-    tmp_buf[ant] = tmp_samples;
-
-  for (int ru_id = 0; ru_id < nrue_rus.count; ru_id++) {
-    if (!nrue_rus.cfg[ru_id].cell[0].active) // skip RUs that have no cell definition
-      continue;
-    if (nrue_rus.cfg[ru_id].cell[0].used_by_ue >= 0) // skip cells that are already used by an UE
-      continue;
-    dev = &nrue_rus.openair0_dev[ru_id];
-    dev->trx_read_func(dev, &tmp_timestamp, tmp_buf, nsamps, num_antennas);
+  int ret;
+  if (ru->nb_clients > 1) {
+    // if this client timestamp is above all other clients, let's wait another client make a read
+    const int this_ue = UE->ru_client;
+    LOG_D(PHY, "read for ue %d of %d samples we wait this ue is the first\n", this_ue, nsamps);
+    do {
+      pthread_mutex_lock(&rd->mread);
+      uint64_t min = INT64_MAX;
+      for (int i = 0; i < ru->nb_clients; i++)
+        if (min > rd->last_timestamp[i])
+          min = rd->last_timestamp[i];
+      if (min == rd->last_timestamp[this_ue]) {
+        AssertFatal(nsamps < rd->sz, "too large write for the ring buffer %d %d\n", nsamps, rd->sz);
+        // acquire enough blocks to be above the need end
+        while (rd->last_ts < rd->last_timestamp[this_ue] + nsamps) {
+          /* rfsim: the gNB sends the samples we wait for only after receiving our TX up to about the same time.
+             The UEs write TX at least rx_to_tx slots after the RX they read, so a sample range one UE did not
+             write (TA change, resync, ...) would wait forever for its writer: send all TX before this read.
+             The simulated time does not have to follow the wall clock: first wait for the UEs whose TX is
+             still being processed, else their slot is dropped (late write), a DTX for the gNB */
+          if (IS_SOFTMODEM_RFSIM && rd->last_ts)
+            openair0_write_reorder_flush_common(nrue_ru_write,
+                                                UE,
+                                                dev,
+                                                ru->nb_clients,
+                                                UE->frame_parms.nb_antennas_tx,
+                                                rd->last_ts + rd->grain - dev->firstTS,
+                                                100);
+          openair0_timestamp_t tmp_timestamp;
+          void *tmp[ru->nb_rx];
+          for (int i = 0; i < ru->nb_rx; i++)
+            tmp[i] = rd->rxbuf[i] + (rd->last_ts % rd->sz);
+          const bool first = !rd->last_ts;
+          ret = dev->trx_read_func(dev, &tmp_timestamp, tmp, rd->grain, num_antennas);
+          AssertFatal(ret == rd->grain, "read from rf board failed %d", ret);
+          if (first) // the first grain was read at index 0: move it where its timestamp belongs
+            for (int i = 0; i < ru->nb_rx; i++)
+              memmove(rd->rxbuf[i] + (tmp_timestamp % rd->sz), rd->rxbuf[i], ret * sizeof(c16_t));
+          rd->last_ts = tmp_timestamp + ret;
+          if (!dev->firstTS_initialized) {
+            dev->firstTS = tmp_timestamp;
+            dev->firstTS_initialized = true;
+          }
+        }
+        if (!rd->last_timestamp[this_ue])
+          rd->last_timestamp[this_ue] = rd->last_ts - nsamps;
+        for (int i = 0; i < ru->nb_rx; i++)
+          memcpy(buff[i], rd->rxbuf[i] + (rd->last_timestamp[this_ue] % rd->sz), nsamps * sizeof(c16_t));
+        LOG_D(PHY, "ue %d sent %d samples for ts %ld\n", this_ue, nsamps, rd->last_timestamp[this_ue]);
+        *ptimestamp = rd->last_timestamp[this_ue] - dev->firstTS;
+        rd->last_timestamp[this_ue] += nsamps;
+        int ret = pthread_mutex_unlock(&rd->mread);
+        AssertFatal(!ret, "errno: %s\n", strerror(ret));
+        return nsamps;
+      } else {
+        pthread_mutex_unlock(&rd->mread);
+        usleep(100);
+      }
+    } while (true);
+  } else {
+    openair0_timestamp_t tmp_timestamp;
+    ret = dev->trx_read_func(dev, &tmp_timestamp, buff, nsamps, num_antennas);
     if (!dev->firstTS_initialized) {
       dev->firstTS = tmp_timestamp;
       dev->firstTS_initialized = true;
     }
+    *ptimestamp = tmp_timestamp - dev->firstTS;
   }
 
   return ret;
@@ -483,11 +541,24 @@ int nrue_ru_write(PHY_VARS_NR_UE *UE, openair0_timestamp_t timestamp, void **buf
 int nrue_ru_write_reorder(PHY_VARS_NR_UE *UE, openair0_timestamp_t timestamp, void **txp, int nsamps, int nbAnt, int flags)
 {
   openair0_device_t *device = &nrue_rus.openair0_dev[UE->rf_map.card];
-  return openair0_write_reorder_common(nrue_ru_write, UE, device, timestamp, txp, nsamps, 0, 1, nbAnt, flags);
+  const int nb_clients = nrue_rus.cfg[UE->rf_map.card].nb_clients;
+  // a UE moved by nrue_ru_set_freq() to an RU without client is its only writer
+  return openair0_write_reorder_common(nrue_ru_write,
+                                       UE,
+                                       device,
+                                       timestamp,
+                                       txp,
+                                       nsamps,
+                                       nb_clients ? UE->ru_client : 0,
+                                       max(nb_clients, 1),
+                                       nbAnt,
+                                       flags);
 }
 
 void nrue_ru_write_reorder_clear_context(PHY_VARS_NR_UE *UE)
 {
   openair0_device_t *device = &nrue_rus.openair0_dev[UE->rf_map.card];
-  openair0_write_reorder_clear_context(device);
+  LOG_W(HW, "[UE %d] received write reorder clear context\n", UE->Mod_id);
+  if (!IS_SOFTMODEM_RFSIM)
+    openair0_write_reorder_clear_context(device);
 }

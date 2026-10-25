@@ -717,8 +717,7 @@ void dummyWrite(PHY_VARS_NR_UE *UE, openair0_timestamp_t timestamp, int writeBlo
   memset(dummy_tx_data, 0, sizeof(dummy_tx_data));
   for (int i = 0; i < fp->nb_antennas_tx; i++)
     dummy_tx[i] = dummy_tx_data;
-
-  int tmp = nrue_ru_write(UE, timestamp, (void **)dummy_tx, writeBlockSize, fp->nb_antennas_tx, 4);
+  int tmp = nrue_ru_write_reorder(UE, timestamp, (void **)dummy_tx, writeBlockSize, fp->nb_antennas_tx, 4);
   AssertFatal(writeBlockSize == tmp, "write to reorder function failed %d", tmp);
 }
 

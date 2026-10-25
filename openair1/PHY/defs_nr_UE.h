@@ -260,6 +260,15 @@ typedef struct {
 } nrUE_cell_params_t;
 
 typedef struct {
+  pthread_mutex_t mread;
+  uint64_t *last_timestamp;
+  c16_t **rxbuf;
+  int sz;
+  int grain;
+  uint64_t last_ts;
+} read_data_t;
+
+typedef struct {
   unsigned int nb_tx;
   unsigned int nb_rx;
   unsigned int att_tx;
@@ -275,6 +284,8 @@ typedef struct {
   int if_freq_offset;
   int nb_cells;
   nrUE_cell_params_t *cell;
+  int nb_clients;
+  read_data_t rd;
 } nrUE_RU_params_t;
 
 typedef struct UE_nr_rxtx_proc_s UE_nr_rxtx_proc_t;
@@ -294,6 +305,8 @@ typedef struct PHY_VARS_NR_UE_s {
   uint8_t CC_id;
   /// \brief Mapping of CC_id antennas to cards
   openair0_rf_map_t rf_map;
+  /// index of this UE among the clients of its RU (rf_map.card)
+  int ru_client;
   /// \brief Indicator that UE should perform band scanning
   int UE_scan;
   /// \brief Indicator that UE should perform coarse scanning around carrier

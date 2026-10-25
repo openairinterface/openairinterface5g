@@ -139,8 +139,8 @@ static void get_options(configmodule_interface_t *cfg)
 // set PHY vars from command line
 static void set_UE_options(int CC_id, PHY_VARS_NR_UE *UE, int ru_id)
 {
-  const nrUE_RU_params_t *RU = nrue_get_ru(ru_id);
-
+  nrUE_RU_params_t *RU = nrue_get_ru(ru_id);
+  UE->ru_client = RU->nb_clients++;
   // Set UE variables
   UE->rx_total_gain_dB = RU->max_rxgain - RU->att_rx;
   UE->tx_total_gain_dB = RU->att_tx;
@@ -312,8 +312,10 @@ int main(int argc, char **argv)
     }
   }
 
-  int ru_id = 0;
   for (int inst = 0; inst < NB_UE_INST; inst++) {
+    // one RU per UE when the configuration has enough, else all the UEs share the first RU;
+    // FD-UE instances always share one device (see nr-ue-fd.c)
+    const int ru_id = !get_nrUE_params()->use_ue_fd && nrue_get_ru_count() >= NB_UE_INST ? inst : 0;
     position_t position = {0};
     get_position_coordinates(inst, &position);
 
@@ -322,8 +324,6 @@ int main(int argc, char **argv)
       PHY_VARS_NR_UE *UE_CC = nrPHY_vars_UE_g[inst][CC_id];
       UE_CC->position = position;
 
-      // fixme: it seems implicit mapping
-      AssertFatal(ru_id < nrue_get_ru_count(), " more UEs than ru+cell definitions in the config file\n");
       set_UE_options(CC_id, UE_CC, ru_id);
       init_nr_ue_phy_cpu_stats(&UE_CC->phy_cpu_stats);
       nrUE_RU_params_t *ru = nrue_get_ru(ru_id);
@@ -377,10 +377,6 @@ int main(int argc, char **argv)
         sl_ue_phy_init(UE_CC);
       }
 
-      // FD-UE instances share one physical device by design (see nr-ue-fd.c);
-      // every other mode initially connects each UE and carrier to its own RU.
-      if (!get_nrUE_params()->use_ue_fd)
-        ru_id++;
     }
   }
 
