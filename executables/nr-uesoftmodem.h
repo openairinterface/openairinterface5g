@@ -33,6 +33,8 @@ extern uint16_t ue_id_g;
   "Comma-separated cores for DL then UL actors (and SYNC if one spare). Must have at least num-dl-actors + num-ul-actors " \
   "entries; omit for no affinity\n"
 #define  CONFIG_HLP_DISABLE_BLIND_SEARCH   "Disable blind search for UE searches by neighboring cells\n"
+#define CONFIG_HLP_UE_START_SPACING \
+  "Delay in ms between the first cell search of consecutive UE instances (--num-ues), to spread their random accesses\n"
 #define  CONFIG_HLP_RX2TX                  "Defines ue capability in slots to produce an UL feedback from its relative DL meassage (DCI->ULSCH or PDSCH->PUCCH)"
 #define  CONFIG_HLP_SL_SYNCSOURCEUE        "Sidelink UE acts as SYNC REF UE"
 
@@ -89,6 +91,7 @@ extern uint16_t ue_id_g;
   {"ue-fd",                    "Frequency-domain I/O through the UE Low-PHY (executables/ue_fd)",  PARAMFLAG_BOOL,  .iptr=&nrUE_params.use_ue_fd, .defintval=0, TYPE_INT, 0}, \
   {"ue-fd-sync-timeout",       "FD-UE sync search timeout in ms (default 5000)", 0, .iptr=&nrUE_params.ue_fd_sync_timeout_ms, .defintval=5000, TYPE_INT, 0}, \
   {"sync-ref",                     CONFIG_HLP_SL_SYNCSOURCEUE, 0,               .uptr=&(nrUE_params.sync_ref),               .defuintval=0,     TYPE_UINT32,   0}, \
+  {"ue-start-spacing",             CONFIG_HLP_UE_START_SPACING, 0,              .iptr=&nrUE_params.ue_start_spacing_ms,      .defintval=0,      TYPE_INT,      0}, \
 }
 // clang-format on
 
@@ -136,6 +139,7 @@ typedef struct {
   int use_ue_fd; // frequency-domain UE threads on the UE Low-PHY
   int ue_fd_sync_timeout_ms;  // sync search timeout of the UE Low-PHY
   uint32_t sync_ref;
+  int ue_start_spacing_ms;
 } nrUE_params_t;
 extern uint64_t get_nrUE_optmask(void);
 extern uint64_t set_nrUE_optmask(uint64_t bitmask);
