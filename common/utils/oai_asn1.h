@@ -119,6 +119,25 @@
     }                                                                   \
   } while (0)
 
+// Macro adds to list RELEASE (of ID_TYPE) the FIELD of each entry of list OLD that is not in list NEW
+// Sender-side counterpart of RELEASE_IE_FROMLIST, to signal the delta from OLD to NEW
+#define RELEASE_REMOVED_FROMLIST(OLD, NEW, RELEASE, FIELD, ID_TYPE) \
+  do {                                                              \
+    for (int iI = 0; OLD && iI < OLD->list.count; iI++) {           \
+      long eL = OLD->list.array[iI]->FIELD;                         \
+      int fOUND = 0;                                                \
+      for (int iJ = 0; NEW && iJ < NEW->list.count && !fOUND; iJ++) \
+        fOUND = NEW->list.array[iJ]->FIELD == eL;                   \
+      if (!fOUND) {                                                 \
+        if (!RELEASE)                                               \
+          RELEASE = calloc(1, sizeof(*RELEASE));                    \
+        ID_TYPE *iD = calloc(1, sizeof(*iD));                       \
+        *iD = eL;                                                   \
+        ASN_SEQUENCE_ADD(&RELEASE->list, iD);                       \
+      }                                                             \
+    }                                                               \
+  } while (0)
+
 /*! \fn uint8_t BIT_STRING_to_uint8(BIT_STRING_t *)
  *\brief  This function extract at most a 8 bits value from a BIT_STRING_t object, the exact bits number depend on the BIT_STRING_t contents.
  *\param[in] pointer to the BIT_STRING_t object.

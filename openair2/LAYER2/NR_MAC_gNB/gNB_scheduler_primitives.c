@@ -4385,11 +4385,34 @@ static bool verify_bwp_switch(const NR_UE_info_t *UE, const nr_mac_config_t *con
   return false;
 }
 
+// The CSI release lists go to the UE only in the encoded CellGroupConfig.
+// The stored CellGroup is the UE configuration after the reconfiguration.
+// A later full CellGroupConfig would send them again.
+static void remove_csi_release_lists(NR_CellGroupConfig_t *cell_group)
+{
+  NR_CSI_MeasConfig_t *csi = cell_group->spCellConfig->spCellConfigDedicated->csi_MeasConfig->choice.setup;
+#define FREE_ID_LIST(L, DEF)                                      \
+  do {                                                            \
+    if (L) {                                                      \
+      while ((L)->list.count > 0)                                 \
+        ASN_STRUCT_FREE(DEF, (L)->list.array[--(L)->list.count]); \
+      free((L)->list.array);                                      \
+      free_and_zero(L);                                           \
+    }                                                             \
+  } while (0)
+  FREE_ID_LIST(csi->nzp_CSI_RS_ResourceToReleaseList, asn_DEF_NR_NZP_CSI_RS_ResourceId);
+  FREE_ID_LIST(csi->nzp_CSI_RS_ResourceSetToReleaseList, asn_DEF_NR_NZP_CSI_RS_ResourceSetId);
+  FREE_ID_LIST(csi->csi_IM_ResourceToReleaseList, asn_DEF_NR_CSI_IM_ResourceId);
+  FREE_ID_LIST(csi->csi_IM_ResourceSetToReleaseList, asn_DEF_NR_CSI_IM_ResourceSetId);
+#undef FREE_ID_LIST
+}
+
 void nr_mac_trigger_reconfiguration(const gNB_MAC_INST *nrmac, nr_cell_sched_t *cell, NR_UE_info_t *UE, int new_bwp_id, int new_beam)
 {
   DevAssert(UE->CellGroup != NULL);
   NR_CellGroupConfig_t *cellGroup_for_UE = NULL;
-  int ssb_index = get_ssbidx_from_beam(cell, UE->UE_beam_index);
+  // on a beam switch, build the CSI config for the target beam: UE_beam_index only changes on confirm
+  int ssb_index = get_ssbidx_from_beam(cell, new_beam >= 0 ? new_beam : UE->UE_beam_index);
   if (new_beam >= 0) {
     UE->cm_info.trigger_info = BEAM_SWITCH;
     UE->cm_info.new_state = new_beam;
@@ -4429,6 +4452,8 @@ void nr_mac_trigger_reconfiguration(const gNB_MAC_INST *nrmac, nr_cell_sched_t *
                                                   buf,
                                                   sizeof(buf));
   AssertFatal(enc_rval.encoded > 0, "ASN1 encoding of CellGroupConfig failed, failed type %s\n", enc_rval.failed_type->name);
+  if (cellGroup_for_UE)
+    remove_csi_release_lists(cellGroup_for_UE);
   ASN_STRUCT_FREE(asn_DEF_NR_CellGroupConfig, UE->reconfigCellGroup);
   UE->reconfigCellGroup = cellGroup_for_UE;
   du_to_cu_rrc_information_t du2cu = {
