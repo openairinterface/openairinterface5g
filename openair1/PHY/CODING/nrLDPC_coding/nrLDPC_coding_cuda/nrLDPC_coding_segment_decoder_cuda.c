@@ -167,8 +167,10 @@ void nr_process_decode_segment_cuda(nrLDPC_TB_decoding_parameters_t *segs)
                                 Kprime - 2 * Z,
                                 decoderStreams,
                                 0);
+  // The GPU rate recovery and the decoder place segment r at r * 68 * 384 (fixed maximum stride), not at r * Kc * Z
+  const size_t segStride = 68 * 384;
   for (int r = 0; r < C; ++r) {
-    gpuMemsetAsync(p_llr_dev + (size_t)r * segLen, 0, sizeof(int8_t) * 2 * Z, decoderStreams[0]);
+    gpuMemsetAsync(p_llr_dev + (size_t)r * segStride, 0, sizeof(int8_t) * 2 * Z, decoderStreams[0]);
 #if 0
      int8_t llr_local[segLen];
      if (r==1 && segs->rv_index==2) {
