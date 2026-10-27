@@ -32,6 +32,8 @@
 #include "PHY/gpu_alloc.h"
 #include "nrLDPC_CUDA_shared_param.h"
 
+_Static_assert(MAX_NUM_NR_DLSCH_SEGMENTS_PER_LAYER * 4 >= NR_LDPC_MAX_NUM_CB, "the CUDA buffers must hold the code blocks of a TB");
+
 extern gpuStream_t decoderStreams[MAX_NUM_NR_DLSCH_SEGMENTS_PER_LAYER * 4];
 static bool decoder_streamsCreated = false;
 static volatile int cuda_graph_breaker = 0;// 0 by default to enable the CUDA graph

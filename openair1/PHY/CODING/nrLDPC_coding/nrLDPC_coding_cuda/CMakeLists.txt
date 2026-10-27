@@ -122,6 +122,8 @@ if(ENABLE_PHYSIM_TESTS)
   add_physim_test(nr_dlsim.ldpc_cuda.1t1r_mcs25_256qam_bw "nr_dlsim: 1T1R/1 layer, MCS 25 256QAM, 40 MHz 30 kHz SCS" nr_dlsim -n100 -R106 -b106 -P -e 25 -s30 -q 1 --loader.ldpc.shlibversion _cuda)
   # code blocks with Z < 384 (Z = 352, 9 code blocks)
   add_physim_test(nr_dlsim.ldpc_cuda.9seg_z352_256qam "nr_dlsim: 9 segments, Z 352, 256QAM MCS 24" nr_dlsim -n100 -s24 -S24.1 -e24 -q1 -R106 -b72 -I20 -P --loader.ldpc.shlibversion _cuda)
+  # more than 128 code blocks (129)
+  add_physim_test(nr_dlsim.ldpc_cuda.4t4r_mcs27_256qam "nr_dlsim: 4T4R/4 layers, MCS 27 256QAM, 273 PRBs (129 code blocks)" nr_dlsim -n10 -R273 -b273 -P -e 27 -s40 -S41 -q 1 -x4 -y4 -z4 --loader.ldpc.shlibversion _cuda)
 
   add_physim_test(nr_ulsim.ldpc_cuda.9seg_r13 "nr_ulsim: 9 segments, rate 1/3" nr_ulsim -n100 -s20 -m13 -R273 -r273 -W1 -y1 -z1 -P --loader.ldpc.shlibversion _cuda)
   add_physim_test(nr_ulsim.ldpc_cuda.18seg_r23 "nr_ulsim: 18 segments, rate 2/3" nr_ulsim -n100 -s20 -m22 -R273 -r273 -W1 -y1 -z1 -P --loader.ldpc.shlibversion _cuda)
