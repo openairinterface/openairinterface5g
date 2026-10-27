@@ -31,7 +31,7 @@ signed char quantize(double D, double x, unsigned char B)
   else if (qxd >= maxlev)
     qxd = maxlev - 1;
 
-  return ((char)qxd);
+  return (signed char)qxd; // plain char is unsigned on aarch64
 }
 
 void stop_nr_nfapi_vnf()
