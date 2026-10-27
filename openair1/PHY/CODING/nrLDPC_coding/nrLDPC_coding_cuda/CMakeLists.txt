@@ -60,7 +60,15 @@ else()
   SET(CUDA_VERBOSE_BUILD ON)
 
   # version using NVLink-C2C in Grace Hopper
-  set_target_properties(ldpc_cuda PROPERTIES CUDA_ARCHITECTURES "80;87;90")
+  # sm_121 (DGX Spark, GB10) needs a recent toolkit (CUDA 12.9): add it only if nvcc supports it, else GB10 runs the
+  # compute_90 PTX, compiled by the driver at load time
+  set(LDPC_CUDA_ARCHITECTURES 80 87 90)
+  execute_process(COMMAND ${CMAKE_CUDA_COMPILER} --list-gpu-arch OUTPUT_VARIABLE NVCC_GPU_ARCHS ERROR_QUIET)
+  if(NVCC_GPU_ARCHS MATCHES "compute_121")
+    list(APPEND LDPC_CUDA_ARCHITECTURES 121)
+  endif()
+  message(STATUS "ldpc_cuda: CUDA architectures ${LDPC_CUDA_ARCHITECTURES}")
+  set_target_properties(ldpc_cuda PROPERTIES CUDA_ARCHITECTURES "${LDPC_CUDA_ARCHITECTURES}")
   # we need to find the right include directory, but ti seems that
   # enable_language(CUDA) does not make this available(?), so also use the CUDA package
   find_package(CUDA REQUIRED)
