@@ -156,6 +156,20 @@ void openair0_write_reorder_init(re_order_t *r, const openair0_config_t *openair
     r->ring[i] = create_ring(r->sz * sizeof(c16_t));
 }
 
+void openair0_write_reorder_free(re_order_t *r)
+{
+  // the rings are mapped twice in a row (create_ring())
+  for (int i = 0; i < r->nb_ant; i++)
+    munmap(r->ring[i], 2 * r->sz * sizeof(c16_t));
+  free(r->ring);
+  munmap(r->nb_writers, 2 * r->sz * sizeof(*r->nb_writers));
+  free(r->writer_end);
+  free(r->writer_absent);
+  pthread_cond_destroy(&r->written);
+  pthread_mutex_destroy(&r->mutex_store);
+  *r = (re_order_t){0};
+}
+
 int openair0_device_load(openair0_device_t *device, openair0_config_t *openair0_cfg)
 {
   int rc=0;

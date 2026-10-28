@@ -44,6 +44,10 @@ class WriteReorder : public ::testing::Test {
     openair0_write_reorder_init(&dev.reOrder, &cfg);
     dev.trx_write_func = capture;
   }
+  void TearDown() override
+  {
+    openair0_write_reorder_free(&dev.reOrder);
+  }
   int write(openair0_timestamp_t ts, int n, int flags, int16_t v = 1, int nb_writers = 1, int writer = 0)
   {
     std::vector<c16_t> buf(n, c16_t{v, v});

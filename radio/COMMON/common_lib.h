@@ -583,6 +583,7 @@ extern int read_recplayconfig(recplay_conf_t **recplay_conf, recplay_state_t **r
 extern void iqrecorder_end(openair0_device_t *device);
 
 void openair0_write_reorder_init(re_order_t *r, const openair0_config_t *openair0_cfg);
+void openair0_write_reorder_free(re_order_t *r);
 int openair0_write_reorder(openair0_device_t *device, openair0_timestamp_t timestamp, void **txp, int nsamps, int nbAnt, int flags);
 void openair0_write_reorder_clear_context(openair0_device_t *device);
 void openair0_write_reorder_flush_common(nrue_ru_write_t nrue_ru_write,
