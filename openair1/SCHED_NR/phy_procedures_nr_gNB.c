@@ -476,12 +476,16 @@ void phy_procedures_gNB_TX(PHY_VARS_gNB *gNB,
   }
 }
 
-static int nr_ulsch_procedures(PHY_VARS_gNB *gNB, int frame_rx, int slot_rx, int *ulsch_to_decode, int nb_pusch, NR_UL_IND_t *UL_INFO)
+static int nr_ulsch_procedures(PHY_VARS_gNB *gNB,
+                               int frame_rx,
+                               int slot_rx,
+                               int *ulsch_to_decode,
+                               int nb_pusch,
+                               nfapi_nr_rx_data_indication_t *rx_ind,
+                               nfapi_nr_crc_indication_t *crc_ind)
 {
   DevAssert(nb_pusch > 0);
   NR_DL_FRAME_PARMS *frame_parms = &gNB->frame_parms;
-
-  nr_uci_decoding(gNB, UL_INFO, nb_pusch, ulsch_to_decode, frame_rx, slot_rx);
 
   //----------------------------------------------------------
   //--------------------- ULSCH decoding ---------------------
@@ -528,8 +532,8 @@ static int nr_ulsch_procedures(PHY_VARS_gNB *gNB, int frame_rx, int slot_rx, int
     }
 #endif
 
-    nfapi_nr_crc_t *crc = &UL_INFO->crc_ind.crc_list[UL_INFO->crc_ind.number_crcs++];
-    nfapi_nr_rx_data_pdu_t *pdu = &UL_INFO->rx_ind.pdu_list[UL_INFO->rx_ind.number_of_pdus++];
+    nfapi_nr_crc_t *crc = &crc_ind->crc_list[crc_ind->number_crcs++];
+    nfapi_nr_rx_data_pdu_t *pdu = &rx_ind->pdu_list[rx_ind->number_of_pdus++];
     if (crc_valid && !check_abort(&ulsch_harq->abort_decode) && !pusch->DTX) {
       LOG_D(NR_PHY,
             "[gNB %d] ULSCH %d: Setting ACK for SFN/SF %d.%d (rnti %x, pid %d, ndi %d, status %d, round %d, TBS %d, Max interation "
@@ -1348,7 +1352,14 @@ static NR_MU_MIMO_job_groups_t group_pusch_jobs(PHY_VARS_gNB *gNB, NR_gNB_PUSCH_
   return groups;
 }
 
-int phy_procedures_gNB_uespec_RX(PHY_VARS_gNB *gNB, int frame_rx, int slot_rx, NR_UL_IND_t *UL_INFO)
+int phy_procedures_gNB_uespec_RX(PHY_VARS_gNB *gNB,
+                                 int frame_rx,
+                                 int slot_rx,
+                                 nfapi_nr_uci_indication_t *uci_ind,
+                                 nfapi_nr_crc_indication_t *crc_ind,
+                                 nfapi_nr_rx_data_indication_t *rx_ind,
+                                 nfapi_nr_srs_indication_t *srs_ind,
+                                 nfapi_nr_srs_toa_vendor_ext_indication_t *srs_toa_v_ext)
 {
   /* those variables to log T_GNB_PHY_PUCCH_PUSCH_IQ only when we try to decode */
   int pusch_DTX = 0;
@@ -1394,12 +1405,10 @@ int phy_procedures_gNB_uespec_RX(PHY_VARS_gNB *gNB, int frame_rx, int slot_rx, N
 
   int slot_type = nr_slot_select(&gNB->gNB_config, frame_rx, slot_rx);
   START_MEAS_FULL_SLOT(&gNB->phy_proc_rx, slot_type, NR_UPLINK_SLOT);
-  UL_INFO->uci_ind.header.transmit_timestamp = 0;
-  UL_INFO->uci_ind.uci_list = UL_INFO->uci_pdu_list;
-  UL_INFO->uci_ind.sfn = frame_rx;
-  UL_INFO->uci_ind.slot = slot_rx;
-  UL_INFO->uci_ind.num_ucis = n_pucch;
-  nfapi_nr_uci_t *uci = UL_INFO->uci_ind.uci_list;
+  uci_ind->header.transmit_timestamp = 0;
+  uci_ind->sfn = frame_rx;
+  uci_ind->slot = slot_rx;
+  uci_ind->num_ucis = n_pucch;
   for (int i = 0; i < n_pucch; ++i) {
     const nfapi_nr_spatial_stream_index_t *p = &pucch[i].pucch_pdu.param_v4;
     const uint16_t ant_port = get_first_ant_idx(gNB->enable_analog_das,
@@ -1407,20 +1416,18 @@ int phy_procedures_gNB_uespec_RX(PHY_VARS_gNB *gNB, int frame_rx, int slot_rx, N
                                                 pucch[i].pucch_pdu.beamforming.prgs_list[0].dig_bf_interface_list[0].beam_idx,
                                                 p->numSpatialStreamIndices > 0 ? p->spatialStreamIndices[0] : 0);
     c16_t **rxdataF = gNB->common_vars.rxdataF + ant_port;
-    handle_pucch(gNB, rxdataF, &pucch[i], uci++);
+    handle_pucch(gNB, rxdataF, &pucch[i], &uci_ind->uci_list[i]);
   }
 
 
-  UL_INFO->crc_ind.header.transmit_timestamp = 0;
-  UL_INFO->crc_ind.sfn = frame_rx;
-  UL_INFO->crc_ind.slot = slot_rx;
-  UL_INFO->crc_ind.crc_list = UL_INFO->crc_pdu_list;
-  UL_INFO->crc_ind.number_crcs = 0;
-  UL_INFO->rx_ind.header.transmit_timestamp = 0;
-  UL_INFO->rx_ind.sfn = frame_rx;
-  UL_INFO->rx_ind.slot = slot_rx;
-  UL_INFO->rx_ind.pdu_list = UL_INFO->rx_pdu_list;
-  UL_INFO->rx_ind.number_of_pdus = 0;
+  crc_ind->header.transmit_timestamp = 0;
+  crc_ind->sfn = frame_rx;
+  crc_ind->slot = slot_rx;
+  crc_ind->number_crcs = 0;
+  rx_ind->header.transmit_timestamp = 0;
+  rx_ind->sfn = frame_rx;
+  rx_ind->slot = slot_rx;
+  rx_ind->number_of_pdus = 0;
   int ulsch_idx_to_decode[MAX_UL_PDUS_PER_SLOT];
   int num_pusch = 0;
 
@@ -1455,8 +1462,8 @@ int phy_procedures_gNB_uespec_RX(PHY_VARS_gNB *gNB, int frame_rx, int slot_rx, N
         AssertFatal(ulsch->harq_process != NULL, "harq_pid %d is not allocated\n", ulsch->harq_pid);
         const nfapi_nr_pusch_pdu_t *pdu = &ulsch->harq_process->ulsch_pdu;
         NR_gNB_PHY_STATS_t *stats = get_phy_stats(gNB, ulsch->rnti);
-        nfapi_nr_crc_t *crc = &UL_INFO->crc_ind.crc_list[UL_INFO->crc_ind.number_crcs++];
-        nfapi_nr_rx_data_pdu_t *rx = &UL_INFO->rx_ind.pdu_list[UL_INFO->rx_ind.number_of_pdus++];
+        nfapi_nr_crc_t *crc = &crc_ind->crc_list[crc_ind->number_crcs++];
+        nfapi_nr_rx_data_pdu_t *rx = &rx_ind->pdu_list[rx_ind->number_of_pdus++];
         nr_fill_indication(gNB, ulsch->frame, ulsch->slot, pusch_vars, pdu, stats, NULL, 1, crc, rx);
         pusch_DTX++;
         gNBdumpScopeData(gNB, ulsch->slot, ulsch->frame, "ULSCH_DTX");
@@ -1466,22 +1473,20 @@ int phy_procedures_gNB_uespec_RX(PHY_VARS_gNB *gNB, int frame_rx, int slot_rx, N
 
   if (num_pusch > 0) {
     START_MEAS_FULL_SLOT(&gNB->ulsch_decoding_stats, slot_type, NR_UPLINK_SLOT);
-    int ret_nr_ulsch_procedures = nr_ulsch_procedures(gNB, frame_rx, slot_rx, ulsch_idx_to_decode, num_pusch, UL_INFO);
+    nr_uci_decoding(gNB, uci_ind, num_pusch, ulsch_idx_to_decode, frame_rx, slot_rx);
+    int ret_nr_ulsch_procedures = nr_ulsch_procedures(gNB, frame_rx, slot_rx, ulsch_idx_to_decode, num_pusch, rx_ind, crc_ind);
     if (ret_nr_ulsch_procedures != 0)
       LOG_E(NR_PHY, "Error in nr_ulsch_procedures, returned %d\n", ret_nr_ulsch_procedures);
     STOP_MEAS_FULL_SLOT(&gNB->ulsch_decoding_stats, slot_type, NR_UPLINK_SLOT);
   }
 
-  UL_INFO->srs_ind.header.transmit_timestamp = 0;
-  UL_INFO->srs_ind.sfn = frame_rx;
-  UL_INFO->srs_ind.slot = slot_rx;
-  UL_INFO->srs_ind.pdu_list = UL_INFO->srs_pdu_list;
-  UL_INFO->srs_ind.number_of_pdus = n_srs;
-  UL_INFO->srs_ind.control_length = 0;
+  srs_ind->header.transmit_timestamp = 0;
+  srs_ind->sfn = frame_rx;
+  srs_ind->slot = slot_rx;
+  srs_ind->number_of_pdus = n_srs;
+  srs_ind->control_length = 0;
 
-  UL_INFO->srs_toa_vendor_ext_ind.header.transmit_timestamp = 0;
-  nfapi_nr_srs_toa_vendor_ext_indication_t *srs_toa_v_ext = &UL_INFO->srs_toa_vendor_ext_ind;
-  srs_toa_v_ext->pdu_list = UL_INFO->srs_toa_vendor_ext_pdu_list;
+  srs_toa_v_ext->header.transmit_timestamp = 0;
   srs_toa_v_ext->sfn = frame_rx;
   srs_toa_v_ext->slot = slot_rx;
   srs_toa_v_ext->number_of_pdus = 0;
@@ -1489,7 +1494,7 @@ int phy_procedures_gNB_uespec_RX(PHY_VARS_gNB *gNB, int frame_rx, int slot_rx, N
     start_meas(&gNB->rx_srs_stats);
     nfapi_nr_srs_toa_vendor_ext_pdu_t *ta_pdu = &srs_toa_v_ext->pdu_list[srs_toa_v_ext->number_of_pdus];
     ta_pdu->num_ta = 0;
-    handle_srs(now, gNB, &srs[i], &UL_INFO->srs_ind.pdu_list[i], ta_pdu);
+    handle_srs(now, gNB, &srs[i], &srs_ind->pdu_list[i], ta_pdu);
     if (ta_pdu->num_ta)
       srs_toa_v_ext->number_of_pdus++;
     stop_meas(&gNB->rx_srs_stats);

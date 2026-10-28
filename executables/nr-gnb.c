@@ -196,6 +196,11 @@ static void rx_func(processingData_L1_t *info)
     UL_INFO.slot = slot_rx;
     UL_INFO.module_id = gNB->Mod_id;
     UL_INFO.phy_id = 0;
+    UL_INFO.uci_ind.uci_list = UL_INFO.uci_pdu_list;
+    UL_INFO.crc_ind.crc_list = UL_INFO.crc_pdu_list;
+    UL_INFO.rx_ind.pdu_list = UL_INFO.rx_pdu_list;
+    UL_INFO.srs_ind.pdu_list = UL_INFO.srs_pdu_list;
+    UL_INFO.srs_toa_vendor_ext_ind.pdu_list = UL_INFO.srs_toa_vendor_ext_pdu_list;
     // Do PRACH RU processing
     UL_INFO.rach_ind.header.transmit_timestamp = 0;
     UL_INFO.rach_ind.pdu_list = UL_INFO.prach_pdu_indication_list;
@@ -226,7 +231,14 @@ static void rx_func(processingData_L1_t *info)
     }
 
     // Call PHY Rx signal procedures
-    phy_procedures_gNB_uespec_RX(gNB, frame_rx, slot_rx, &UL_INFO);
+    phy_procedures_gNB_uespec_RX(gNB,
+                                 frame_rx,
+                                 slot_rx,
+                                 &UL_INFO.uci_ind,
+                                 &UL_INFO.crc_ind,
+                                 &UL_INFO.rx_ind,
+                                 &UL_INFO.srs_ind,
+                                 &UL_INFO.srs_toa_vendor_ext_ind);
 
     // Call the scheduler
     START_MEAS_FULL_SLOT(&gNB->ul_indication_stats, rx_slot_type, NR_UPLINK_SLOT);

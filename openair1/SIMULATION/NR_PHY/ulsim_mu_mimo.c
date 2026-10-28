@@ -512,10 +512,11 @@ int main(int argc, char *argv[])
     initNamedTpool(gNBthreads, &gNB->threadPool, true, "gNB-tpool");
 
   NR_UL_IND_t UL_INFO = {0};
+  UL_INFO.uci_ind.uci_list = UL_INFO.uci_pdu_list;
   UL_INFO.crc_ind.crc_list = UL_INFO.crc_pdu_list;
   UL_INFO.rx_ind.pdu_list = UL_INFO.rx_pdu_list;
-  UL_INFO.rx_ind.number_of_pdus = 0;
-  UL_INFO.crc_ind.number_crcs = 0;
+  UL_INFO.srs_ind.pdu_list = UL_INFO.srs_pdu_list;
+  UL_INFO.srs_toa_vendor_ext_ind.pdu_list = UL_INFO.srs_toa_vendor_ext_pdu_list;
   gNB->max_ldpc_iterations = max_ldpc_iterations;
   gNB->pusch_thres = -20;
   gNB->frame_parms.N_RB_DL = N_RB_DL;
@@ -1110,8 +1111,6 @@ int main(int argc, char *argv[])
         //----------------------------------------------------------
         //------------------- gNB phy procedures -------------------
         //----------------------------------------------------------
-        UL_INFO.rx_ind.number_of_pdus = 0;
-        UL_INFO.crc_ind.number_crcs = 0;
 
         //----------- OFDM Demodulation and RX rotation--------------------------
         bool was_symbol_used[14] = {0};
@@ -1128,7 +1127,14 @@ int main(int argc, char *argv[])
                                       link_type_ul,
                                       was_symbol_used);
 
-        ul_proc_error = phy_procedures_gNB_uespec_RX(gNB, frame, slot, &UL_INFO);
+        ul_proc_error = phy_procedures_gNB_uespec_RX(gNB,
+                                                     frame,
+                                                     slot,
+                                                     &UL_INFO.uci_ind,
+                                                     &UL_INFO.crc_ind,
+                                                     &UL_INFO.rx_ind,
+                                                     &UL_INFO.srs_ind,
+                                                     &UL_INFO.srs_toa_vendor_ext_ind);
 
         if (n_trials == 1 && round == 0) {
           LOG_M("rxsig0.m", "rx0", &rxdata[0][slot_offset], slot_length, 1, 1 | log_format);

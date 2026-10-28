@@ -62,7 +62,7 @@ static nr_uci_decoder_result_t uci_on_pusch_decoded_helper(const int16_t *llrs, 
   return res;
 }
 
-void nr_uci_decoding(PHY_VARS_gNB *phy_vars_gNB, NR_UL_IND_t *UL_INFO, int nb_pusch, const int *ULSCH_ids, int sfn, int slot)
+void nr_uci_decoding(PHY_VARS_gNB *phy_vars_gNB, nfapi_nr_uci_indication_t *uci_ind, int nb_pusch, const int *ULSCH_ids, int sfn, int slot)
 {
   for (uint8_t pusch_id = 0; pusch_id < nb_pusch; pusch_id++) {
     uint8_t ULSCH_id = ULSCH_ids[pusch_id];
@@ -72,7 +72,6 @@ void nr_uci_decoding(PHY_VARS_gNB *phy_vars_gNB, NR_UL_IND_t *UL_INFO, int nb_pu
       continue;
     nfapi_nr_pusch_uci_t *pusch_uci = &pusch_pdu->pusch_uci;
     NR_gNB_PUSCH *pusch = &phy_vars_gNB->pusch_vars[ULSCH_id];
-    nfapi_nr_uci_indication_t *uci_ind = &UL_INFO->uci_ind;
     uci_ind->sfn = sfn;
     uci_ind->slot = slot;
     nfapi_nr_uci_t *uci = uci_ind->uci_list + uci_ind->num_ucis;

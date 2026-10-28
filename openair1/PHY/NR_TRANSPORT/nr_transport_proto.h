@@ -202,5 +202,5 @@ void nr_decode_pucch0(PHY_VARS_gNB *gNB,
                       nfapi_nr_uci_pucch_pdu_format_0_1_t* uci_pdu,
                       const nfapi_nr_pucch_pdu_t* pucch_pdu);
 
-void nr_uci_decoding(PHY_VARS_gNB *phy_vars_gNB, NR_UL_IND_t *UL_INFO, int nb_pusch, const int *ULSCH_ids, int frame, int slot);
+void nr_uci_decoding(PHY_VARS_gNB *phy_vars_gNB, nfapi_nr_uci_indication_t *uci_ind, int nb_pusch, const int *ULSCH_ids, int frame, int slot);
 #endif /*__NR_TRANSPORT__H__*/
