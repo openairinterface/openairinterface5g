@@ -48,6 +48,7 @@
 #include "XNAP_NG-RAN-Cell-Identity.h"
 #include "XNAP_RANAreaID-List.h"
 #include "XNAP_RANAreaID.h"
+#include "XNAP_RANPagingAttemptInfo.h"
 
 #include "XNAP_RetrieveUEContextRequest.h"
 #include "XNAP_UEContextID.h"
