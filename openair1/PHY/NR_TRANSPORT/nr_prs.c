@@ -52,7 +52,7 @@ bool nr_generate_prs(int slot,
     int k = (prs_pdu->combOffset + k_prime) % prs_pdu->combSize + prs_pdu->startRb * NR_NB_SC_PER_RB;
 
     // QPSK modulation
-    uint32_t *gold = nr_gold_prs(prs_pdu->nIdPrs, slot, l);
+    uint32_t *gold = nr_gold_prs(prs_pdu->nIdPrs, frame_parms->symbols_per_slot, slot, l);
     c16_t *tx = txdataF + l * frame_parms->ofdm_symbol_size;
     for (int m = 0; m < (NR_NB_SC_PER_RB / prs_pdu->combSize) * prs_pdu->numRbs; m++) {
       int idx = (((gold[(m << 1) >> 5]) >> ((m << 1) & 0x1f)) & 3);

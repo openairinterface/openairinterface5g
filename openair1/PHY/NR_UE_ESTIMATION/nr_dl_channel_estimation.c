@@ -102,7 +102,7 @@ int nr_prs_channel_estimation(uint8_t gNB_id,
 
   for (int l = prs_pdu->first_symbol; l < prs_pdu->first_symbol + prs_pdu->num_symbols; l++) {
     c16_t *ch_tmp = ch_tmp_buf;
-    uint32_t *gold_prs = nr_gold_prs(prs_pdu->nid_prs, slot_prs, l);
+    uint32_t *gold_prs = nr_gold_prs(prs_pdu->nid_prs, frame_parms->symbols_per_slot, slot_prs, l);
     int symInd = l - prs_pdu->first_symbol;
     int16_t k_prime = 0;
     switch (prs_pdu->comb_size) {
