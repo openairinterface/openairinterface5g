@@ -370,12 +370,11 @@ typedef struct ngap_register_gnb_req_s {
   /* Tracking area code */
   uint32_t tac;
 
-#define PLMN_LIST_MAX_SIZE 6
   /* Mobile Country Code
    * Mobile Network Code
    */
   uint8_t  num_plmn;
-  ngap_plmn_t plmn[PLMN_LIST_MAX_SIZE];
+  ngap_plmn_t plmn[NR_MAX_NB_PLMNS];
 
   /* Default Paging DRX of the gNB as defined in TS 38.304 */
   ngap_paging_drx_t default_drx;
@@ -388,7 +387,7 @@ typedef struct ngap_register_gnb_req_s {
   /* List of AMF to connect to */
   net_ip_address_t amf_ip_address[NGAP_MAX_NB_AMF_IP_ADDRESS];
   uint8_t          broadcast_plmn_num[NGAP_MAX_NB_AMF_IP_ADDRESS];
-  uint8_t          broadcast_plmn_index[NGAP_MAX_NB_AMF_IP_ADDRESS][PLMN_LIST_MAX_SIZE];
+  uint8_t broadcast_plmn_index[NGAP_MAX_NB_AMF_IP_ADDRESS][NR_MAX_NB_PLMNS];
 
   /* Number of SCTP streams used for a amf association */
   uint16_t sctp_in_streams;
@@ -411,7 +410,7 @@ typedef struct ngap_register_gnb_cnf_s {
   uint32_t gNB_id;
   uint32_t tac;
   uint8_t num_plmn;
-  ngap_plmn_t plmn[PLMN_LIST_MAX_SIZE];
+  ngap_plmn_t plmn[NR_MAX_NB_PLMNS];
   uint8_t num_amf_regions;
   ngap_amf_region_info_t amf_region_info[NGAP_MAX_NB_AMF_REGIONS];
 } ngap_register_gnb_cnf_t;

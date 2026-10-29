@@ -79,7 +79,7 @@ int RCconfig_NR_NG(MessageDef *msg_p, uint32_t i)
                         "    tracking_area_code  =  1; // no string!!\n"
                         "    plmn_list = ( { mcc = 208; mnc = 93; mnc_length = 2; } )\n");
             // PLMN
-            plmn_id_t p[PLMN_LIST_MAX_SIZE] = {0};
+            plmn_id_t p[NR_MAX_NB_PLMNS] = {0};
             NGAP_REGISTER_GNB_REQ(msg_p).num_plmn = set_plmn_config(p, 0);
             for (int l = 0; l < NGAP_REGISTER_GNB_REQ(msg_p).num_plmn; ++l) {
               NGAP_REGISTER_GNB_REQ(msg_p).plmn[l].plmn = p[l];

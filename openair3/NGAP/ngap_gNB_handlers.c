@@ -271,7 +271,7 @@ static int ngap_gNB_handle_ng_setup_response(sctp_assoc_t assoc_id, uint32_t str
       if (slice_support_item_p->s_NSSAI.sD != NULL) {
         memcpy(sd, slice_support_item_p->s_NSSAI.sD->buf, sizeof(sd));
       }
-      NGAP_INFO("Supported slice (PLMN %d): SST=0x%02x SD=%d%d%d\n", i, sst, sd[0], sd[1], sd[2]);
+      NGAP_INFO("Supported slice (PLMN %d): SST=0x%02x SD=0x%02x%02x%02x\n", i, sst, sd[0], sd[1], sd[2]);
     }
   }
 

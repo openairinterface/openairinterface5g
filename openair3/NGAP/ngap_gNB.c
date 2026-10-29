@@ -49,6 +49,8 @@
 #include "openair2/E2AP/RAN_FUNCTION/setup_msg_store.h"
 #endif
 
+_Static_assert(NR_MAX_NB_PLMNS == NGAP_maxnoofBPLMNs, "NGAP broadcast PLMN limit must match ASN.1");
+
 static int ngap_gNB_generate_ng_setup_request(
   ngap_gNB_instance_t *instance_p, ngap_gNB_amf_data_t *ngap_amf_data_p);
 
@@ -106,18 +108,20 @@ static void ngap_gNB_redial_amf(ngap_gNB_amf_data_t *amf_desc_p)
 }
 
 static void ngap_gNB_register_amf(ngap_gNB_instance_t *instance_p,
-                                  net_ip_address_t    *amf_ip_address,
-                                  net_ip_address_t    *local_ip_addr,
-                                  uint16_t             in_streams,
-                                  uint16_t             out_streams,
-                                  uint8_t              broadcast_plmn_num,
-                                  uint8_t              broadcast_plmn_index[PLMN_LIST_MAX_SIZE]) {
+                                  net_ip_address_t *amf_ip_address,
+                                  net_ip_address_t *local_ip_addr,
+                                  uint16_t in_streams,
+                                  uint16_t out_streams,
+                                  uint8_t broadcast_plmn_num,
+                                  uint8_t broadcast_plmn_index[NR_MAX_NB_PLMNS])
+{
   MessageDef                 *message_p                   = NULL;
   sctp_new_association_req_t *sctp_new_association_req_p  = NULL;
   ngap_gNB_amf_data_t        *ngap_amf_data_p             = NULL;
 
   DevAssert(instance_p != NULL);
   DevAssert(amf_ip_address != NULL);
+  DevAssert(broadcast_plmn_num > 0 && broadcast_plmn_num <= NR_MAX_NB_PLMNS);
   message_p = itti_alloc_new_message(TASK_NGAP, 0, SCTP_NEW_ASSOCIATION_REQ);
   sctp_new_association_req_p = &message_p->ittiMsg.sctp_new_association_req;
   sctp_new_association_req_p->port = NGAP_PORT_NUMBER;
@@ -142,8 +146,10 @@ static void ngap_gNB_register_amf(ngap_gNB_instance_t *instance_p,
   memcpy(&ngap_amf_data_p->amf_s1_ip,
         amf_ip_address,
         sizeof(*amf_ip_address));
-  for (int i = 0; i < broadcast_plmn_num; ++i)
+  for (int i = 0; i < broadcast_plmn_num; ++i) {
+    DevAssert(broadcast_plmn_index[i] < instance_p->num_plmn);
     ngap_amf_data_p->broadcast_plmn_index[i] = broadcast_plmn_index[i];
+  }
 
   ngap_amf_data_p->ngap_gNB_instance = instance_p;
   STAILQ_INIT(&ngap_amf_data_p->served_guami);
@@ -162,6 +168,7 @@ void ngap_gNB_handle_register_gNB(instance_t instance, ngap_register_gnb_req_t *
   ngap_gNB_instance_t *new_instance;
   uint8_t index;
   DevAssert(ngap_register_gNB != NULL);
+  DevAssert(ngap_register_gNB->num_plmn > 0 && ngap_register_gNB->num_plmn <= NR_MAX_NB_PLMNS);
   /* Look if the provided instance already exists */
   new_instance = ngap_gNB_get_instance(instance);
 

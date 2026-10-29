@@ -109,8 +109,7 @@ typedef struct ngap_gNB_amf_data_s {
   /* This is served PLMN IDs communicated to the AMF via an index over the
    * MCC/MNC array in ngap_gNB_instance */
   uint8_t  broadcast_plmn_num;
-  uint8_t  broadcast_plmn_index[PLMN_LIST_MAX_SIZE];
-
+  uint8_t broadcast_plmn_index[NR_MAX_NB_PLMNS];
 
   /* Only meaningfull in virtual mode */
   struct ngap_gNB_instance_s *ngap_gNB_instance;
@@ -152,7 +151,7 @@ typedef struct ngap_gNB_instance_s {
    * Mobile Network Code
    */
   uint8_t num_plmn;
-  ngap_plmn_t plmn[PLMN_LIST_MAX_SIZE];
+  ngap_plmn_t plmn[NR_MAX_NB_PLMNS];
 
   /* Default Paging DRX of the gNB as defined in TS 38.304 */
   ngap_paging_drx_t default_drx;
