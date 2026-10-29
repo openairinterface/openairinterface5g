@@ -4,6 +4,10 @@
 
 #include <stdlib.h>
 #include <arpa/inet.h>
+#include <chrono>
+#include <condition_variable>
+#include <mutex>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -318,6 +322,176 @@ TEST(gtp, basic_conn)
   long noqfi = -1;
   int num_send = 12;
   run_basic_test(ue_id, pdu_id, noqfi, num_send, &recv_count, recv_basic_conn, NULL);
+}
+
+enum class GtpuPacketError { none, empty, truncated_header, length_too_small, length_too_large };
+
+static constexpr ue_id_t batch_ue_id = 42;
+static constexpr int batch_bearer_id = 1;
+static constexpr int batch_size = 8;
+static constexpr uint8_t last_batch_packet = batch_size + 1;
+
+static struct {
+  std::mutex mutex;
+  std::condition_variable changed;
+  bool receiver_blocked = false;
+  bool release_receiver = false;
+  std::vector<uint8_t> received;
+} recv_batch_state;
+
+static bool recv_batch(protocol_ctxt_t *ctxt,
+                       const srb_flag_t srb_flagP,
+                       const rb_id_t rb_idP,
+                       const mui_t muiP,
+                       const confirm_t confirmP,
+                       const sdu_size_t size,
+                       unsigned char *const buf,
+                       const pdcp_transmission_mode_t modeP,
+                       const uint32_t *sourceL2Id,
+                       const uint32_t *destinationL2Id)
+{
+  UNUSED(srb_flagP);
+  UNUSED(muiP);
+  UNUSED(confirmP);
+  UNUSED(modeP);
+  UNUSED(sourceL2Id);
+  UNUSED(destinationL2Id);
+  EXPECT_EQ(ctxt->rntiMaybeUEid, batch_ue_id);
+  EXPECT_EQ(rb_idP, batch_bearer_id);
+  EXPECT_EQ(size, 1);
+  if (size != 1)
+    return false;
+
+  std::unique_lock<std::mutex> lock(recv_batch_state.mutex);
+  if (buf[0] == 0) {
+    recv_batch_state.receiver_blocked = true;
+    recv_batch_state.changed.notify_one();
+    recv_batch_state.changed.wait(lock, [] { return recv_batch_state.release_receiver; });
+  } else {
+    recv_batch_state.received.push_back(buf[0]);
+    recv_batch_state.changed.notify_one();
+  }
+  return true;
+}
+
+static void send_batch_packet(int sender,
+                              const test_sockaddr_t *destination,
+                              teid_t teid,
+                              uint8_t payload,
+                              GtpuPacketError error = GtpuPacketError::none)
+{
+  /* TS 29.281 clause 5.1: mandatory G-PDU header followed by one payload octet. */
+  uint8_t packet[] = {0x30, 255, 0, 1, uint8_t(teid >> 24), uint8_t(teid >> 16), uint8_t(teid >> 8), uint8_t(teid), payload};
+  size_t len = sizeof(packet);
+  switch (error) {
+    case GtpuPacketError::none:
+      break;
+    case GtpuPacketError::empty:
+      len = 0;
+      break;
+    case GtpuPacketError::truncated_header:
+      len = 7;
+      break;
+    case GtpuPacketError::length_too_small:
+      packet[3] = 0;
+      break;
+    case GtpuPacketError::length_too_large:
+      packet[3] = 2;
+      break;
+  }
+  ASSERT_EQ(sendto(sender, packet, len, 0, &destination->sa, sizeof(destination->sin)), ssize_t(len));
+}
+
+static void check_receive_batch(instance_t instance, int sender, GtpuPacketError malformed, int bad_index)
+{
+  test_sockaddr_t destination = {};
+  socklen_t addr_len = sizeof(destination.sin);
+  ASSERT_EQ(getsockname(instance, &destination.sa, &addr_len), 0);
+  transport_layer_addr_t remote_addr = get_tl_addr(AF_INET, "127.0.0.1");
+  teid_t teid =
+      newGtpuCreateTunnel(instance, batch_ue_id, batch_bearer_id, batch_bearer_id, 1, remote_addr, recv_batch, NULL, NULL);
+  ASSERT_NE(teid, 0U);
+
+  ASSERT_NO_FATAL_FAILURE(send_batch_packet(sender, &destination, teid, 0));
+  {
+    std::unique_lock<std::mutex> lock(recv_batch_state.mutex);
+    ASSERT_TRUE(recv_batch_state.changed.wait_for(lock, std::chrono::seconds(5), [] { return recv_batch_state.receiver_blocked; }));
+  }
+
+  /* Hold the receiver in its callback until an entire recvmmsg batch is queued. */
+  std::vector<uint8_t> expected;
+  for (int i = 0; i < batch_size; ++i) {
+    ASSERT_NO_FATAL_FAILURE(
+        send_batch_packet(sender, &destination, teid, i + 1, i == bad_index ? malformed : GtpuPacketError::none));
+    if (i != bad_index)
+      expected.push_back(i + 1);
+  }
+  /* This packet belongs to the next batch and proves the receiver made progress. */
+  ASSERT_NO_FATAL_FAILURE(send_batch_packet(sender, &destination, teid, last_batch_packet));
+  expected.push_back(last_batch_packet);
+  {
+    std::unique_lock<std::mutex> lock(recv_batch_state.mutex);
+    recv_batch_state.release_receiver = true;
+    recv_batch_state.changed.notify_one();
+    ASSERT_TRUE(recv_batch_state.changed.wait_for(lock, std::chrono::seconds(5), [] {
+      return !recv_batch_state.received.empty() && recv_batch_state.received.back() == last_batch_packet;
+    }));
+    EXPECT_EQ(recv_batch_state.received, expected);
+  }
+}
+
+static void run_receive_batch_test(GtpuPacketError malformed, int bad_index)
+{
+  SCOPED_TRACE(testing::Message() << "malformed datagram at batch position " << bad_index);
+  {
+    std::lock_guard<std::mutex> lock(recv_batch_state.mutex);
+    recv_batch_state.receiver_blocked = false;
+    recv_batch_state.release_receiver = false;
+    recv_batch_state.received.clear();
+  }
+
+  instance_t instance = init_gtp("127.0.0.1", 0);
+  ASSERT_GE(instance, 0);
+  int sender = socket(AF_INET, SOCK_DGRAM, 0);
+  EXPECT_GE(sender, 0);
+  if (sender >= 0)
+    check_receive_batch(instance, sender, malformed, bad_index);
+
+  /* Release the callback even if a setup, send, or receive assertion failed. */
+  {
+    std::lock_guard<std::mutex> lock(recv_batch_state.mutex);
+    recv_batch_state.release_receiver = true;
+  }
+  recv_batch_state.changed.notify_one();
+  EXPECT_EQ(newGtpuDeleteAllTunnels(instance, batch_ue_id), 0);
+  EXPECT_EQ(gtpv1Term(instance), 0);
+  if (sender >= 0) {
+    EXPECT_EQ(close(sender), 0);
+  }
+}
+
+TEST(gtp, receive_batch_empty_datagram)
+{
+  for (int bad_index : {0, 3, 7})
+    run_receive_batch_test(GtpuPacketError::empty, bad_index);
+}
+
+TEST(gtp, receive_batch_truncated_header)
+{
+  for (int bad_index : {0, 3, 7})
+    run_receive_batch_test(GtpuPacketError::truncated_header, bad_index);
+}
+
+TEST(gtp, receive_batch_length_too_small)
+{
+  for (int bad_index : {0, 3, 7})
+    run_receive_batch_test(GtpuPacketError::length_too_small, bad_index);
+}
+
+TEST(gtp, receive_batch_length_too_large)
+{
+  for (int bad_index : {0, 3, 7})
+    run_receive_batch_test(GtpuPacketError::length_too_large, bad_index);
 }
 
 static int build_gtpu_nrup(uint8_t *out, int out_len, uint32_t teid, gtpu_extension_header_t *ext)
