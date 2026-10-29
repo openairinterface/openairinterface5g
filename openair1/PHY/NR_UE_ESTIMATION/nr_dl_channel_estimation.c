@@ -89,9 +89,7 @@ int nr_prs_channel_estimation(uint8_t gNB_id,
   const NR_DL_FRAME_PARMS *frame_parms = &ue->frame_parms;
   const int symb_sz = frame_parms->ofdm_symbol_size;
   const int CombSize = prs_pdu->comb_size;
-  prs_meas_t **prs_meas  = ue->prs_vars[gNB_id]->prs_resource[rsc_id].prs_meas;
-  c16_t ch_tmp_buf[symb_sz] __attribute__((aligned(32)));
-  memset(ch_tmp_buf, 0, sizeof(ch_tmp_buf));
+  prs_meas_t **prs_meas = ue->prs_vars[gNB_id]->prs_resource[rsc_id].prs_meas;
 
   const int16_t *fl, *fm, *fmm, *fml, *fmr, *fr;
 #ifdef DEBUG_PRS_CHEST
@@ -100,53 +98,54 @@ int nr_prs_channel_estimation(uint8_t gNB_id,
   const int scale_factor = (1.0f / (float)(prs_pdu->num_symbols)) * (1 << 15);
   const int num_pilots = (NR_NB_SC_PER_RB / CombSize) * prs_pdu->num_rbs;
 
-  for (int l = prs_pdu->first_symbol; l < prs_pdu->first_symbol + prs_pdu->num_symbols; l++) {
-    c16_t *ch_tmp = ch_tmp_buf;
-    uint32_t *gold_prs = nr_gold_prs(prs_pdu->nid_prs, frame_parms->symbols_per_slot, slot_prs, l);
-    int symInd = l - prs_pdu->first_symbol;
-    int16_t k_prime = 0;
-    switch (prs_pdu->comb_size) {
-      case 2:
-        k_prime = k_prime_table[0][symInd];
-        break;
-      case 4:
-        k_prime = k_prime_table[1][symInd];
-        break;
-      case 6:
-        k_prime = k_prime_table[2][symInd];
-        break;
-      case 12:
-        k_prime = k_prime_table[3][symInd];
-        break;
-      default:
-        AssertFatal(false, "prs_pdu->comb_size = %d\n", CombSize);
-    }
+  for (int rxAnt = 0; rxAnt < frame_parms->nb_antennas_rx; rxAnt++) {
+    c16_t ch_tmp_buf[symb_sz] __attribute__((aligned(32)));
+    memset(ch_tmp_buf, 0, sizeof(ch_tmp_buf));
+
+    for (int l = prs_pdu->first_symbol; l < prs_pdu->first_symbol + prs_pdu->num_symbols; l++) {
+      c16_t *ch_tmp = ch_tmp_buf;
+      uint32_t *gold_prs = nr_gold_prs(prs_pdu->nid_prs, frame_parms->symbols_per_slot, slot_prs, l);
+      int symInd = l - prs_pdu->first_symbol;
+      int16_t k_prime = 0;
+      switch (prs_pdu->comb_size) {
+        case 2:
+          k_prime = k_prime_table[0][symInd];
+          break;
+        case 4:
+          k_prime = k_prime_table[1][symInd];
+          break;
+        case 6:
+          k_prime = k_prime_table[2][symInd];
+          break;
+        case 12:
+          k_prime = k_prime_table[3][symInd];
+          break;
+        default:
+          AssertFatal(false, "prs_pdu->comb_size = %d\n", CombSize);
+      }
 
 #ifdef DEBUG_PRS_PRINTS
-    printf(
-        "[gNB %d][rsc %d] PRS config l %d k_prime %d:\nprs_pdu->first_symbol %d\nprs_pdu->num_symbols %d\nprs_pdu->num_rbs "
-        "%d\nprs_pdu->comb_size %d\n",
-        gNB_id,
-        rsc_id,
-        l,
-        k_prime,
-        prs_pdu->first_symbol,
-        prs_pdu->num_symbols,
-        prs_pdu->num_rbs,
-        CombSize);
+      printf(
+          "[gNB %d][rsc %d] PRS config l %d k_prime %d:\nprs_pdu->first_symbol %d\nprs_pdu->num_symbols %d\nprs_pdu->num_rbs "
+          "%d\nprs_pdu->comb_size %d\n",
+          gNB_id,
+          rsc_id,
+          l,
+          k_prime,
+          prs_pdu->first_symbol,
+          prs_pdu->num_symbols,
+          prs_pdu->num_rbs,
+          CombSize);
 #endif
-    // Pilots generation and modulation
+      // Pilots generation and modulation
 
-    AssertFatal(num_pilots > 0, "num_pilots needs to be gt 0 or mod_prs[0] UB");
-    c16_t mod_prs[NR_MAX_PRS_LENGTH];
-    for (int m = 0; m < num_pilots; m++) {
-      int idx = (((gold_prs[(m << 1) >> 5]) >> ((m << 1) & 0x1f)) & 3);
-      mod_prs[m] = nr_qpsk_mod_table[idx];
-    }
+      AssertFatal(num_pilots > 0, "num_pilots needs to be gt 0 or mod_prs[0] UB");
+      c16_t mod_prs[NR_MAX_PRS_LENGTH];
+      for (int m = 0; m < num_pilots; m++) {
+        int idx = (((gold_prs[(m << 1) >> 5]) >> ((m << 1) & 0x1f)) & 3);
+        mod_prs[m] = nr_qpsk_mod_table[idx];
+      }
 
-    for (int rxAnt = 0; rxAnt < frame_parms->nb_antennas_rx; rxAnt++) {
-      // we sum all antennas
-      ch_tmp = (c16_t *)ch_tmp_buf;
       int snr = 0;
       int rsrp = 0;
 
@@ -334,10 +333,8 @@ int nr_prs_channel_estimation(uint8_t gNB_id,
       // average out the SNR and RSRP computed
       prs_meas[rxAnt]->snr = snr / (float)num_pilots;
       prs_meas[rxAnt]->rsrp = rsrp / (float)num_pilots;
-    } // for rxAnt
-  } // for l
+    } // for l
 
-  for (int rxAnt = 0; rxAnt < frame_parms->nb_antennas_rx; rxAnt++) {
     // scale by averaging factor 1/NumPrsSymbols
     mult_complex_vector_real_scalar(ch_tmp_buf, scale_factor, ch_tmp_buf, symb_sz);
 
