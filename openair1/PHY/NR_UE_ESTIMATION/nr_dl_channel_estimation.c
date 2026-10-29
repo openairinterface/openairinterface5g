@@ -101,6 +101,7 @@ int nr_prs_channel_estimation(uint8_t gNB_id,
   for (int rxAnt = 0; rxAnt < frame_parms->nb_antennas_rx; rxAnt++) {
     c16_t ch_tmp_buf[symb_sz] __attribute__((aligned(32)));
     memset(ch_tmp_buf, 0, sizeof(ch_tmp_buf));
+    double rsrp = 0;
 
     for (int l = prs_pdu->first_symbol; l < prs_pdu->first_symbol + prs_pdu->num_symbols; l++) {
       c16_t *ch_tmp = ch_tmp_buf;
@@ -147,7 +148,6 @@ int nr_prs_channel_estimation(uint8_t gNB_id,
       }
 
       int snr = 0;
-      int rsrp = 0;
 
       // calculate RE offset
       int k = (prs_pdu->comb_offset + k_prime) % CombSize + prs_pdu->start_rb * NR_NB_SC_PER_RB;
@@ -330,10 +330,12 @@ int nr_prs_channel_estimation(uint8_t gNB_id,
                     __FUNCTION__);
       }
 
-      // average out the SNR and RSRP computed
+      // average out the SNR computed
       prs_meas[rxAnt]->snr = snr / (float)num_pilots;
-      prs_meas[rxAnt]->rsrp = rsrp / (float)num_pilots;
     } // for l
+
+    // averaged over all pilots and symbols
+    prs_meas[rxAnt]->rsrp = rsrp / ((double)num_pilots * prs_pdu->num_symbols);
 
     // scale by averaging factor 1/NumPrsSymbols
     mult_complex_vector_real_scalar(ch_tmp_buf, scale_factor, ch_tmp_buf, symb_sz);
