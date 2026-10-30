@@ -61,6 +61,7 @@ unsigned short config_frames[4] = {2,9,11,13};
 #include "intertask_interface.h"
 #include "nfapi/oai_integration/vendor_ext.h"
 #include "nfapi_nr_interface_scf.h"
+#include "nfapi/open-nFAPI/fapi/inc/nr_fapi_p5_utils.h"
 #include "ngap_gNB.h"
 #include "nr-softmodem-common.h"
 #include "openair2/E1AP/e1ap_common.h"
@@ -383,6 +384,7 @@ int stop_L1(module_id_t gnb_id)
 
   for (int inst = 0; inst < RC.nb_nr_L1_inst; inst++) {
     phy_free_nr_gNB(RC.gNB[inst]);
+    free_config_request(&RC.gNB[inst]->gNB_config);
   }
 
   RC.gNB[gnb_id]->configured = 0;
