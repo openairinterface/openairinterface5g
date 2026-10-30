@@ -90,7 +90,7 @@ be defined in order to tell cmake where the host tools have been built.
 cd ../build-cross
 cmake ../../.. -GNinja -DCMAKE_TOOLCHAIN_FILE=../../../cmake_targets/cross-arm.cmake -DNATIVE_DIR=../build
 
-ninja dlsim ulsim ldpctest polartest smallblocktest nr_pbchsim nr_dlschsim nr_ulschsim nr_dlsim nr_ulsim nr_pucchsim nr_prachsim nr_srssim
+ninja dlsim ulsim ldpctest polartest smallblocktest nr_pbchsim nr_dlschsim nr_ulschsim nr_dlsim nr_ulsim nr_pucchsim nr_prachsim nr_srssim nr_prssim
 ninja lte-softmodem nr-softmodem nr-cuup oairu lte-uesoftmodem nr-uesoftmodem
 ninja params_libconfig coding rfsimulator
 ```

@@ -26,4 +26,4 @@ RUN cmake -GNinja -DENABLE_PHYSIM_TESTS=ON \
         -DCMAKE_C_FLAGS=-Werror -DCMAKE_CXX_FLAGS=-Werror \
         -DPHYSIM_CHECK_FILES="ThresholdsGracehopper.cmake" \
         .. && \
-    ninja ldpctest polartest smallblocktest nr_pbchsim nr_dlschsim nr_ulschsim nr_dlsim nr_ulsim nr_ulsim_mu_mimo nr_pucchsim nr_prachsim nr_psbchsim nr_srssim
+    ninja ldpctest polartest smallblocktest nr_pbchsim nr_dlschsim nr_ulschsim nr_dlsim nr_ulsim nr_ulsim_mu_mimo nr_pucchsim nr_prachsim nr_psbchsim nr_srssim nr_prssim
