@@ -39,9 +39,6 @@
 #include "system.h"
 #include "time_meas.h"
 #include "utils.h"
-#ifdef E3_AGENT
-#include "openair2/E3AP/ran_func_spectrum_extern.h"
-#endif /* E3_AGENT */
 
 #define MACSTATSSTRLEN 36256
 
@@ -349,11 +346,6 @@ periodic_ue_sched_t create_period_structure(nr_cell_sched_t *cell, nr_periodic_c
   return p;
 }
 
-static void destroy_periodic_sched(periodic_ue_sched_t p)
-{
-  free(p.list);
-}
-
 void ind_delete_nr_ue_data(void *p)
 {
   // access_ue_list has pointers to NR_UE_info_t, and this functions gets a
@@ -374,19 +366,7 @@ void mac_top_destroy_gNB(gNB_MAC_INST *mac)
   free(mac->f1_config.setup_resp);
   free(mac->positioning_config);
 
-  FOR_EACH_SEQ_ARR (nr_cell_sched_t *, cell, &mac->cells) {
-    free(cell->radio_config.ssb_beams);
-    NR_COMMON_channels_t *cc = &cell->common_channels;
-    nr_mac_pcch_queue_free(cc);
-    ASN_STRUCT_FREE(asn_DEF_NR_BCCH_BCH_Message, cc->mib);
-    ASN_STRUCT_FREE(asn_DEF_NR_BCCH_DL_SCH_Message, cc->sib1);
-    ASN_STRUCT_FREE(asn_DEF_NR_ServingCellConfigCommon, cc->ServingCellConfigCommon);
-#ifdef E3_AGENT
-    e3_spectrum_mac_detach_cell(cell);
-#endif /* E3_AGENT */
-    destroy_periodic_sched(cell->periodic_srs_config);
-  }
-  seq_arr_free(&mac->cells, NULL);
+  seq_arr_free(&mac->cells, seq_arr_cell_free);
 }
 
 void nr_mac_send_f1_setup_req(void)
