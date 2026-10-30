@@ -396,11 +396,12 @@ void nr_mac_send_f1_setup_req(void)
   mac->mac_rrc.f1_setup_request(mac->f1_config.setup_req);
 }
 
-void nr_mac_send_config_req(gNB_MAC_INST *nrmac, nfapi_nr_config_request_scf_t *cfg)
+void nr_mac_send_config_req(gNB_MAC_INST *nrmac, nfapi_nr_config_request_scf_t *cfg, const int phy_id)
 {
+  AssertFatal(phy_id == 0, "Can only be called for phy_id=0, called with phy_id=%d\n", phy_id);
   if (NFAPI_MODE == NFAPI_MONOLITHIC) {
     // nothing to be sent in the other cases
-    NR_PHY_Config_t phycfg = {.phy_id = 0, .cfg = cfg};
+    NR_PHY_Config_t phycfg = {.phy_id = phy_id, .cfg = cfg};
     DevAssert(nrmac->if_inst->NR_PHY_config_req);
     nrmac->if_inst->NR_PHY_config_req(&phycfg);
   }

@@ -859,7 +859,7 @@ int main(int argc, char **argv)
   nr_cell_sched_t *cell;
   gNB_MAC_INST *gNB_mac = mac_top_init_gNB(ngran_gNB, &rlc_config, &cell);
   nr_mac_cell_config_scc(cell, scc, &conf);
-  nr_mac_send_config_req(gNB_mac, &cell->config);
+  nr_mac_send_config_req(gNB_mac, &cell->config, nr_mac_get_cell_phy_id(gNB_mac, cell));
 
   cell->dl_bler.harq_round_max = num_rounds;
 

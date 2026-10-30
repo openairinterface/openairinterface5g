@@ -36,7 +36,7 @@ void mac_top_destroy_gNB(gNB_MAC_INST *mac);
 void nr_mac_send_f1_setup_req(void);
 int get_ssbidx_from_beam(const nr_cell_sched_t *cell, int beam_idx);
 void nr_mac_cell_config_scc(nr_cell_sched_t *cell, NR_ServingCellConfigCommon_t *scc, const nr_mac_config_t *mac_config);
-void nr_mac_send_config_req(gNB_MAC_INST *nrmac, nfapi_nr_config_request_scf_t *cfg);
+void nr_mac_send_config_req(gNB_MAC_INST *nrmac, nfapi_nr_config_request_scf_t *cfg, const int phy_id);
 void nr_mac_configure_sib1(nr_cell_sched_t *cell, const plmn_id_t *plmn, uint64_t cellID, int tac);
 bool nr_mac_configure_other_sib(nr_cell_sched_t *cell, int num_cu_sib, const f1ap_sib_msg_t cu_sib[num_cu_sib]);
 bool nr_mac_add_test_ue(gNB_MAC_INST *nrmac, nr_cell_sched_t *cell, uint32_t rnti, NR_CellGroupConfig_t *CellGroup);

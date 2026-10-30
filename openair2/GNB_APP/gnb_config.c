@@ -2002,7 +2002,9 @@ void RCconfig_nr_macrlc(configmodule_interface_t *cfg)
 
   if (strcmp(*gpd(macrlc_p, macrlc_np, MACRLC_TRANSPORT_S_PREFERENCE)->strptr, "local_L1") == 0) {
     // triggers also PHY initialization in case we have L1 via FAPI
-    nr_mac_send_config_req(nrmac, &cell->config);
+    const int phy_id = 0;
+    nr_cell_sched_t *cell = nr_mac_get_cell_by_phy_id(nrmac, phy_id);
+    nr_mac_send_config_req(nrmac, &cell->config, phy_id);
   } else if (strcmp(*gpd(macrlc_p, macrlc_np, MACRLC_TRANSPORT_S_PREFERENCE)->strptr, "nfapi") == 0) {
     const char *vnf_addr = *gpd(macrlc_p, macrlc_np, MACRLC_LOCAL_S_ADDRESS)->strptr;
     uint16_t p5_port = *gpd(macrlc_p, macrlc_np, MACRLC_LOCAL_S_PORTC)->iptr;

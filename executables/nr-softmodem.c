@@ -404,7 +404,7 @@ int start_L1L2(module_id_t gnb_id, nr_cell_sched_t *cell)
   gNB_MAC_INST *mac = RC.nrmac[gnb_id];
   NR_ServingCellConfigCommon_t *scc = cell->common_channels.ServingCellConfigCommon;
   nr_mac_cell_config_scc(cell, scc, &cell->radio_config);
-  nr_mac_send_config_req(mac, &cell->config);
+  nr_mac_send_config_req(mac, &cell->config, nr_mac_get_cell_phy_id(mac, cell));
 
   NR_BCCH_BCH_Message_t *mib = cell->common_channels.mib;
   const NR_BCCH_DL_SCH_Message_t *sib1 = cell->common_channels.sib1;
