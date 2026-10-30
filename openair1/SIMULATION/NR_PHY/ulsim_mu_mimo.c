@@ -18,13 +18,11 @@
 #include "executables/softmodem-common.h"
 #include "NR_BCCH-BCH-Message.h"
 #include "NR_PHY_INTERFACE/NR_IF_Module.h"
-#include "NR_ReconfigurationWithSync.h"
 #include "NR_ServingCellConfig.h"
 #include "NR_UE-NR-Capability.h"
 #include "PHY/CODING/nrLDPC_coding/nrLDPC_coding_interface.h"
 #include "PHY/INIT/nr_phy_init.h"
 #include "PHY/MODULATION/nr_modulation.h"
-#include "PHY/NR_REFSIG/dmrs_nr.h"
 #include "PHY/NR_REFSIG/ul_ref_seq_nr.h"
 #include "PHY/NR_TRANSPORT/nr_transport_common_proto.h"
 #include "PHY/NR_TRANSPORT/nr_ulsch.h"
@@ -42,7 +40,6 @@
 #include "asn_internal.h"
 #include "common/config/config_load_configmodule.h"
 #include "common/ngran_types.h"
-#include "common/openairinterface5g_limits.h"
 #include "common/ran_context.h"
 #include "common/utils/LOG/log.h"
 #include "common/utils/bits.h"
@@ -73,23 +70,17 @@ const char *__asan_default_options()
   /* don't do leak checking in nr_ulsim, not finished yet */
   return "detect_leaks=0";
 }
-PHY_VARS_gNB *gNB;
-PHY_VARS_NR_UE *UE[MAX_NUM_UE];
+
 RAN_CONTEXT_t RC;
 char *uecap_file;
 int64_t uplink_frequency_offset[MAX_NUM_CCs][4];
 
-// uint8_t nfapi_mode = 0;
 uint64_t downlink_frequency[MAX_NUM_CCs][4];
 THREAD_STRUCT thread_struct;
-nfapi_ue_release_request_body_t release_rntis;
 
 // Fixme: Uniq dirty DU instance, by global var, datamodel need better management
-instance_t DUuniqInstance = 0;
-instance_t CUuniqInstance = 0;
 
 // NTN cellSpecificKoffset-r17, but in slots for DL SCS
-unsigned int NTN_UE_Koffset = 0;
 
 void nr_derive_key_ng_ran_star(uint16_t pci, uint64_t nr_arfcn_dl, const uint8_t key[32], uint8_t *key_ng_ran_star)
 {
@@ -100,18 +91,6 @@ void nr_derive_key_ng_ran_star(uint16_t pci, uint64_t nr_arfcn_dl, const uint8_t
  * however, if E2 agent is defined, the following functions are used in
  * rrc_gNB.c, but defined in RAN functions. In order to avoid pulling this in
  * here as well, only provide a prototype (and abort if they are ever called). */
-void signal_rrc_msg(void /*const nr_rrc_class_e nr_channel, const uint32_t rrc_msg_id, const byte_array_t rrc_ba*/)
-{
-  abort();
-}
-void signal_rrc_state_changed_to(void /* const gNB_RRC_UE_t *rrc_ue_context, const rrc_state_e2sm_rc_e rrc_state */)
-{
-  abort();
-}
-void signal_ue_id(void /* const gNB_RRC_UE_t *rrc_ue_context, const uint16_t class, const uint32_t msg_id */)
-{
-  abort();
-}
 
 extern void fix_scd(NR_ServingCellConfig_t *scd); // forward declaration
 
@@ -132,18 +111,9 @@ void e1_bearer_release_cmd(const e1ap_bearer_release_cmd_t *cmd)
   abort();
 }
 
-int8_t nr_rrc_RA_succeeded(const module_id_t mod_id, const uint8_t gNB_index)
-{
-  return 0;
-}
-
 void nr_derive_key(int alg_type, uint8_t alg_id, const uint8_t key[32], uint8_t out[16])
 {
   (void)alg_type;
-}
-
-void processSlotTX(void *arg)
-{
 }
 
 nrUE_params_t nrUE_params;
@@ -159,6 +129,7 @@ openair0_config_t openair0_cfg_g[MAX_CARDS];
 configmodule_interface_t *uniqCfg = NULL;
 int main(int argc, char *argv[])
 {
+  PHY_VARS_NR_UE *UE[MAX_NUM_UE];
   stop = false;
   __attribute__((unused)) struct sigaction oldaction;
   sigaction(SIGINT, &sigint_action, &oldaction);
@@ -234,7 +205,6 @@ int main(int argc, char *argv[])
     if (c == 1 || c == '-' || c == 'O')
       continue;
 
-    printf("handling optarg %c\n", c);
     switch (c) {
       case 'a':
         start_symbol = atoi(optarg);
@@ -278,7 +248,7 @@ int main(int argc, char *argv[])
             exit(-1);
         }
 
-        if (optarg[1] == ',') {
+        if (strlen(optarg) > 2 && optarg[1] == ',') {
           switch (optarg[2]) {
             case 'l':
               corr_level = CORR_LEVEL_LOW;
@@ -291,10 +261,11 @@ int main(int argc, char *argv[])
               break;
             default:
               printf("Invalid correlation level!\n");
+              exit(-1);
           }
         }
 
-        if (optarg[3] == ',') {
+        if (strlen(optarg) > 3 && optarg[3] == ',') {
           maxDoppler = atoi(&optarg[4]);
           printf("Maximum Doppler Frequency: %.0f Hz\n", maxDoppler);
         }
@@ -457,50 +428,52 @@ int main(int argc, char *argv[])
         printf("NOTE: TRANSFORM PRECODING (SC-FDMA) is ENABLED in UPLINK (0 - ENABLE, 1 - DISABLE) : %d \n", transform_precoding);
         break;
 
-      default:
+      case '?':
+        printf("Unknown option or missing argument: -%c\n", optopt);
       case 'h':
+      default:
         printf("%s -h(elp)\n", argv[0]);
         printf("-a ULSCH starting symbol\n");
+        printf("-A Number of antennas per thread for PUSCH channel estimation\n");
         printf("-b ULSCH number of symbols\n");
         printf("-c RNTI\n");
+        printf("-C Specify the number of threads for the simulation\n");
         printf("-d Introduce delay in terms of number of samples\n");
         printf(
             "-g Channel model configuration. Arguments list: Number of arguments = 3, {Channel model: [A] TDLA30, [B] TDLB100, [C] "
             "TDLC300}, {Correlation: [l] Low, [m] Medium, [h] High}, {Maximum Doppler shift} e.g. -g A,l,10\n");
         printf("-h This message\n");
+        printf("-H Slot number\n");
         printf(
             "-i Change channel estimation technique. Arguments list: Number of arguments=2, Frequency domain {0:Linear "
             "interpolation, 1:PRB based averaging}, Time domain {0:Estimates of last DMRS symbol, 1:Average of DMRS symbols}. e.g. "
             "-i 1,0\n");
+        printf("-I Maximum LDPC decoder iterations\n");
         printf("-j Save signal buffers in binary format.");
         printf("-k 3/4 sampling\n");
         printf("-l PUSCH DMRS length: 1 or 2\n");
+        printf("-L <log level, 0(errors), 1(warning), 2(info) 3(debug) 4 (trace)>\n");
         printf("-m MCS value\n");
+        printf("-M Use limited buffer rate-matching\n");
         printf("-n Number of trials to simulate\n");
+        printf("-N Number of UEs\n");
         printf("-p Use extended prefix mode\n");
+        printf("-P Print ULSCH performances\n");
         printf("-q MCS table\n");
         printf("-r Number of allocated resource blocks for PUSCH\n");
+        printf("-R Maximum number of available resorce blocks (N_RB_DL)\n");
         printf("-s Starting SNR, runs from SNR0 to SNR0 + 10 dB if ending SNR isn't given\n");
         printf("-S Ending SNR, runs from SNR0 to SNR1\n");
         printf("-t Acceptable effective throughput (in percentage)\n");
         printf("-u Set the numerology\n");
-        printf("-v Set the max rounds\n");
-        printf("-w Start PRB for PUSCH\n");
-        printf("-y Number of TX antennas used per UE\n");
-        printf("-z Number of RX antennas used at gNB\n");
-        printf("-A Number of antennas per thread for PUSCH channel estimation\n");
-        printf("-C Specify the number of threads for the simulation\n");
-        printf("-H Slot number\n");
-        printf("-I Maximum LDPC decoder iterations\n");
-        printf("-L <log level, 0(errors), 1(warning), 2(info) 3(debug) 4 (trace)>\n");
-        printf("-M Use limited buffer rate-matching\n");
-        printf("-N Number of UEs\n");
-        printf("-P Print ULSCH performances\n");
-        printf("-R Maximum number of available resorce blocks (N_RB_DL)\n");
         printf(
             "-U Change DMRS Config, arguments list: Number of arguments=4, DMRS Mapping Type{0=A,1=B}, DMRS AddPos{0:3}, DMRS "
             "Config Type{1,2}, Number of CDM groups without data{1,2,3} e.g. -U 0,2,0,1 \n");
+        printf("-v Set the max rounds\n");
+        printf("-w Start PRB for PUSCH\n");
         printf("-W Number of layers for PUSCH per UE\n");
+        printf("-y Number of TX antennas used per UE\n");
+        printf("-z Number of RX antennas used at gNB\n");
         printf("-Z If -Z is used, SC-FDMA or transform precoding is enabled in Uplink \n");
         exit(-1);
         break;
@@ -533,7 +506,7 @@ int main(int argc, char *argv[])
 
   RC.gNB = (PHY_VARS_gNB **)malloc_or_fail(sizeof(PHY_VARS_gNB *));
   RC.gNB[0] = calloc_or_fail(1, sizeof(PHY_VARS_gNB));
-  gNB = RC.gNB[0];
+  PHY_VARS_gNB *gNB = RC.gNB[0];
   gNB->ofdm_offset_divisor = UINT_MAX;
   gNB->num_pusch_symbols_per_thread = 1;
   gNB->dmrs_num_antennas_per_thread = num_antennas_per_thread;
@@ -1050,7 +1023,6 @@ int main(int argc, char *argv[])
           if (transform_precoding == transformPrecoder_enabled) {
             pusch_config_pdu->dfts_ofdm.low_papr_group_number = *scc->physCellId % 30; // U as defined in 38.211 section 6.4.1.1.1.2
             pusch_config_pdu->dfts_ofdm.low_papr_sequence_number = 0; // V as defined in 38.211 section 6.4.1.1.1.2
-            // pusch_config_pdu->pdu_bit_map |= PUSCH_PDU_BITMAP_DFTS_OFDM;
             pusch_config_pdu->num_dmrs_cdm_grps_no_data = num_dmrs_cdm_grps_no_data;
           }
 

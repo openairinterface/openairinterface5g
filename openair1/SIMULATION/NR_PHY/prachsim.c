@@ -2,7 +2,6 @@
  * SPDX-License-Identifier: LicenseRef-CSSL-1.0
  */
 
-
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -21,7 +20,6 @@
 #include "PHY/NR_TRANSPORT/nr_transport_proto.h"
 #include "PHY/NR_UE_TRANSPORT/nr_transport_proto_ue.h"
 #include "nr_unitary_defs.h"
-#include "openair2/RRC/LTE/rrc_vars.h"
 #include "PHY/NR_UE_TRANSPORT/nr_transport_ue.h"
 #include "PHY/TOOLS/tools_defs.h"
 #include "PHY/defs_RU.h"
@@ -33,12 +31,10 @@
 #include "SCHED_NR/phy_frame_config_nr.h"
 #include "SCHED_NR/sched_nr.h"
 #include "SIMULATION/TOOLS/sim.h"
-#include "T.h"
 #include "assertions.h"
 #include "common/config/config_load_configmodule.h"
 #include "common/ran_context.h"
 #include "common/utils/LOG/log.h"
-#include "common/utils/T/T.h"
 #include "common/utils/load_module_shlib.h"
 #include "defs.h"
 #include "executables/nr-uesoftmodem.h"
@@ -47,21 +43,17 @@
 #include "nfapi_interface.h"
 #include "nfapi_nr_interface_scf.h"
 #include "time_meas.h"
+#include "nfapi/open-nFAPI/fapi/inc/nr_fapi_p5_utils.h"
 
 #define NR_PRACH_DEBUG 1
 #define PRACH_WRITE_OUTPUT_DEBUG 1
 
-THREAD_STRUCT thread_struct;
-
-char *uecap_file;
 RAN_CONTEXT_t RC;
-//uint8_t nfapi_mode=0;
-uint64_t downlink_frequency[MAX_NUM_CCs][4];
-int64_t uplink_frequency_offset[MAX_NUM_CCs][4];
-uint32_t N_RB_DL = 106;
 
-NR_IF_Module_t *NR_IF_Module_init(int Mod_id) { return (NULL); }
-nfapi_mode_t nfapi_getmode(void) { return NFAPI_MODE_UNKNOWN; }
+NR_IF_Module_t *NR_IF_Module_init(int Mod_id)
+{
+  return (NULL);
+}
 void init_downlink_harq_status(NR_DL_UE_HARQ_t *dl_harq) { }
 
 /* temporary dummy implem of get_softmodem_optmask, till basic simulators implemented as device */
@@ -70,33 +62,12 @@ softmodem_params_t *get_softmodem_params(void) {
   return &softmodem_params;
 }
 
-void inc_ref_sched_response(int _)
-{
-  LOG_E(PHY, "fatal\n");
-  exit(1);
-}
-void deref_sched_response(int _)
-{
-  LOG_E(PHY, "fatal\n");
-  exit(1);
-}
-
-void nr_derive_key_ng_ran_star(uint16_t pci, uint64_t nr_arfcn_dl, const uint8_t key[32], uint8_t *key_ng_ran_star)
-{
-}
-
-void nr_derive_key(int alg_type, uint8_t alg_id, const uint8_t key[32], uint8_t out[16])
-{
-  (void)alg_type;
-}
-
 nrUE_params_t nrUE_params;
 
 nrUE_params_t *get_nrUE_params(void) {
   return &nrUE_params;
 }
 
-void processSlotTX(void *arg) {}
 configmodule_interface_t *uniqCfg = NULL;
 int main(int argc, char **argv){
 
@@ -114,7 +85,7 @@ int main(int argc, char **argv){
   uint8_t snr1set = 0, ue_speed1set = 0, transmission_mode = 1, n_tx = 1, n_rx = 1, awgn_flag = 0, msg1_frequencystart = 0, num_prach_fd_occasions = 1, prach_format=0;
   uint8_t config_index = 98, prach_sequence_length = 1, restrictedSetConfig = 0;
   uint16_t Nid_cell = 0, preamble_tx = 0, format0, format1;
-  uint32_t tx_lev = 10000, prach_errors = 0; //,tx_lev_dB;
+  uint32_t tx_lev = 10000, prach_errors = 0;
   uint64_t SSB_positions = 0x01;
   uint16_t RA_sfn_index;
   int prachOccasion = 0;
@@ -145,13 +116,11 @@ int main(int argc, char **argv){
     if (c == 1 || c == '-' || c == 'O')
       continue;
 
-    printf("handling optarg %c\n",c);
     switch (c) {
     case 'a':
       printf("Running AWGN simulation\n");
       awgn_flag = 1;
       /* ntrials not used later, no need to set */
-      //ntrials=1;
       break;
 
     case 'c':
@@ -343,28 +312,32 @@ int main(int argc, char **argv){
       
       break;
 
-    default:
+    case '?':
+      printf("Unknown option or missing argument: -%c\n", optopt);
     case 'h':
-      printf("%s -h(elp) -a(wgn on) -p(extended_prefix) -N cell_id -f output_filename -F input_filename -g channel_model -n n_frames -s snr0 -S snr1 -x transmission_mode -y TXant -z RXant -i Intefrence0 -j Interference1 -A interpolation_file -C(alibration offset dB) -N CellId\n",
-             argv[0]);
-      printf("-h This message\n");
+    default:
+      printf(
+          "%s -h(elp) -a(wgn on) -p(extended_prefix) -N cell_id -f output_filename -F input_filename -g channel_model -n n_frames "
+          "-s snr0 -S snr1 -x transmission_mode -y TXant -z RXant -i Intefrence0 -j Interference1 -A interpolation_file "
+          "-C(alibration offset dB) -N CellId\n",
+          argv[0]);
       printf("-a Use AWGN channel and not multipath\n");
-      printf("-n Number of frames to simulate\n");
-      printf("-s Starting SNR, runs from SNR0 to SNR0 + 5 dB.  If n_frames is 1 then just SNR is simulated\n");
-      printf("-S Ending SNR, runs from SNR0 to SNR1\n");
+      printf("-d Channel delay \n");
+      printf("-F Input filename (.txt format) for RX conformance testing\n");
       printf("-g [A,B,C,D,E,F,G,I,N] Use 3GPP SCM (A,B,C,D) or 36-101 (E-EPA,F-EVA,G-ETU) or Rayleigh1 (I) or Rayleigh1_800 (N) models (ignores delay spread and Ricean factor)\n");
-      printf("-z Number of RX antennas used in gNB\n");
+      printf("-h This message\n");
+      printf("-H Run with High-Speed Flag enabled \n");
+      printf("-L rootSequenceIndex (0-837)\n");
+      printf("-n Number of frames to simulate\n");
       printf("-N Nid_cell\n");
       printf("-O oversampling factor (1,2,4,8,16)\n");
-      //    printf("-f PRACH format (0=1,1=2,2=3,3=4)\n");
-      printf("-d Channel delay \n");
+      printf("-R Number of PRB (6,15,25,50,75,100)\n");
+      printf("-s Starting SNR, runs from SNR0 to SNR0 + 5 dB.  If n_frames is 1 then just SNR is simulated\n");
+      printf("-S Ending SNR, runs from SNR0 to SNR1\n");
       printf("-v Starting UE velocity in km/h, runs from 'v' to 'v+50km/h'. If n_frames is 1 just 'v' is simulated \n");
       printf("-V Ending UE velocity in km/h, runs from 'v' to 'V'");
-      printf("-L rootSequenceIndex (0-837)\n");
+      printf("-z Number of RX antennas used in gNB\n");
       printf("-Z NCS_config (ZeroCorrelationZone) (0-15)\n");
-      printf("-H Run with High-Speed Flag enabled \n");
-      printf("-R Number of PRB (6,15,25,50,75,100)\n");
-      printf("-F Input filename (.txt format) for RX conformance testing\n");
       exit (-1);
       break;
     }
@@ -382,7 +355,7 @@ int main(int argc, char **argv){
   RC.ru = malloc(sizeof(RU_t *));
   RC.ru[0] = calloc_or_fail(1,sizeof(RU_t ));
   RC.nb_RU = 1;
-  PHY_VARS_gNB * gNB = RC.gNB[0];
+  PHY_VARS_gNB *gNB = RC.gNB[0];
   RU_t *ru = RC.ru[0];
   frame_parms  = &gNB->frame_parms;
   prach_config = &gNB->gNB_config.prach_config;
@@ -408,7 +381,6 @@ int main(int argc, char **argv){
   uint16_t N_ZC = prach_sequence_length == 0 ? 839 : 139;
 
   printf("Config_index %d, prach_sequence_length %d\n",config_index,prach_sequence_length);
-
 
   printf("FFT Size %d, Extended Prefix %d, Samples per subframe %d, Frame type %s, Frequency Range %s\n",
          NUMBER_OF_OFDM_CARRIERS,
@@ -438,7 +410,8 @@ int main(int argc, char **argv){
   }
 
   gNB->gNB_config.prach_config.num_prach_fd_occasions.value = num_prach_fd_occasions;
-  gNB->gNB_config.prach_config.num_prach_fd_occasions_list = (nfapi_nr_num_prach_fd_occasions_t *) malloc(num_prach_fd_occasions*sizeof(nfapi_nr_num_prach_fd_occasions_t));
+  gNB->gNB_config.prach_config.num_prach_fd_occasions_list =
+      calloc_or_fail(num_prach_fd_occasions, sizeof(nfapi_nr_num_prach_fd_occasions_t));
 
   gNB->proc.slot_rx = slot;
   frequency_range_t freq_range = get_freq_range_from_arfcn(absoluteFrequencyPointA);
@@ -631,7 +604,6 @@ int main(int argc, char **argv){
   generate_nr_prach(UE, 0, frame, slot, AMP, tx);
 
   /* tx_lev_dB not used later, no need to set */
-  //tx_lev_dB = dB_fixed(tx_lev);
 
 #ifdef NR_PRACH_DEBUG
   LOG_M("txsig0.m", "txs0", &txdata[0][subframe*frame_parms->samples_per_subframe], frame_parms->samples_per_subframe, 1, 1);
@@ -754,9 +726,6 @@ int main(int argc, char **argv){
                 prach_config->num_prach_fd_occasions_list[fd_occasion].num_root_sequences.value);
         rx_prach_out_t out = rx_nr_prach(in, prachOccasion);
 
-        //        printf(" preamble_energy %d preamble_rx %d preamble_tx %d \n", out.max_preamble_energy, out.max_preamble,
-        //        preamble_tx);
-
         if (out.max_preamble != preamble_tx)
           prach_errors++;
         else
@@ -802,12 +771,7 @@ int main(int argc, char **argv){
   free(RC.ru[0]);
   free(RC.ru);
   phy_free_nr_gNB(gNB);
-  // allocated in set_tdd_config_nr()
-  int nb_slots_to_set = (1<<mu)*NR_NUMBER_OF_SUBFRAMES_PER_FRAME;
-  free(gNB->gNB_config.prach_config.num_prach_fd_occasions_list);
-  for (int i = 0; i < nb_slots_to_set; ++i)
-    free(gNB->gNB_config.tdd_table.max_tdd_periodicity_list[i].max_num_of_symbol_per_slot_list);
-  free(gNB->gNB_config.tdd_table.max_tdd_periodicity_list);
+  free_config_request(&gNB->gNB_config);
   free(RC.gNB[0]);
   free(RC.gNB);
 
