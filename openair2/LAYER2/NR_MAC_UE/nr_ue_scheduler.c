@@ -634,7 +634,8 @@ int nr_config_pusch_pdu(NR_UE_MAC_INST_t *mac,
     if (tp_enabled) {
 
       uint32_t n_RS_Id = 0;
-      if (NR_DMRS_ulconfig->transformPrecodingEnabled &&
+      if (NR_DMRS_ulconfig &&
+          NR_DMRS_ulconfig->transformPrecodingEnabled &&
           NR_DMRS_ulconfig->transformPrecodingEnabled->nPUSCH_Identity)
         n_RS_Id = *NR_DMRS_ulconfig->transformPrecodingEnabled->nPUSCH_Identity;
       else
