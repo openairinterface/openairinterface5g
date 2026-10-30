@@ -1260,8 +1260,7 @@ bool nr_update_sib19(const gnb_sat_position_update_t *sat_position)
 
   NR_SCHED_LOCK(&nrmac->sched_lock);
   bool updated = false;
-  for (int i = 0; i < NR_MAX_CELLS; i++) {
-    nr_cell_sched_t *cell = &nrmac->cells[i];
+  FOR_EACH_SEQ_ARR(nr_cell_sched_t *, cell, &nrmac->cells) {
     NR_ServingCellConfigCommon_t *scc = cell->common_channels.ServingCellConfigCommon;
     if (!scc || !scc->ext2 || !scc->ext2->ntn_Config_r17)
       continue;
