@@ -863,9 +863,11 @@ static void config_common(nr_cell_sched_t *cell, const nr_mac_config_t *config, 
     int sc_offset = (frequency_range == FR1) ?
                     cfg->ssb_table.ssb_subcarrier_offset.value >> scs :
                     cfg->ssb_table.ssb_subcarrier_offset.value;
+    const int pci = *cell->common_channels.ServingCellConfigCommon->physCellId;
     if (cfg->carrier_config.dl_frequency.value != cfg->carrier_config.uplink_frequency.value) {
       LOG_I(NR_MAC,
-            "Command line parameters for OAI UE: -C %lu --CO %ld -r %d --numerology %d --band %ld --ssb %d %s\n",
+            "Cell PCI %d command line parameters for OAI UE: -C %lu --CO %ld -r %d --numerology %d --band %ld --ssb %d %s\n",
+            pci,
             carr_dl,
             carr_ul - carr_dl,
             bw,
@@ -875,7 +877,8 @@ static void config_common(nr_cell_sched_t *cell, const nr_mac_config_t *config, 
             get_softmodem_params()->threequarter_fs ? "-E" : "");
     } else {
       LOG_I(NR_MAC,
-            "Command line parameters for OAI UE: -C %lu -r %d --numerology %d --band %ld --ssb %d %s\n",
+            "Cell PCI %d command line parameters for OAI UE: -C %lu -r %d --numerology %d --band %ld --ssb %d %s\n",
+            pci,
             carr_dl,
             bw,
             mu,
