@@ -1857,7 +1857,6 @@ static void config_nr_mac_update_cell(nr_cell_sched_t *cell,
 
 void RCconfig_nr_macrlc(configmodule_interface_t *cfg)
 {
-  nr_cell_sched_t *cell = NULL;
 
   GET_PARAMS(GNBSParams, GNBSPARAMS_DESC, NULL);
   GET_PARAMS_LIST(GNBParamList, GNBParams, GNBPARAMS_DESC, GNB_CONFIG_STRING_GNB_LIST, NULL, GNBPARAMS_CHECK);
@@ -1885,8 +1884,8 @@ void RCconfig_nr_macrlc(configmodule_interface_t *cfg)
   config_rlc(cfg, &default_rlc_config);
 
   ngran_node_t node_type = get_node_type();
-  gNB_MAC_INST *nrmac = mac_top_init_gNB(node_type, &default_rlc_config, &cell);
-
+  gNB_MAC_INST *nrmac = mac_top_init_gNB(node_type, &default_rlc_config);
+  nr_cell_sched_t *cell = NULL;
   uint64_t gnb_du_id = 0;
   uint32_t gnb_id = 0;
   char *name = NULL;
@@ -1910,6 +1909,7 @@ void RCconfig_nr_macrlc(configmodule_interface_t *cfg)
   snprintf(aprefix, sizeof(aprefix), "%s.[%d].%s", GNB_CONFIG_STRING_GNB_LIST, idx, GNB_CONFIG_STRING_TIMERS_CONFIG);
   GET_PARAMS(Timers_Params, GNB_TIMERS_PARAMS_DESC, aprefix);
   NR_ServingCellConfigCommon_t *scc = get_scc_config(idx);
+  cell = nr_mac_cell_alloc(nrmac, scc);
   const int bw = scc->downlinkConfigCommon->frequencyInfoDL->scs_SpecificCarrierList.list.array[0]->carrierBandwidth;
 
   const paramdef_t *macrlc_p = MacRLC_ParamList.paramarray[idx];

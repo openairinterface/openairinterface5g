@@ -246,7 +246,7 @@ static void mac_rrc_init(gNB_MAC_INST *mac, ngran_node_t node_type)
   }
 }
 
-gNB_MAC_INST *mac_top_init_gNB(ngran_node_t node_type, const nr_rlc_configuration_t *default_rlc_config, nr_cell_sched_t **cell_ptr)
+gNB_MAC_INST *mac_top_init_gNB(ngran_node_t node_type, const nr_rlc_configuration_t *default_rlc_config)
 {
   AssertFatal(RC.nb_nr_macrlc_inst == 1, "what is the point of calling %s() if you don't need exactly one MAC?\n", __func__);
 
@@ -255,26 +255,12 @@ gNB_MAC_INST *mac_top_init_gNB(ngran_node_t node_type, const nr_rlc_configuratio
   gNB_MAC_INST *nrmac = RC.nrmac[0];
 
   seq_arr_init(&nrmac->cells, sizeof(nr_cell_sched_t));
-  // TODO: handle multiple cells later, for now there's only one cell ever initialized and used
-  // the current work only adds the structure and updates the references to use the cell pointer
-  nr_cell_sched_t new_cell = {0};
-  seq_arr_push_back(&nrmac->cells, &new_cell, sizeof(nr_cell_sched_t));
-  *cell_ptr = nr_mac_get_cell_by_idx(nrmac, 0);
-  nr_cell_sched_t *cell = *cell_ptr;
-  nr_mac_pcch_queue_init(&cell->common_channels);
   nrmac->Mod_id = 0;
 
   nrmac->tag = (NR_TAG_t*)malloc(sizeof(NR_TAG_t));
   memset((void*)nrmac->tag,0,sizeof(NR_TAG_t));
-  for(int n = 0; n < MAX_NUM_OF_SSB; n++)
-    cell->sib1_pdsch[n].time_domain_allocation = -1;
 
   nrmac->rlc_config = *default_rlc_config;
-
-  cell->num_scheduled_prach_rx = 0;
-
-  cell->cset0_bwp_start = 0;
-  cell->cset0_bwp_size = 0;
 
   nrmac->print_ue_stats = true;
 
