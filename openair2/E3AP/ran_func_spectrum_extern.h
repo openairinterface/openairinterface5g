@@ -14,7 +14,7 @@
 #include "openair2/E3AP/ran_func_spectrum_types.h"
 
 /* Bind sensing to a cell once its frame structure is known (end of
- * nr_mac_config_scc()). Reads the sensing keys of the E3Configuration section
+ * nr_mac_cell_config_scc()). Reads the sensing keys of the E3Configuration section
  * and enables sensing for the cell iff the operator reserved slots. A no-op
  * when nothing is configured. */
 void e3_spectrum_mac_attach_cell(nr_cell_sched_t *cell);

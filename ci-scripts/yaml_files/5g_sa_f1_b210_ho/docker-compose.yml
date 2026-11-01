@@ -90,3 +90,30 @@ services:
             interval: 10s
             timeout: 5s
             retries: 5
+
+    # Added so that DU 1(target DU) is unreachable to UE to trigger T304 expiry in the UE.
+    oai-du1-rfsim:
+        image: ${REGISTRY-oaisoftwarealliance/}${GNB_IMG:-oai-gnb}:${TAG:-develop}
+        container_name: oai-du1-rfsim
+        cap_drop:
+            - ALL
+        cap_add:
+            - SYS_NICE
+            - IPC_LOCK
+        ulimits:
+          core: -1 # for core dumps
+        environment:
+            USE_ADDITIONAL_OPTIONS: --rfsim --rfsimulator.[0].serveraddr server
+                                    --telnetsrv --telnetsrv.listenport 9091 --telnetsrv.shrmod ci
+                                    --log_config.global_log_options level,nocolor,utc_time,line_num,function
+        volumes:
+            - ../../conf_files/gnb-du.sa.band78.51prb.usrpb210.ho-pci1.conf:/opt/oai-gnb/etc/gnb.conf
+        network_mode: "host"
+        profiles:
+            - manual # needs manual start, only for CI testing
+        healthcheck:
+            # pgrep does NOT work
+            test: /bin/bash -c "ps aux | grep -v grep | grep -c softmodem"
+            interval: 10s
+            timeout: 5s
+            retries: 5

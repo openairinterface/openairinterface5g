@@ -160,7 +160,7 @@ rrc_eNB_S1AP_get_ue_ids(
             *result2 = *result;
             result2->eNB_ue_s1ap_id = eNB_ue_s1ap_id;
             result->eNB_ue_s1ap_id  = eNB_ue_s1ap_id;
-            h_rc = hashtable_insert(rrc_instance_pP->s1ap_id2_s1ap_ids, (hash_key_t)eNB_ue_s1ap_id, result2);
+            h_rc = hashtable_insert(rrc_instance_pP->s1ap_id2_s1ap_ids, (hash_key_t)eNB_ue_s1ap_id, result2, free);
 
             if (h_rc != HASH_TABLE_OK) {
               LOG_E(S1AP, "[eNB %ld] Error while hashtable_insert in s1ap_id2_s1ap_ids eNB_ue_s1ap_id %"PRIu32"\n",
@@ -271,7 +271,7 @@ rrc_eNB_S1AP_remove_ue_ids(
   const uint32_t eNB_ue_s1ap_id = ue_ids_pP->eNB_ue_s1ap_id;
 
   if (eNB_ue_s1ap_id > 0) {
-    h_rc = hashtable_remove(rrc_instance_pP->s1ap_id2_s1ap_ids, (hash_key_t)eNB_ue_s1ap_id);
+    h_rc = hashtable_remove(rrc_instance_pP->s1ap_id2_s1ap_ids, (hash_key_t)eNB_ue_s1ap_id, free);
 
     if (h_rc != HASH_TABLE_OK) {
       LOG_W(RRC, "S1AP Did not find entry in hashtable s1ap_id2_s1ap_ids for eNB_ue_s1ap_id %u\n", eNB_ue_s1ap_id);
@@ -281,7 +281,7 @@ rrc_eNB_S1AP_remove_ue_ids(
   }
 
   if (ue_initial_id != UE_INITIAL_ID_INVALID) {
-    h_rc = hashtable_remove(rrc_instance_pP->initial_id2_s1ap_ids, (hash_key_t)ue_initial_id);
+    h_rc = hashtable_remove(rrc_instance_pP->initial_id2_s1ap_ids, (hash_key_t)ue_initial_id, free);
 
     if (h_rc != HASH_TABLE_OK) {
       LOG_W(RRC, "S1AP Did not find entry in hashtable initial_id2_s1ap_ids for ue_initial_id %u\n", ue_initial_id);
@@ -667,7 +667,7 @@ rrc_eNB_send_S1AP_NAS_FIRST_REQ(
     rrc_ue_s1ap_ids_p->ue_rnti = ctxt_pP->rntiMaybeUEid;
     h_rc = hashtable_insert(RC.rrc[ctxt_pP->module_id]->initial_id2_s1ap_ids,
                             (hash_key_t)ue_context_pP->ue_context.ue_initial_id,
-                            rrc_ue_s1ap_ids_p);
+                            rrc_ue_s1ap_ids_p, free);
 
     if (h_rc != HASH_TABLE_OK) {
       LOG_E(S1AP, "[eNB %d] Error while hashtable_insert in initial_id2_s1ap_ids ue_initial_id %u\n",
@@ -1839,7 +1839,7 @@ int rrc_eNB_send_PATH_SWITCH_REQ(const protocol_ctxt_t *const ctxt_pP,
   rrc_ue_s1ap_ids_p->ue_rnti = ctxt_pP->rntiMaybeUEid;
   h_rc = hashtable_insert(RC.rrc[ctxt_pP->module_id]->initial_id2_s1ap_ids,
                           (hash_key_t)ue_context_pP->ue_context.ue_initial_id,
-                          rrc_ue_s1ap_ids_p);
+                          rrc_ue_s1ap_ids_p, free);
 
   if (h_rc != HASH_TABLE_OK) {
     LOG_E(S1AP, "[eNB %d] Error while hashtable_insert in initial_id2_s1ap_ids ue_initial_id %u\n",

@@ -5442,8 +5442,10 @@ char openair_rrc_eNB_configuration(
   //    for (j = 0; j < (MAX_MOBILES_PER_ENB + 1); j++) {
   //        RC.rrc[enb_mod_idP]->Srb2[j].Active = 0;
   //    }
-  RC.rrc[ctxt.module_id]->initial_id2_s1ap_ids = hashtable_create (MAX_MOBILES_PER_ENB * 2, NULL, NULL);
-  RC.rrc[ctxt.module_id]->s1ap_id2_s1ap_ids    = hashtable_create (MAX_MOBILES_PER_ENB * 2, NULL, NULL);
+  RC.rrc[ctxt.module_id]->initial_id2_s1ap_ids = malloc_or_fail(sizeof(*RC.rrc[ctxt.module_id]->initial_id2_s1ap_ids));
+  *RC.rrc[ctxt.module_id]->initial_id2_s1ap_ids = hashtable_create (MAX_MOBILES_PER_ENB * 2, NULL);
+  RC.rrc[ctxt.module_id]->s1ap_id2_s1ap_ids = malloc_or_fail(sizeof(*RC.rrc[ctxt.module_id]->s1ap_id2_s1ap_ids));
+  *RC.rrc[ctxt.module_id]->s1ap_id2_s1ap_ids    = hashtable_create (MAX_MOBILES_PER_ENB * 2, NULL);
   /// System Information INIT
   LOG_I(RRC, PROTOCOL_RRC_CTXT_FMT" Checking release \n",
         PROTOCOL_RRC_CTXT_ARGS(&ctxt));

@@ -61,7 +61,8 @@ ForEachMacros:
   - Q_FOREACH
   - BOOST_FOREACH
   - RB_FOREACH
-  - UE_iterator
+  - FOR_EACH_RA_UE
+  - FOR_EACH_CONNECTED_UE
   - FOR_EACH_SEQ_ARR
 IncludeBlocks:   Preserve
 IncludeCategories:

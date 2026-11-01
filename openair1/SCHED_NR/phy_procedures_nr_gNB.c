@@ -1075,33 +1075,36 @@ static void handle_pucch(PHY_VARS_gNB *gNB, c16_t **rxdataF, const NR_gNB_PUCCH_
 }
 
 #ifdef DEBUG_RXDATA
+/* writes the RX samples of the slot of the first 20 PUSCH, then exits. Per PUSCH, as int32 words: rnti, rb_size,
+   rb_start, nr_of_symbols, start_symbol_index, mcs_index, rv_index, harq_process_id as 8 int16, the samples of the
+   slot, 1000 zeros */
 static void dump_pusch_rx_data(PHY_VARS_gNB *gNB, const nfapi_nr_pusch_pdu_t *pdu, uint8_t slot, int ue_idx)
 {
+  static FILE *f = NULL;
+  static int nb_dumped = 0;
   NR_DL_FRAME_PARMS *frame_parms = &gNB->frame_parms;
   RU_t *ru = gNB->RU_list[0];
   int slot_offset = get_samples_slot_timestamp(frame_parms, slot);
   slot_offset -= ru->N_TA_offset;
-  int32_t sample_offset = gNB->common_vars.debugBuff_sample_offset;
-  int16_t *buf = (int16_t *)&gNB->common_vars.debugBuff[sample_offset];
-  buf[0] = (int16_t)pdu->rnti;
-  buf[1] = (int16_t)pdu->rb_size;
-  buf[2] = (int16_t)pdu->rb_start;
-  buf[3] = (int16_t)pdu->nr_of_symbols;
-  buf[4] = (int16_t)pdu->start_symbol_index;
-  buf[5] = (int16_t)pdu->mcs_index;
-  buf[6] = (int16_t)pdu->pusch_data.rv_index;
-  buf[7] = (int16_t)pdu->pusch_data.harq_process_id;
-  memcpy(&gNB->common_vars.debugBuff[gNB->common_vars.debugBuff_sample_offset + 4],
-         &ru->common.rxdata[0][slot_offset],
-         get_samples_per_slot(slot, frame_parms) * sizeof(int32_t));
-  gNB->common_vars.debugBuff_sample_offset += (get_samples_per_slot(slot, frame_parms) + 1000 + 4);
-  if (gNB->common_vars.debugBuff_sample_offset > ((get_samples_per_slot(slot, frame_parms) + 1000 + 2) * 20)) {
+  if (!f) {
     char fname[64];
     snprintf(fname, sizeof(fname), "rxdata_buff_ue%d.raw", ue_idx);
-    FILE *f = fopen(fname, "w");
-    if (f == NULL)
-      exit(1);
-    fwrite((int16_t *)gNB->common_vars.debugBuff, 2, (get_samples_per_slot(slot, frame_parms) + 1000 + 4) * 20 * 2, f);
+    f = fopen(fname, "w");
+    AssertFatal(f, "cannot open %s\n", fname);
+  }
+  const int16_t header[8] = {pdu->rnti,
+                             pdu->rb_size,
+                             pdu->rb_start,
+                             pdu->nr_of_symbols,
+                             pdu->start_symbol_index,
+                             pdu->mcs_index,
+                             pdu->pusch_data.rv_index,
+                             pdu->pusch_data.harq_process_id};
+  static const int32_t zeros[1000] = {0};
+  fwrite(header, sizeof(header), 1, f);
+  fwrite(&ru->common.rxdata[0][slot_offset], sizeof(int32_t), get_samples_per_slot(slot, frame_parms), f);
+  fwrite(zeros, sizeof(zeros), 1, f);
+  if (++nb_dumped == 20) {
     fclose(f);
     exit(-1);
   }

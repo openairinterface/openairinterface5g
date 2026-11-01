@@ -18,6 +18,8 @@
 // #define UL_HARQ_PRINT
 // #define ENABLE_MAC_PAYLOAD_DEBUG 1
 
+#define RNTI_PHY_TEST 0x1234
+
 /* This function checks whether the given Dl/UL slot is set
    in the input bitmap (per period), which is a mask indicating in which
    slot to transmit (among those available in the TDD configuration)
@@ -51,9 +53,9 @@ void nr_preprocessor_phytest(gNB_MAC_INST *mac, nr_cell_sched_t *cell, post_proc
   int slot_period = slot % cell->frame_structure.numb_slots_period;
   if (!is_xlsch_in_slot(dlsch_slot_bitmap, dlsch_slot_modval, slot_period))
     return;
-  NR_UE_info_t *UE = mac->UE_info.connected_ue_list[0];
+  NR_UE_info_t *UE = find_connected_nr_ue(&mac->UE_info, RNTI_PHY_TEST);
   if (UE == NULL)
-    return;
+   return;
   NR_ServingCellConfigCommon_t *scc = cell->common_channels.ServingCellConfigCommon;
   NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
   NR_UE_DL_BWP_t *dl_bwp = &UE->current_DL_BWP;
@@ -221,10 +223,7 @@ void nr_ul_preprocessor_phytest(gNB_MAC_INST *nr_mac, nr_cell_sched_t *cell, pos
   /* already mutex protected: held in gNB_dlsch_ulsch_scheduler() */
   NR_COMMON_channels_t *cc = &cell->common_channels;
   NR_ServingCellConfigCommon_t *scc = cc->ServingCellConfigCommon;
-  NR_UE_info_t *UE = nr_mac->UE_info.connected_ue_list[0];
-
-  AssertFatal(nr_mac->UE_info.connected_ue_list[1] == NULL,
-              "cannot handle more than one UE\n");
+  NR_UE_info_t *UE = find_connected_nr_ue(&nr_mac->UE_info, RNTI_PHY_TEST);
   if (UE == NULL)
     return;
 

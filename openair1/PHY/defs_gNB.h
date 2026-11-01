@@ -228,8 +228,6 @@ typedef struct {
   uint16_t **beam_id;
   int num_beams_period;
   bool analog_bf;
-  int32_t *debugBuff;
-  int32_t debugBuff_sample_offset;
 } NR_gNB_COMMON;
 
 typedef struct {

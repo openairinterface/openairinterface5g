@@ -15,6 +15,7 @@
 #include "e1ap_interface_management.h"
 #include "e1ap_lib_includes.h"
 #include "common/utils/assertions.h"
+#include "openair1/SIMULATION/TOOLS/sim.h"
 
 void exit_function(const char *file, const char *function, const int line, const char *s, const int assert)
 {
@@ -209,6 +210,9 @@ static void test_bearer_context_setup_request(void)
   orig.pduSession[1].DRBnGRanList[0].qosFlows[0] = qos2;
   memset(orig.secInfo.encryptionKey, 0xAB, sizeof(orig.secInfo.encryptionKey));
   memset(orig.secInfo.integrityProtectionKey, 0xCD, sizeof(orig.secInfo.integrityProtectionKey));
+  // keys are binary: a 0x00 byte must survive the copy and be compared
+  orig.secInfo.encryptionKey[3] = 0x00;
+  orig.secInfo.integrityProtectionKey[7] = 0x00;
   // E1AP encode the original message
   E1AP_E1AP_PDU_t *enc = encode_E1_bearer_context_setup_request(&orig);
   // E1AP decode the encoded message
@@ -498,6 +502,8 @@ static void test_e1_cuup_setup_failure(void)
                             .cause.type = E1AP_CAUSE_RADIO_NETWORK,
                             .cause.value = E1AP_RADIO_CAUSE_NORMAL_RELEASE,
                             .crit_diag = malloc_or_fail(sizeof(criticality_diagnostics_t))};
+  orig.time_to_wait = malloc_or_fail(sizeof(*orig.time_to_wait));
+  *orig.time_to_wait = E1AP_TimeToWait_v10s;
   orig.crit_diag->procedure_code = malloc_or_fail(sizeof(*orig.crit_diag->procedure_code));
   *orig.crit_diag->procedure_code = 99;
   orig.crit_diag->triggering_msg = malloc_or_fail(sizeof(*orig.crit_diag->triggering_msg));
@@ -625,6 +631,8 @@ static void test_bearer_context_modification_request(void)
   e1ap_bearer_mod_req_t orig = {
       .gNB_cu_cp_ue_id = 0x1234,
       .gNB_cu_up_ue_id = 0x5678,
+      .ueDlAggMaxBitRate = malloc_or_fail(sizeof(*orig.ueDlAggMaxBitRate)),
+      .ueDlMaxIPBitRate = malloc_or_fail(sizeof(*orig.ueDlMaxIPBitRate)),
       .bearerContextStatus = malloc_or_fail(sizeof(*orig.bearerContextStatus)),
       .inactivityTimer = malloc_or_fail(sizeof(*orig.inactivityTimer)),
       .numPDUSessions = 2,
@@ -642,6 +650,9 @@ static void test_bearer_context_modification_request(void)
   orig.pduSessionRem[1] = pdu_session_to_remove_2;
   *orig.bearerContextStatus = BEARER_SUSPEND;
   *orig.inactivityTimer = 1000;
+
+  *orig.ueDlAggMaxBitRate = uniformrandom() * (NR_MAX_BIT_RATE + 1);
+  *orig.ueDlMaxIPBitRate = uniformrandom() * (NR_MAX_BIT_RATE + 1);
 
   // Encode the original message
   E1AP_E1AP_PDU_t *enc = encode_E1_bearer_context_mod_request(&orig);
@@ -998,6 +1009,7 @@ static void test_bearer_context_modification_confirm(void)
 
 int main()
 {
+  randominit();
   // E1 Bearer Context Setup
   test_bearer_context_setup_request();
   test_bearer_context_setup_response();

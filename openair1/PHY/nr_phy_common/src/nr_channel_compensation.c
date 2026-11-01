@@ -147,6 +147,7 @@ void nr_channel_compensation(uint32_t buffer_length,
     QAM_ampc_128 = simde_mm_set1_epi16(QAM256_n3);
   }
 
+  const simde__m128i cpe128 = simde_mm_set_epi16(cpe.i, cpe.r, cpe.i, cpe.r, cpe.i, cpe.r, cpe.i, cpe.r);
   for (int aatx = 0; aatx < nb_layers; aatx++) {
     simde__m128i *rxComp_128 = (simde__m128i *)&rxComp[aatx][symbol * buffer_length];
     simde__m128i *ch_maga_128 = (simde__m128i *)ch_maga[aatx];
@@ -159,7 +160,8 @@ void nr_channel_compensation(uint32_t buffer_length,
       simde__m128i *chF_128 = (simde__m128i *)chFext[aatx][0];
 
       for (uint32_t i = 0; i < buffer_length >> 2; i++) {
-        rxComp_128[i] = oai_mm_cpx_mult_conj(chF_128[i], rxF_128[i], output_shift);
+        const simde__m128i chF_cpe128 = oai_mm_cpx_mult(chF_128[i], cpe128, 15);
+        rxComp_128[i] = oai_mm_cpx_mult_conj(chF_cpe128, rxF_128[i], output_shift);
 
         if (mod_order > 2) {
           simde__m128i mag = oai_mm_smadd(chF_128[i], chF_128[i], output_shift);
@@ -191,7 +193,8 @@ void nr_channel_compensation(uint32_t buffer_length,
       simde__m128i *chF_128 = (simde__m128i *)chFext[aatx][aarx];
 
       for (uint32_t i = 0; i < buffer_length >> 2; i++) {
-        simde__m128i comp = oai_mm_cpx_mult_conj(chF_128[i], rxF_128[i], output_shift);
+        const simde__m128i chF_cpe128 = oai_mm_cpx_mult(chF_128[i], cpe128, 15);
+        simde__m128i comp = oai_mm_cpx_mult_conj(chF_cpe128, rxF_128[i], output_shift);
         rxComp_128[i] = simde_mm_add_epi16(rxComp_128[i], comp);
 
         if (mod_order > 2) {

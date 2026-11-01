@@ -1046,17 +1046,19 @@ void nr_ue_aperiodic_srs_scheduling(NR_UE_MAC_INST_t *mac, long resource_trigger
   }
 
   int scs = mac->current_UL_BWP->scs;
-  AssertFatal(slot_offset > GET_DURATION_RX_TO_TX(mac, scs),
+  const int ntn_ue_koffset = GET_NTN_UE_K_OFFSET(&mac->phy_config.config_req.ntn_config, scs);
+  const int effective_slot_offset = slot_offset + ntn_ue_koffset;
+  AssertFatal(effective_slot_offset > GET_DURATION_RX_TO_TX(mac, scs),
               "Slot offset between DCI and aperiodic SRS (%d) needs to be higher than DURATION_RX_TO_TX (%ld)\n",
-              slot_offset,
+              effective_slot_offset,
               GET_DURATION_RX_TO_TX(mac, scs));
   int n_slots_frame = mac->frame_structure.numb_slots_frame;
-  int sched_slot = (slot + slot_offset) % n_slots_frame;
+  int sched_slot = (slot + effective_slot_offset) % n_slots_frame;
   if (!is_ul_slot(sched_slot, &mac->frame_structure)) {
     LOG_E(NR_MAC, "Slot for scheduling aperiodic SRS %d is not an UL slot\n", sched_slot);
     return;
   }
-  int add_frame = (slot + slot_offset) / n_slots_frame;
+  int add_frame = (slot + effective_slot_offset) / n_slots_frame;
   int sched_frame = (frame + add_frame) % MAX_FRAME_NUMBER;
   fapi_nr_ul_config_request_pdu_t *pdu = lockGet_ul_config(mac, sched_frame, sched_slot, FAPI_NR_UL_CONFIG_TYPE_SRS);
   if (!pdu)
@@ -1240,8 +1242,9 @@ static void nr_schedule_csirs_reception(NR_UE_MAC_INST_t *mac, int frame, int sl
 
   for (int id = 0; id < csi_measconfig->nzp_CSI_RS_ResourceToAddModList->list.count; id++) {
     NR_NZP_CSI_RS_Resource_t *nzpcsi = csi_measconfig->nzp_CSI_RS_ResourceToAddModList->list.array[id];
-    int period, offset;
-    csi_period_offset(NULL, nzpcsi->periodicityAndOffset, &period, &offset);
+    int period = 0, offset = 0;
+    if (!csi_period_offset(NULL, nzpcsi->periodicityAndOffset, &period, &offset) || period <= 0)
+      continue;
     if (!is_periodic_occasion(frame, slot, mac->frame_structure.numb_slots_frame, period, offset))
       continue;
     bool is_last_res = false;

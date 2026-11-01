@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: LicenseRef-CSSL-1.0
 
 add_library(noise_device noise_device.c)
-target_link_libraries(noise_device PRIVATE log_headers SIMU)
+target_link_libraries(noise_device PRIVATE log_headers m)
 target_include_directories(noise_device PUBLIC ./)
 add_library(channel_pipeline channel_pipeline.c)
 if (ENABLE_CHANNEL_SIM_CUDA)

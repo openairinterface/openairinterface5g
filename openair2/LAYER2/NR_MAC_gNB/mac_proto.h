@@ -29,24 +29,19 @@ int get_full_ul_slots_per_period(const frame_structure_t *fs);
 int get_full_dl_slots_per_period(const frame_structure_t *fs);
 int get_ul_slot_offset(const frame_structure_t *fs, int idx, bool count_mixed);
 int get_ul_period_idx_from_abs_slot(const frame_structure_t *fs, int slot, bool count_mixed, int max_period);
-void delete_nr_ue_data(gNB_MAC_INST *mac, NR_UE_info_t *UE);
 NR_UE_info_t **get_periodic_ue(periodic_ue_sched_t *p, int ul_idx, int index);
-void mac_top_init_gNB(ngran_node_t node_type,
-                      NR_ServingCellConfigCommon_t *scc,
-                      const nr_mac_config_t *conf,
-                      const nr_rlc_configuration_t *default_rlc_config,
-                      nr_cell_sched_t **cell);
+gNB_MAC_INST *mac_top_init_gNB(ngran_node_t node_type, const nr_rlc_configuration_t *default_rlc_config, nr_cell_sched_t **cell);
 void mac_top_destroy_gNB(gNB_MAC_INST *mac);
 void nr_mac_send_f1_setup_req(void);
 int get_ssbidx_from_beam(const nr_cell_sched_t *cell, int beam_idx);
-void nr_mac_config_scc(gNB_MAC_INST *nrmac, nr_cell_sched_t *cell, NR_ServingCellConfigCommon_t *scc, const nr_mac_config_t *mac_config);
+void nr_mac_cell_config_scc(nr_cell_sched_t *cell, NR_ServingCellConfigCommon_t *scc, const nr_mac_config_t *mac_config);
+void nr_mac_send_config_req(gNB_MAC_INST *nrmac, nfapi_nr_config_request_scf_t *cfg);
 void nr_mac_configure_sib1(nr_cell_sched_t *cell, const plmn_id_t *plmn, uint64_t cellID, int tac);
 bool nr_mac_configure_other_sib(nr_cell_sched_t *cell, int num_cu_sib, const f1ap_sib_msg_t cu_sib[num_cu_sib]);
 bool nr_mac_add_test_ue(gNB_MAC_INST *nrmac, nr_cell_sched_t *cell, uint32_t rnti, NR_CellGroupConfig_t *CellGroup);
 void nr_mac_prepare_ra_ue(gNB_MAC_INST *nrmac, nr_cell_sched_t *cell, NR_UE_info_t *UE);
 nr_cell_sched_t *nr_mac_get_cell_by_phy_id(gNB_MAC_INST *mac, uint16_t phy_id);
 nr_cell_sched_t *nr_mac_get_cell_by_cgi(gNB_MAC_INST *mac, plmn_id_t plmn, uint64_t nr_cellid);
-bool add_new_UE_RA(gNB_MAC_INST *nr_mac, NR_UE_info_t *UE);
 int nr_mac_get_reconfig_delay_slots(NR_SubcarrierSpacing_t scs);
 
 int nr_transmission_action_indicator_stop(gNB_MAC_INST *mac, NR_UE_info_t *UE_info);
@@ -311,9 +306,6 @@ void remove_nr_list(NR_list_t *listP, int id);
 void add_tail_nr_list(NR_list_t *listP, int id);
 void add_front_nr_list(NR_list_t *listP, int id);
 void remove_front_nr_list(NR_list_t *listP);
-void nr_release_ra_UE(gNB_MAC_INST *mac, rnti_t rnti);
-NR_UE_info_t * find_nr_UE(NR_UEs_t* UEs, rnti_t rntiP);
-NR_UE_info_t *find_ra_UE(NR_UEs_t *UEs, rnti_t rntiP);
 void configure_UE_BWP(nr_cell_sched_t *cell,
                       NR_ServingCellConfigCommon_t *scc,
                       NR_UE_info_t *UE,
@@ -322,11 +314,27 @@ void configure_UE_BWP(nr_cell_sched_t *cell,
                       int dl_bwp_switch,
                       int ul_bwp_switch);
 
+/* functions for creating/deleting UE data */
+NR_UE_info_t *get_new_nr_ue_inst(uid_allocator_t *uia, rnti_t rnti, NR_CellGroupConfig_t *CellGroup, nr_cell_sched_t *cell);
+void release_nr_ue_inst(uid_allocator_t *uia, NR_UE_info_t *UE);
+void delete_nr_ue_data(void *UE); /* void * so can pass into collections */
+
+/* remove a UE, whether in "access mode" or "connected mode" */
+void mac_remove_nr_ue(gNB_MAC_INST *nr_mac, rnti_t rnti);
+
+/* functions for UEs in "access mode" */
+NR_UE_info_t *find_ra_ue(NR_UEs_t *UEs, rnti_t rntiP);
+bool add_new_ra_ue(NR_UEs_t *UEs, NR_UE_info_t *UE);
+NR_UE_info_t *remove_ra_ue(NR_UEs_t *UEs, rnti_t rnti);
+
+/* functions for UEs in "connected mode" */
+size_t get_num_connected_ue(NR_UEs_t *UEs);
+NR_UE_info_t *find_connected_nr_ue(NR_UEs_t* UEs, rnti_t rntiP);
 bool transition_ra_connected_nr_ue(gNB_MAC_INST *nr_mac, NR_UE_info_t *UE);
 bool add_connected_nr_ue(gNB_MAC_INST *nr_mac, NR_UE_info_t *UE);
+NR_UE_info_t *remove_connected_nr_ue(NR_UEs_t *UEs, rnti_t rnti);
+
 bool nr_check_Msg4_MsgB_Ack(gNB_MAC_INST *nr_mac, nr_cell_sched_t *cell, frame_t frame, slot_t slot, NR_UE_info_t *UE, bool success);
-void mac_remove_nr_ue(gNB_MAC_INST *nr_mac, rnti_t rnti);
-NR_UE_info_t *get_new_nr_ue_inst(uid_allocator_t *uia, rnti_t rnti, NR_CellGroupConfig_t *CellGroup, nr_cell_sched_t *cell);
 nfapi_nr_pusch_pdu_t *prepare_pusch_pdu(nfapi_nr_ul_tti_request_t *future_ul_tti_req,
                                         const NR_UE_info_t *UE,
                                         const NR_ServingCellConfigCommon_t *scc,
@@ -414,8 +422,6 @@ uint8_t get_mcs_from_cqi(int mcs_table, int cqi_table, int cqi_idx);
 uint8_t get_dl_nrOfLayers(const NR_UE_sched_ctrl_t *sched_ctrl, const nr_dci_format_t dci_format);
 
 void free_sched_pucch_list(NR_UE_sched_ctrl_t *sched_ctrl);
-bool add_UE_to_list(int list_size, NR_UE_info_t *list[list_size], NR_UE_info_t *UE);
-NR_UE_info_t *remove_UE_from_list(int list_size, NR_UE_info_t *list[list_size], rnti_t rnti);
 int get_dl_tda(const gNB_MAC_INST *nrmac, const nr_cell_sched_t *cell, int slot);
 int get_num_ul_tda(gNB_MAC_INST *nrmac, nr_cell_sched_t *cell, int slot, int k2, const NR_tda_info_t **first_idx);
 const NR_tda_info_t *get_best_ul_tda(const nr_cell_sched_t *cell,

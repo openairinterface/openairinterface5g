@@ -518,7 +518,8 @@ int setup_RU_buffers(RU_t *ru)
       int card = i / 4;
       int ant = i % 4;
       LOG_D(PHY, "Mapping RU id %u, tx_ant %d, on card %d, chain %d\n", ru->idx, i, ru->rf_map.card + card, ru->rf_map.chain + ant);
-      free(ru->common.txdata[i]);
+      // nr_phy_init_RU() advanced the buffer by sf_extension
+      free(&ru->common.txdata[i][-ru->sf_extension]);
       ru->common.txdata[i] = ru->openair0_cfg.txbase[ru->rf_map.chain + ant];
 
       for (int j = 0; j < 16; j++) {

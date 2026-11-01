@@ -224,7 +224,7 @@ General 5G improvements (both gNB and UE):
     to 4x4) for Benetel/VVDN/LITEON RUs
   * Add support for multi-RU support (single-cell/distributed antenna)
 - Support AMD T2 Telco card look-aside L1 accelerator (see
-  [`LDPC_T2_OFFLOAD_SETUP.md`](doc/LDPC_T2_OFFLOAD_SETUP.md))
+  `doc/LDPC_T2_OFFLOAD_SETUP.md`)
 - Support Nvidia Aerial/ARC in-line L1 accelerator (see
   [`Aerial_FAPI_Split_Tutorial.md`](doc/Aerial_FAPI_Split_Tutorial.md))
 - Various fixes for multi-UE operation: by default support of up to 16 UEs concurrently

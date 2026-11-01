@@ -21,6 +21,7 @@
 #include "common/utils/nr/nr_common.h"
 #include "common/utils/ds/byte_array.h"
 #include "common/utils/ds/spsc_q.h"
+#include "common/utils/ds/hashtable.h"
 #include "openair2/LAYER2/nr_rlc/nr_rlc_configuration.h"
 #include "openair2/LAYER2/NR_MAC_gNB/nr_pos_ue_context.h"
 
@@ -200,6 +201,26 @@ typedef enum nr_srs_type_e {
   APERIODIC_SRS,
 } nr_srs_type_t;
 
+typedef enum {
+  /// no beamforming, each logical antenna port maps straight onto a physical one
+  BF_METHOD_STRAIGHT_WIRE = 0,
+  /// each beam is one or more logical antenna ports
+  /// OAI-specific, to be removed once the digital beam table is fully supported
+  BF_METHOD_DAS,
+  /// L2 signals beam IDs to L1, resolved through the digital beam table if there is one
+  BF_METHOD_PREDEFINED,
+  /// SRS-based precoding, not implemented yet
+  BF_METHOD_DYNAMIC,
+} nr_bf_method_e;
+
+typedef struct {
+  int beam_duration; // in slots
+  int beams_per_period;
+  nr_bf_method_e bf_method;
+  /// beam IDs are consumed by the RU or the fronthaul rather than resolved by L1
+  bool beam_id_to_ru;
+} NR_beam_config_t;
+
 /// Max number of physical RU antenna ports the gNB can be configured with.
 /// Independent of MAX_NUM_SPATIAL_STREAMS (the NFAPI per-PDU wire limit).
 #define NR_MAC_MAX_RU_ANTENNA_PORTS 64
@@ -236,6 +257,7 @@ typedef struct nr_mac_config_s {
   nr_redcap_config_t *redcap;
   nr_ptrs_config_t *ptrs;
   nr_config_report_type_t report_type;
+  NR_beam_config_t beam_config;
   nr_beam_table_t bt;
   /// Spatial stream indexing for mapping onto RU ports. Needed for MU-MIMO.
   /// Sized to the max number of physical RU antenna ports, NOT to be confused
@@ -679,6 +701,11 @@ typedef struct {
   };
 } NR_sched_srs_t;
 
+typedef struct {
+  int candidate_beam_index; // beam currently being considered for switching (-1 = none)
+  int consecutive_count; // how many consecutive reports have selected candidate_beam_index
+} beam_hysteresis_t;
+
 /*! \brief scheduling control information set through an API */
 typedef struct {
   /// CCE index and aggregation, should be coherent with cce_list
@@ -736,6 +763,7 @@ typedef struct {
   CSI_report_t CSI_report;
   /// number of SR received for this UE since the last UL grant
   uint8_t sr_cnt;
+  beam_hysteresis_t beam_hysteresis;
   /// information about every HARQ process
   NR_UE_harq_t harq_processes[NR_MAX_HARQ_PROCESSES];
   /// HARQ processes that are free
@@ -907,38 +935,34 @@ typedef struct NR_UE_info {
 
 typedef struct {
   /// scheduling control info
-  // last element always NULL
-  NR_UE_info_t *connected_ue_list[MAX_MOBILES_PER_GNB + 1];
-  NR_UE_info_t *access_ue_list[NR_NB_RA_PROC_MAX + 1];
+  seq_arr_t connected_ues_list; // has pointers to NR_UE_info_t
+  hash_table_t connected_ues; // has pointers to NR_UE_info_t
+  seq_arr_t access_ue_list; // has pointers to NR_UE_info_t
   // bitmap of CSI-RS already scheduled in current slot
   int sched_csirs;
   uid_allocator_t uid_allocator;
 } NR_UEs_t;
 
-typedef enum {
-  /// no beamforming, each logical antenna port maps straight onto a physical one
-  BF_METHOD_STRAIGHT_WIRE = 0,
-  /// each beam is one or more logical antenna ports
-  /// OAI-specific, to be removed once the digital beam table is fully supported
-  BF_METHOD_DAS,
-  /// L2 signals beam IDs to L1, resolved through the digital beam table if there is one
-  BF_METHOD_PREDEFINED,
-  /// SRS-based precoding, not implemented yet
-  BF_METHOD_DYNAMIC,
-} nr_bf_method_e;
-
 typedef struct {
   /// list of allocated beams per period
   int16_t **beam_allocation;
-  int beam_duration; // in slots
-  int beams_per_period;
   int beam_allocation_size;
-  nr_bf_method_e bf_method;
-  /// beam IDs are consumed by the RU or the fronthaul rather than resolved by L1
-  bool beam_id_to_ru;
+
+  NR_beam_config_t config;
 } NR_beam_info_t;
 
-#define UE_iterator(BaSe, VaR) for (NR_UE_info_t **VaR##pptr = BaSe, *VaR = *VaR##pptr; VaR; VaR = *(++VaR##pptr))
+// We store pointers to NR_UE_info_t in seq_arr, to which the iterator
+// is a pointer (pointer to pointer), so reimplement loop to get the
+// "normal" pointer
+#define FOR_EACH_LIST_INDIR(lIsT, VaR)                            \
+  for (NR_UE_info_t **VaR##pptr = seq_arr_front(lIsT), *VaR; \
+       VaR##pptr != seq_arr_end(lIsT) && (VaR = *VaR##pptr); \
+       VaR##pptr = seq_arr_next(lIsT, VaR##pptr))
+
+#define FOR_EACH_RA_UE(Ue_InFo, VaR) FOR_EACH_LIST_INDIR(&(Ue_InFo)->access_ue_list, VaR)
+
+#define FOR_EACH_CONNECTED_UE(Ue_InFo, VaR) FOR_EACH_LIST_INDIR(&(Ue_InFo)->connected_ues_list, VaR)
+
 #define FOR_EACH_CANDIDATE(VaR, ArR, N) for (__typeof__(*(ArR)) *VaR = (ArR); VaR < (ArR) + (N); VaR++)
 
 typedef struct {

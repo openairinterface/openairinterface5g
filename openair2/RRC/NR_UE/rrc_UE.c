@@ -466,6 +466,17 @@ static void get_sib19_schedinfo(NR_UE_RRC_SI_INFO *SI_info, NR_SI_SchedulingInfo
   }
 }
 
+static void nr_rrc_send_sib1_to_mac(NR_UE_RRC_INST_t *rrc, NR_SIB1_t *sib1, bool can_start_ra, bool is_dedicatedSIB1)
+{
+  nr_mac_rrc_message_t rrc_msg = {0};
+  rrc_msg.payload_type = NR_MAC_RRC_CONFIG_SIB1;
+  nr_mac_rrc_config_sib1_t *config_sib1 = &rrc_msg.payload.config_sib1;
+  config_sib1->sib1 = sib1;
+  config_sib1->is_dedicated_sib1 = is_dedicatedSIB1;
+  config_sib1->can_start_ra = can_start_ra;
+  nr_rrc_send_msg_to_mac(rrc, &rrc_msg);
+}
+
 static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_info, NR_SIB1_t *sib1, bool is_dedicatedSIB1)
 {
   if(g_log->log_component[NR_RRC].level >= OAILOG_DEBUG)
@@ -528,13 +539,11 @@ static void nr_rrc_process_sib1(NR_UE_RRC_INST_t *rrc, NR_UE_RRC_SI_INFO *SI_inf
   // RRC storage of SIB1 timers and constants (eg needed in re-establishment)
   UPDATE_IE(rrc->timers_and_constants.sib1_TimersAndConstants, sib1->ue_TimersAndConstants, NR_UE_TimersAndConstants_t);
 
-  nr_mac_rrc_message_t rrc_msg = {0};
-  rrc_msg.payload_type = NR_MAC_RRC_CONFIG_SIB1;
-  nr_mac_rrc_config_sib1_t *config_sib1 = &rrc_msg.payload.config_sib1;
-  config_sib1->sib1 = sib1;
-  config_sib1->is_dedicated_sib1 = is_dedicatedSIB1;
-  config_sib1->can_start_ra = !rrc->is_NTN_UE;
-  nr_rrc_send_msg_to_mac(rrc, &rrc_msg);
+  asn1cFreeStruc(asn_DEF_NR_SIB1, SI_info->sib1);
+  const int copy_result = asn_copy(&asn_DEF_NR_SIB1, (void **)&SI_info->sib1, sib1);
+  AssertFatal(copy_result == 0, "unable to copy NR_SIB1_t\n");
+
+  nr_rrc_send_sib1_to_mac(rrc, sib1, !rrc->is_NTN_UE, is_dedicatedSIB1);
 }
 
 /** @brief Synchronize NH chain based on nextHopChainingCount
@@ -815,9 +824,11 @@ static void nr_rrc_ue_process_RadioBearerConfig(NR_UE_RRC_INST_t *rrc, NR_RadioB
         rrc->keyToUse = *radioBearerConfig->securityConfig->keyToUse;
       }
       // When the field is not included, continue to use the currently configured security algorithm
-      if (radioBearerConfig->securityConfig->securityAlgorithmConfig) {
-        rrc->cipheringAlgorithm = radioBearerConfig->securityConfig->securityAlgorithmConfig->cipheringAlgorithm;
-        rrc->integrityProtAlgorithm = *radioBearerConfig->securityConfig->securityAlgorithmConfig->integrityProtAlgorithm;
+      const NR_SecurityAlgorithmConfig_t *algos = radioBearerConfig->securityConfig->securityAlgorithmConfig;
+      if (algos) {
+        rrc->cipheringAlgorithm = algos->cipheringAlgorithm;
+        AssertFatal(algos->integrityProtAlgorithm, "Release of integrityProtAlgorithm (Need R) not supported\n");
+        rrc->integrityProtAlgorithm = *algos->integrityProtAlgorithm;
       }
     }
     security_rrc_parameters = get_security_rrc_parameters(rrc, true);
@@ -973,6 +984,13 @@ static void nr_ue_meas_reset(meas_t *meas_cell, bool csi_meas)
     meas_cell->ss_rsrp_dBm.init = false;
 }
 
+/** @brief Clear the source PCell snapshot, including its keys */
+static void nr_rrc_clear_ho_source(NR_UE_RRC_INST_t *rrc)
+{
+  asn1cFreeStruc(asn_DEF_NR_SIB1, rrc->ho_source.sib1);
+  memset(&rrc->ho_source, 0, sizeof(rrc->ho_source));
+}
+
 static void nr_rrc_process_reconfigurationWithSync(NR_UE_RRC_INST_t *rrc,
                                                    NR_ReconfigurationWithSync_t *reconfigurationWithSync,
                                                    int gNB_index)
@@ -998,6 +1016,23 @@ static void nr_rrc_process_reconfigurationWithSync(NR_UE_RRC_INST_t *rrc,
     }
   }
 
+  // source PCell snapshot, before it is overwritten by the target's
+  nr_rrc_clear_ho_source(rrc);
+  if (rrc->as_security_activated) {
+    rrc->ho_source.valid = true;
+    rrc->ho_source.phyCellID = rrc->phyCellID;
+    rrc->ho_source.rnti = rrc->rnti;
+    memcpy(rrc->ho_source.kgnb, rrc->kgnb, sizeof(rrc->ho_source.kgnb));
+    memcpy(rrc->ho_source.nh, rrc->nh, sizeof(rrc->ho_source.nh));
+    rrc->ho_source.nhcc = rrc->nhcc;
+    rrc->ho_source.cipheringAlgorithm = rrc->cipheringAlgorithm;
+    rrc->ho_source.integrityProtAlgorithm = rrc->integrityProtAlgorithm;
+    rrc->ho_source.keyToUse = rrc->keyToUse;
+    memcpy(rrc->ho_source.Srb, rrc->Srb, sizeof(rrc->ho_source.Srb));
+    memcpy(rrc->ho_source.status_DRBs, rrc->status_DRBs, sizeof(rrc->ho_source.status_DRBs));
+    rrc->ho_source.sib1 = rrcNB->SInfo.sib1;
+    rrcNB->SInfo.sib1 = NULL;
+  }
   l3_measurements_t *l3m = &rrcNB->l3_measurements;
   for (int i = 0; i < NUMBER_OF_NEIGHBORING_CELLS_MAX; i++) {
     nr_ue_meas_reset(&l3m->neighboring_cell[i], false);
@@ -1272,6 +1307,28 @@ static void handle_meas_reporting_remove(rrcPerNB_t *rrc, int id, NR_UE_Timers_C
   memset(params, 0, sizeof(*params));
 }
 
+static void nr_rrc_release_meas_config(NR_UE_RRC_INST_t *rrc)
+{
+  for (int n = 0; n < NB_CNX_UE; n++) {
+    rrcPerNB_t *nb = &rrc->perNB[n];
+    for (int id = 0; id < NR_MAX_MEAS_ID; id++) {
+      handle_meas_reporting_remove(nb, id, &rrc->timers_and_constants);
+      asn1cFreeStruc(asn_DEF_NR_MeasIdToAddMod, nb->MeasId[id]);
+    }
+    for (int id = 0; id < NR_MAX_MEAS_OBJ; id++)
+      asn1cFreeStruc(asn_DEF_NR_MeasObjectToAddMod, nb->MeasObj[id]);
+    for (int id = 0; id < NR_MAX_MEAS_CONFIG; id++)
+      asn1cFreeStruc(asn_DEF_NR_ReportConfigToAddMod, nb->ReportConfig[id]);
+    for (int id = 0; id < MAX_QUANTITY_CONFIG; id++)
+      asn1cFreeStruc(asn_DEF_NR_QuantityConfigNR, nb->QuantityConfig[id]);
+    asn1cFreeStruc(asn_DEF_NR_MeasGapConfig, nb->measGapConfig);
+    nb->s_measure = 0;
+    nb->l3_measurements = (l3_measurements_t){0};
+    nb->l3_measurements.ssb_filter_coeff_rsrp = 1.0f;
+    nb->l3_measurements.csi_RS_filter_coeff_rsrp = 1.0f;
+  }
+}
+
 static void handle_measobj_remove(rrcPerNB_t *rrc, struct NR_MeasObjectToRemoveList *remove_list, NR_UE_Timers_Constants_t *timers)
 {
   // section 5.5.2.4 in 38.331
@@ -1308,6 +1365,8 @@ static void update_nr_measobj(NR_MeasObjectNR_t *source, NR_MeasObjectNR_t *targ
   UPDATE_IE(target->ssbSubcarrierSpacing, source->ssbSubcarrierSpacing, NR_SubcarrierSpacing_t);
   UPDATE_IE(target->smtc1, source->smtc1, NR_SSB_MTC_t);
   if (source->smtc2) {
+    if (!target->smtc2)
+      target->smtc2 = calloc_or_fail(1, sizeof(*target->smtc2));
     target->smtc2->periodicity = source->smtc2->periodicity;
     if (source->smtc2->pci_List)
       UPDATE_IE(target->smtc2->pci_List, source->smtc2->pci_List, struct NR_SSB_MTC2__pci_List);
@@ -1315,14 +1374,18 @@ static void update_nr_measobj(NR_MeasObjectNR_t *source, NR_MeasObjectNR_t *targ
   else
     asn1cFreeStruc(asn_DEF_NR_SSB_MTC2, target->smtc2);
   UPDATE_IE(target->refFreqCSI_RS, source->refFreqCSI_RS, NR_ARFCN_ValueNR_t);
-  if (source->referenceSignalConfig.ssb_ConfigMobility)
+  if (source->referenceSignalConfig.ssb_ConfigMobility) {
+    if (!target->referenceSignalConfig.ssb_ConfigMobility)
+      target->referenceSignalConfig.ssb_ConfigMobility =
+          calloc_or_fail(1, sizeof(*target->referenceSignalConfig.ssb_ConfigMobility));
     update_ssb_configmob(source->referenceSignalConfig.ssb_ConfigMobility, target->referenceSignalConfig.ssb_ConfigMobility);
+  }
   UPDATE_IE(target->absThreshSS_BlocksConsolidation, source->absThreshSS_BlocksConsolidation, NR_ThresholdNR_t);
   UPDATE_IE(target->absThreshCSI_RS_Consolidation, source->absThreshCSI_RS_Consolidation, NR_ThresholdNR_t);
   UPDATE_IE(target->nrofSS_BlocksToAverage, source->nrofSS_BlocksToAverage, long);
   UPDATE_IE(target->nrofCSI_RS_ResourcesToAverage, source->nrofCSI_RS_ResourcesToAverage, long);
   target->quantityConfigIndex = source->quantityConfigIndex;
-  target->offsetMO = source->offsetMO;
+  UPDATE_NP_IE(target->offsetMO, source->offsetMO, NR_Q_OffsetRangeList_t);
   if (source->cellsToRemoveList) {
     RELEASE_IE_FROMLIST(source->cellsToRemoveList, target->cellsToAddModList, physCellId);
   }
@@ -1348,6 +1411,8 @@ static void update_nr_measobj(NR_MeasObjectNR_t *source, NR_MeasObjectNR_t *targ
     ADDMOD_IE_FROMLIST(source->allowedCellsToAddModList, target->allowedCellsToAddModList, pci_RangeIndex, NR_PCI_RangeElement_t);
   }
   if (source->ext1) {
+    if (!target->ext1)
+      target->ext1 = calloc_or_fail(1, sizeof(*target->ext1));
     UPDATE_IE(target->ext1->freqBandIndicatorNR, source->ext1->freqBandIndicatorNR, NR_FreqBandIndicatorNR_t);
     UPDATE_IE(target->ext1->measCycleSCell, source->ext1->measCycleSCell, long);
   }
@@ -1420,10 +1485,10 @@ static void handle_quantityconfig(rrcPerNB_t *rrc, NR_QuantityConfig_t *quantity
       NR_QuantityConfigNR_t *quantityNR = quantityConfig->quantityConfigNR_List->list.array[i];
       if (!rrc->QuantityConfig[i])
         rrc->QuantityConfig[i] = calloc(1, sizeof(*rrc->QuantityConfig[i]));
-      rrc->QuantityConfig[i]->quantityConfigCell = quantityNR->quantityConfigCell;
+      UPDATE_NP_IE(rrc->QuantityConfig[i]->quantityConfigCell, quantityNR->quantityConfigCell, NR_QuantityConfigRS_t);
       // TODO: It remains to compute ssb_filter_coeff_rsrp and csi_RS_filter_coeff_rsrp for multiple quantityConfig
       // TS 38.331 - 5.5.3.2 Layer 3 filtering
-      NR_QuantityConfigRS_t *qcc = &quantityNR->quantityConfigCell;
+      NR_QuantityConfigRS_t *qcc = &rrc->QuantityConfig[i]->quantityConfigCell;
       l3_measurements_t *l3_measurements = &rrc->l3_measurements;
       if (qcc->ssb_FilterConfig.filterCoefficientRSRP)
         l3_measurements->ssb_filter_coeff_rsrp = 1. / pow(2, (*qcc->ssb_FilterConfig.filterCoefficientRSRP) / 4);
@@ -1720,6 +1785,8 @@ static void nr_rrc_ue_process_rrcReconfiguration(NR_UE_RRC_INST_t *rrc, int gNB_
       bool dedicatedsib1 = false;
       if (ie->nonCriticalExtension)
         dedicatedsib1 = nr_rrc_process_reconfiguration_v1530(rrc, ie->nonCriticalExtension, gNB_index);
+      if (rrc->ho_source.valid)
+        rrc->ho_source.meas_config = ie->measConfig != NULL;
 
       if (ie->radioBearerConfig) {
         RRCLOG_I("RRCReconfiguration includes radio Bearer Configuration\n");
@@ -2059,7 +2126,8 @@ static void nr_rrc_ue_decode_NR_BCCH_BCH_Message(NR_UE_RRC_INST_t *rrc,
   }
 
   NR_BCCH_BCH_Message_t *bcch_message = NULL;
-  if (rrc->phyCellID != phycellid || rrc->arfcn_ssb != ssb_arfcn) {
+  const bool cell_changed = rrc->phyCellID != phycellid || rrc->arfcn_ssb != ssb_arfcn;
+  if (cell_changed) {
     RRCLOG_I("BCCH update: phyCellID %d->%u, arfcn_ssb %ld->%ld\n", rrc->phyCellID, phycellid, rrc->arfcn_ssb, ssb_arfcn);
   }
   rrc->phyCellID = phycellid;
@@ -2077,12 +2145,18 @@ static void nr_rrc_ue_decode_NR_BCCH_BCH_Message(NR_UE_RRC_INST_t *rrc,
   }
   if (LOG_DEBUGFLAG(DEBUG_ASN1))
     xer_fprint(stdout, &asn_DEF_NR_BCCH_BCH_Message, (void *)bcch_message);
-    
+
+  NR_UE_RRC_SI_INFO *SI_info = &rrc->perNB[gNB_index].SInfo;
   // Actions following cell selection while T311 is running
   NR_UE_Timers_Constants_t *timers = &rrc->timers_and_constants;
   if (nr_timer_is_active(&timers->T311)) {
     nr_timer_stop(&timers->T311);
     rrc->ra_trigger = RRC_CONNECTION_REESTABLISHMENT;
+    // stored SIB1 is not valid for another cell
+    if (cell_changed) {
+      SI_info->sib1_validity = false;
+      SI_info->sib_pending = false;
+    }
 
     // apply the default MAC Cell Group configuration
     // (done at MAC by calling nr_ue_mac_default_configs)
@@ -2091,7 +2165,6 @@ static void nr_rrc_ue_decode_NR_BCCH_BCH_Message(NR_UE_RRC_INST_t *rrc,
     // not used
   }
 
-  NR_UE_RRC_SI_INFO *SI_info = &rrc->perNB[gNB_index].SInfo;
   bool barred = rrc->access_barred || bcch_message->message.choice.mib->cellBarred == NR_MIB__cellBarred_barred;
   int get_sib = 0;
   if (IS_SA_MODE(get_softmodem_params())
@@ -2171,6 +2244,9 @@ static void nr_rrc_prepare_msg3_payload(NR_UE_RRC_INST_t *rrc)
 {
   if (!IS_SA_MODE(get_softmodem_params()))
     return;
+  // Replace CCCH left queued by an abandoned RA before preparing the new request.
+  // Msg3 HARQ retransmissions reuse MAC's cached PDU and do not reach this path.
+  nr_rlc_reestablish_entity(rrc->ue_id, 0);
   switch (rrc->ra_trigger) {
     case RRC_CONNECTION_SETUP:
       // preparing RRC setup request payload in advance
@@ -2356,6 +2432,9 @@ static void nr_rrc_rrcsetup_fallback(NR_UE_RRC_INST_t *rrc)
 {
   RRCLOG_W("Received RRCSetup in response to %s request\n",
            rrc->ra_trigger == RRC_CONNECTION_REESTABLISHMENT ? "RRCReestablishment" : "RRCResume");
+
+  // TS 38.331 clause 5.3.3.4: discard old dedicated measurements before setting up the new SRB1.
+  nr_rrc_release_meas_config(rrc);
 
   // discard any stored UE Inactive AS context and suspendConfig
   // TODO
@@ -3245,6 +3324,7 @@ static void nr_rrc_handle_ra_indication(NR_UE_RRC_INST_t *rrc, bool ra_succeeded
     // procedures described in 5.3.5.3 of 38.331 when
     // reconfigurationWithSync is included in spCellConfig
     nr_timer_stop(&timers->T304);
+    nr_rrc_clear_ho_source(rrc);
 
     // TODO apply the parts of the CQI reporting configuration,
     // the scheduling request configuration and the sounding RS
@@ -3622,6 +3702,10 @@ static void nr_rrc_initiate_rrcReestablishment(NR_UE_RRC_INST_t *rrc, NR_Reestab
   // reset MAC
   // release spCellConfig, if configured
   // perform cell selection in accordance with the cell selection process
+  RRCLOG_A("Initiating RRC re-establishment (cause=%s)\n",
+           cause == 0   ? "reconfigurationFailure"
+           : cause == 1 ? "handoverFailure"
+                        : "otherFailure");
   nr_rrc_trigger_mac_ra(rrc, NR_MAC_RA_START_REESTABLISHMENT);
 }
 
@@ -3683,6 +3767,60 @@ void handle_rlf_detection(NR_UE_RRC_INST_t *rrc)
     NR_Release_Cause_t cause = rrc->as_security_activated ? RRC_CONNECTION_FAILURE : OTHER;
     nr_rrc_going_to_IDLE(rrc, cause, NULL);
   }
+}
+
+/** @brief T304 expiry (TS 38.331 5.3.5.8.3, non-DAPS): revert back to the source PCell and initiate re-establishment */
+void handle_t304_expiry(NR_UE_RRC_INST_t *rrc)
+{
+  // MAC: release rach-ConfigDedicated, revert back to the source PCell
+  nr_mac_rrc_message_t rrc_msg = {0};
+  rrc_msg.payload_type = NR_MAC_RRC_CONFIG_RESET;
+  rrc_msg.payload.config_reset.cause = T304_EXPIRED;
+  nr_rrc_send_msg_to_mac(rrc, &rrc_msg);
+
+  if (rrc->ho_source.valid) {
+    rrc->phyCellID = rrc->ho_source.phyCellID;
+    rrc->rnti = rrc->ho_source.rnti;
+    memcpy(rrc->kgnb, rrc->ho_source.kgnb, sizeof(rrc->kgnb));
+    memcpy(rrc->nh, rrc->ho_source.nh, sizeof(rrc->nh));
+    rrc->nhcc = rrc->ho_source.nhcc;
+    rrc->cipheringAlgorithm = rrc->ho_source.cipheringAlgorithm;
+    rrc->integrityProtAlgorithm = rrc->ho_source.integrityProtAlgorithm;
+    rrc->keyToUse = rrc->ho_source.keyToUse;
+    // revert back to the source PCell common configuration
+    NR_UE_RRC_SI_INFO *SI_info = &rrc->perNB[0].SInfo;
+    asn1cFreeStruc(asn_DEF_NR_SIB1, SI_info->sib1);
+    SI_info->sib1 = rrc->ho_source.sib1;
+    rrc->ho_source.sib1 = NULL;
+    if (SI_info->sib1 && SI_info->sib1_validity) {
+      NR_SIB1_t *sib1 = NULL;
+      const int copy_result = asn_copy(&asn_DEF_NR_SIB1, (void **)&sib1, SI_info->sib1);
+      AssertFatal(copy_result == 0, "unable to copy NR_SIB1_t\n");
+      nr_rrc_send_sib1_to_mac(rrc, sib1, false, false);
+    }
+    if (rrc->ho_source.meas_config)
+      RRCLOG_E("Reverting back to the source PCell measConfig not handled (handover command included measConfig)\n");
+    if (memcmp(rrc->ho_source.Srb, rrc->Srb, sizeof(rrc->Srb))
+        || memcmp(rrc->ho_source.status_DRBs, rrc->status_DRBs, sizeof(rrc->status_DRBs)))
+      RRCLOG_E("Reverting back to the source PCell radio bearers not handled (handover command added or released bearers)\n");
+  }
+  // TODO store the handover failure information in VarRLF-Report
+  bool srb2 = rrc->Srb[2] != RB_NOT_PRESENT;
+  bool any_drb = false;
+  for (int i = 0; i < MAX_DRBS_PER_UE; i++) {
+    if (rrc->status_DRBs[i] != RB_NOT_PRESENT) {
+      any_drb = true;
+      break;
+    }
+  }
+
+  if (rrc->as_security_activated && srb2 && any_drb)
+    nr_rrc_initiate_rrcReestablishment(rrc, NR_ReestablishmentCause_handoverFailure);
+  else {
+    NR_Release_Cause_t cause = rrc->as_security_activated ? RRC_CONNECTION_FAILURE : OTHER;
+    nr_rrc_going_to_IDLE(rrc, cause, NULL);
+  }
+  nr_rrc_clear_ho_source(rrc);
 }
 
 void nr_rrc_going_to_IDLE(NR_UE_RRC_INST_t *rrc,

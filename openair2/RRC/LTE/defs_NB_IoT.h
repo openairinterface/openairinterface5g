@@ -390,8 +390,8 @@ typedef struct eNB_RRC_INST_NB_IoT_s {
 
   uint8_t                           Nb_ue;
 
-  hash_table_t                      *initial_id2_s1ap_ids; // key is    content is rrc_ue_s1ap_ids_t
-  hash_table_t                      *s1ap_id2_s1ap_ids   ; // key is    content is rrc_ue_s1ap_ids_t
+  hash_table_t                      initial_id2_s1ap_ids; // key is    content is rrc_ue_s1ap_ids_t
+  hash_table_t                      s1ap_id2_s1ap_ids   ; // key is    content is rrc_ue_s1ap_ids_t
 
   //RRC configuration
   RrcConfigurationReq configuration; //rrc_messages_types.h

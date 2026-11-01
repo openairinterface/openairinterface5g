@@ -429,7 +429,7 @@ static bool dlsch_to_schedule(const NR_UE_sched_ctrl_t *sched_ctrl)
 }
 
 static int collect_dl_candidates(nr_cell_sched_t *cell,
-                                 NR_UE_info_t **UE_list,
+                                 NR_UEs_t *UEs,
                                  nr_dl_candidate_t *candidates,
                                  int max_candidates,
                                  frame_t frame,
@@ -439,7 +439,7 @@ static int collect_dl_candidates(nr_cell_sched_t *cell,
   const frame_structure_t *fs = &cell->frame_structure;
   const float dl_slots_per_s = (float)get_dl_slots_per_period(fs) / fs->numb_slots_period * fs->numb_slots_frame * 100;
 
-  UE_iterator (UE_list, UE) {
+  FOR_EACH_CONNECTED_UE(UEs, UE) {
     if (UE->pcell != cell)
       continue;
     if (n >= max_candidates)
@@ -715,7 +715,7 @@ static bool check_increase_mcs(const NR_sched_pdsch_t *sched_pdsch, int bytes_in
 static void nr_dl_schedule(gNB_MAC_INST *mac,
                            nr_cell_sched_t *cell,
                            post_process_pdsch_t *pp_pdsch,
-                           NR_UE_info_t **UE_list,
+                           NR_UEs_t *UEs,
                            int max_num_ue,
                            int num_beams,
                            int n_rb_sched[num_beams])
@@ -727,7 +727,7 @@ static void nr_dl_schedule(gNB_MAC_INST *mac,
 
   /* Step 1: Collect candidates */
   nr_dl_candidate_t candidates[MAX_MOBILES_PER_GNB] = {0};
-  int n = collect_dl_candidates(cell, UE_list, candidates, MAX_MOBILES_PER_GNB, frame, slot);
+  int n = collect_dl_candidates(cell, UEs, candidates, MAX_MOBILES_PER_GNB, frame, slot);
   if (n == 0)
     return;
 
@@ -896,12 +896,12 @@ void nr_dlsch_preprocessor(gNB_MAC_INST *mac, nr_cell_sched_t *cell, post_proces
 {
   NR_UEs_t *UE_info = &mac->UE_info;
 
-  if (UE_info->connected_ue_list[0] == NULL)
+  if (get_num_connected_ue(UE_info) == 0)
     return;
 
   NR_ServingCellConfigCommon_t *scc = cell->common_channels.ServingCellConfigCommon;
   int bw = scc->downlinkConfigCommon->frequencyInfoDL->scs_SpecificCarrierList.list.array[0]->carrierBandwidth;
-  int num_beams = cell->beam_info.beam_allocation ? cell->beam_info.beams_per_period : 1;
+  int num_beams = cell->beam_info.beam_allocation ? cell->beam_info.config.beams_per_period : 1;
   int n_rb_sched[num_beams];
   for (int i = 0; i < num_beams; i++)
     n_rb_sched[i] = bw;
@@ -910,7 +910,7 @@ void nr_dlsch_preprocessor(gNB_MAC_INST *mac, nr_cell_sched_t *cell, post_proces
   static_assert(4 < MAX_DCI_CORESET, "cannot have more concurrent UEs than MAX_DCI_CORESET\n");
   int max_sched_ues = 4;
 
-  nr_dl_schedule(mac, cell, pp_pdsch, UE_info->connected_ue_list, max_sched_ues, num_beams, n_rb_sched);
+  nr_dl_schedule(mac, cell, pp_pdsch, UE_info, max_sched_ues, num_beams, n_rb_sched);
 }
 
 nfapi_nr_dl_tti_pdsch_pdu_rel15_t *prepare_pdsch_pdu(nfapi_nr_dl_tti_request_pdu_t *dl_tti_pdsch_pdu,

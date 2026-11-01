@@ -123,7 +123,7 @@ def CopyinServiceLog(ssh, lSourcePath, svcName, wd_yaml, ctx):
 	return archiveArtifact(ssh, ctx, remote_filename)
 
 def GetDeployedServices(ssh, file):
-	ret = ssh.run(f'docker compose -f {file} config --services')
+	ret = ssh.run(f'docker compose -f {file} --profile \'*\' config --services')
 	if ret.returncode != 0:
 		logging.error("could not get services")
 		return None
@@ -625,7 +625,7 @@ class Containerize():
 			ExistEnvFilePrint(ssh, wd)
 			services = GetDeployedServices(ssh, wd_yaml)
 			all_logs = True
-			ssh.run(f'docker compose -f {wd_yaml} stop')
+			ssh.run(f'docker compose -f {wd_yaml} --profile \'*\' stop')
 			if services is not None:
 				service_desc = {}
 				for s, c in services:
@@ -636,7 +636,7 @@ class Containerize():
 					service_desc[s] = {'returncode': rc, 'logfile': f}
 			else:
 				logging.warning('could not identify services to stop => no log file')
-			ssh.run(f'docker compose -f {wd_yaml} down -v')
+			ssh.run(f'docker compose -f {wd_yaml} --profile \'*\' down -v')
 			HTML.CreateHtmlTestRowQueue(node, 'OK', ['Undeployment successful'])
 			ssh.run(f'rm {wd}/.env')
 		if not all_logs:

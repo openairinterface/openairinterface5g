@@ -19,11 +19,6 @@
 #include "NR_SIB2.h"
 #include "openair1/SIMULATION/NR_PHY/nr_unitary_defs.h"
 
-static void phy_config_req_stub(NR_PHY_Config_t *cfg)
-{
-  (void)cfg;
-}
-
 // common search spaces as configured by the gNB (gnb_config.c), other SI in search space 3
 static void add_common_search_spaces(NR_ServingCellConfigCommon_t *scc)
 {
@@ -67,16 +62,15 @@ int test_other_sib_ssb_index(uint64_t ssb_bitmap)
       .maxMIMO_layers = 1,
       .timer_config = {.sr_TransMax = 64, .t300 = 400, .t301 = 400, .t310 = 2000, .n310 = 10, .t311 = 3000, .n311 = 1, .t319 = 400},
       .num_agg_level_candidates = {0, 4, 4, 2, 0},
+      .beam_config.beams_per_period = 1
   };
   const nr_rlc_configuration_t rlc_config = {0};
   RC.nb_nr_macrlc_inst = 1;
   nr_cell_sched_t *cell;
 
   // config MAC
-  mac_top_init_gNB(ngran_gNB, scc, &conf, &rlc_config, &cell);
-  RC.nrmac[0]->if_inst->NR_PHY_config_req = phy_config_req_stub;
-  cell->beam_info = (NR_beam_info_t){.bf_method = BF_METHOD_STRAIGHT_WIRE, .beams_per_period = 1};
-  nr_mac_config_scc(RC.nrmac[0], cell, scc, &conf);
+  mac_top_init_gNB(ngran_gNB, &rlc_config, &cell);
+  nr_mac_cell_config_scc(cell, scc, &conf);
 
   const plmn_id_t plmn = {.mcc = 1, .mnc = 1, .mnc_digit_length = 2};
 

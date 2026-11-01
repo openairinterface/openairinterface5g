@@ -66,6 +66,8 @@
 
 #define MAX_NUM_SLICES 1024
 
+#define NR_MAX_BIT_RATE UINT64_C(4000000000000) /* number of bits delivered by NG-RAN in UL/DL */
+
 // RLC Entity
 #define RLC_TX_MAXSIZE       10000000
 #define RLC_RX_MAXSIZE       10000000

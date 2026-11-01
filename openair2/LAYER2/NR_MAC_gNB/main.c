@@ -17,6 +17,7 @@
 #include "mac_proto.h"
 #include "mac_rrc_ul.h"
 #include "nr_mac_gNB.h"
+#include "common/utils/utils.h"
 #include "NR_PHY_INTERFACE/NR_IF_Module.h"
 #include "NR_RLC-BearerConfig.h"
 #include "NR_RadioBearerConfig.h"
@@ -33,6 +34,7 @@
 #include "LAYER2/nr_rlc/nr_rlc_oai_api.h"
 #include "openair2/F1AP/f1ap_ids.h"
 #include "openair2/F1AP/lib/f1ap_interface_management.h"
+#include "nfapi/oai_integration/vendor_ext.h"
 #include "seq_arr.h"
 #include "system.h"
 #include "time_meas.h"
@@ -109,7 +111,7 @@ size_t dump_mac_stats(gNB_MAC_INST *gNB, const nr_cell_sched_t *cell, char *outp
   const char *begin = output;
   const char *end = output + strlen;
 
-  UE_iterator(gNB->UE_info.connected_ue_list, UE) {
+  FOR_EACH_CONNECTED_UE(&gNB->UE_info, UE) {
     if (UE->pcell != cell)
       continue;
     NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
@@ -249,107 +251,87 @@ static void mac_rrc_init(gNB_MAC_INST *mac, ngran_node_t node_type)
   }
 }
 
-void mac_top_init_gNB(ngran_node_t node_type,
-                      NR_ServingCellConfigCommon_t *scc,
-                      const nr_mac_config_t *config,
-                      const nr_rlc_configuration_t *default_rlc_config,
-                      nr_cell_sched_t **cell_ptr)
+gNB_MAC_INST *mac_top_init_gNB(ngran_node_t node_type, const nr_rlc_configuration_t *default_rlc_config, nr_cell_sched_t **cell_ptr)
 {
   AssertFatal(RC.nb_nr_macrlc_inst == 1, "what is the point of calling %s() if you don't need exactly one MAC?\n", __func__);
 
-  if (RC.nb_nr_macrlc_inst > 0) {
+  RC.nrmac = calloc_or_fail(1, sizeof(gNB_MAC_INST *));
+  RC.nrmac[0] = calloc_or_fail(1, sizeof(gNB_MAC_INST));
+  gNB_MAC_INST *nrmac = RC.nrmac[0];
 
-    RC.nrmac = (gNB_MAC_INST **) malloc16(RC.nb_nr_macrlc_inst *sizeof(gNB_MAC_INST *));
+  // TODO: handle multiple cells later, for now there's only one cell ever initialized and used
+  // the current work only adds the structure and updates the references to use the cell pointer
+  *cell_ptr = &nrmac->cells[0];
+  nr_cell_sched_t *cell = *cell_ptr;
+  nr_mac_pcch_queue_init(&cell->common_channels);
+  nrmac->Mod_id = 0;
 
-    AssertFatal(RC.nrmac != NULL,"can't ALLOCATE %zu Bytes for %d gNB_MAC_INST with size %zu \n",
-                RC.nb_nr_macrlc_inst * sizeof(gNB_MAC_INST *),
-                RC.nb_nr_macrlc_inst, sizeof(gNB_MAC_INST));
+  nrmac->tag = (NR_TAG_t*)malloc(sizeof(NR_TAG_t));
+  memset((void*)nrmac->tag,0,sizeof(NR_TAG_t));
+  for(int n = 0; n < MAX_NUM_OF_SSB; n++)
+    cell->sib1_pdsch[n].time_domain_allocation = -1;
 
-    for (module_id_t i = 0; i < RC.nb_nr_macrlc_inst; i++) {
+  nrmac->rlc_config = *default_rlc_config;
 
-      RC.nrmac[i] = (gNB_MAC_INST *) malloc16(sizeof(gNB_MAC_INST));
+  cell->num_scheduled_prach_rx = 0;
 
-      AssertFatal(RC.nrmac != NULL,"can't ALLOCATE %zu Bytes for %d gNB_MAC_INST with size %zu \n",
-                  RC.nb_nr_macrlc_inst * sizeof(gNB_MAC_INST *),
-                  RC.nb_nr_macrlc_inst, sizeof(gNB_MAC_INST));
+  cell->cset0_bwp_start = 0;
+  cell->cset0_bwp_size = 0;
 
-      LOG_D(MAC,"[MAIN] ALLOCATE %zu Bytes for %d gNB_MAC_INST @ %p\n",sizeof(gNB_MAC_INST), RC.nb_nr_macrlc_inst, RC.mac);
+  nrmac->print_ue_stats = true;
 
-      bzero(RC.nrmac[i], sizeof(gNB_MAC_INST));
-      // TODO: handle multiple cells later, for now there's only one cell ever initialized and used
-      // the current work only adds the structure and updates the references to use the cell pointer
-      *cell_ptr = &RC.nrmac[i]->cells[0];
-      nr_cell_sched_t *cell = *cell_ptr;
-      nr_mac_pcch_queue_init(&cell->common_channels);
-      RC.nrmac[i]->Mod_id = i;
+  pthread_mutex_init(&nrmac->sched_lock, NULL);
 
-      RC.nrmac[i]->tag = (NR_TAG_t*)malloc(sizeof(NR_TAG_t));
-      memset((void*)RC.nrmac[i]->tag,0,sizeof(NR_TAG_t));
-      for(int n = 0; n < MAX_NUM_OF_SSB; n++)
-        cell->sib1_pdsch[n].time_domain_allocation = -1;
-      cell->common_channels.ServingCellConfigCommon = scc;
-      cell->radio_config = *config;
-      RC.nrmac[i]->rlc_config = *default_rlc_config;
+  uid_linear_allocator_init(&nrmac->UE_info.uid_allocator);
+  seq_arr_init(&nrmac->pos_act_ue_arr, sizeof(positioning_activation_info_t));
 
-      cell->first_MIB = true;
-      cell->num_scheduled_prach_rx = 0;
-      cell->common_channels.mib = get_new_MIB_NR(scc);
+  seq_arr_init(&nrmac->UE_info.access_ue_list, sizeof(NR_UE_info_t *));
+  // slightly larger to avoid too many collisions
+  seq_arr_init(&nrmac->UE_info.connected_ues_list, sizeof(NR_UE_info_t *));
+  int num_ues = MAX_MOBILES_PER_GNB * 2 + 1;
+  // no hash func as RNTI is key (is random)
+  nrmac->UE_info.connected_ues = hashtable_create(num_ues, NULL);
 
-      cell->cset0_bwp_start = 0;
-      cell->cset0_bwp_size = 0;
+  nrmac->ul_ri_tpmi_select = nr_ul_ri_tpmi_select_default;
+  nrmac->ul_tda_select = nr_ul_tda_select_default;
+  nrmac->ul_beam_select = nr_ul_beam_select_default;
+  nrmac->ul_mcs_select = nr_ul_mcs_select_default;
+  nrmac->ul_rb_alloc = nr_ul_proportional_fair;
 
-      cell->ul_next = (fsn_t) {.mu = *scc->ssbSubcarrierSpacing};
-      RC.nrmac[i]->print_ue_stats = true;
+  nrmac->dl_lcid_alloc = nr_dl_lcid_alloc_default;
 
-      pthread_mutex_init(&RC.nrmac[i]->sched_lock, NULL);
-
-      uid_linear_allocator_init(&RC.nrmac[i]->UE_info.uid_allocator);
-
-      RC.nrmac[i]->ul_ri_tpmi_select = nr_ul_ri_tpmi_select_default;
-      RC.nrmac[i]->ul_tda_select = nr_ul_tda_select_default;
-      RC.nrmac[i]->ul_beam_select = nr_ul_beam_select_default;
-      RC.nrmac[i]->ul_mcs_select = nr_ul_mcs_select_default;
-      RC.nrmac[i]->ul_rb_alloc = nr_ul_proportional_fair;
-
-      RC.nrmac[i]->dl_lcid_alloc = nr_dl_lcid_alloc_default;
-
-      if (get_softmodem_params()->phy_test) {
-        RC.nrmac[i]->pre_processor_dl = nr_preprocessor_phytest;
-        RC.nrmac[i]->pre_processor_ul = nr_ul_preprocessor_phytest;
-      } else {
-        RC.nrmac[i]->pre_processor_dl = nr_dlsch_preprocessor;
-        RC.nrmac[i]->pre_processor_ul = nr_ulsch_preprocessor;
-        RC.nrmac[i]->dl_ri_pmi_select = nr_dl_ri_pmi_select_default;
-        RC.nrmac[i]->dl_mcs_select = nr_dl_mcs_select_default;
-        RC.nrmac[i]->dl_beam_select = nr_dl_beam_select_default;
-        RC.nrmac[i]->dl_tda_select = nr_dl_tda_select_default;
-        RC.nrmac[i]->dl_rb_alloc = nr_dl_proportional_fair;
-      }
-      if (!IS_SOFTMODEM_NOSTATS)
-        threadCreate(&RC.nrmac[i]->stats_thread,
-                     nrmac_stats_thread,
-                     (void *)RC.nrmac[i],
-                     "MAC_STATS",
-                     -1,
-                     sched_get_priority_min(SCHED_OAI) + 1);
-      mac_rrc_init(RC.nrmac[i], node_type);
-    }//END for (i = 0; i < RC.nb_nr_macrlc_inst; i++)
-
-    nr_rlc_op_mode_t mode = NODE_IS_MONOLITHIC(node_type) ? NR_RLC_OP_MODE_MONO_GNB : NR_RLC_OP_MODE_SPLIT_GNB;
-    int success = nr_rlc_module_init(mode);
-    AssertFatal(success == 0,"Could not initialize RLC layer\n");
+  if (get_softmodem_params()->phy_test) {
+    nrmac->pre_processor_dl = nr_preprocessor_phytest;
+    nrmac->pre_processor_ul = nr_ul_preprocessor_phytest;
   } else {
-    RC.nrmac = NULL;
+    nrmac->pre_processor_dl = nr_dlsch_preprocessor;
+    nrmac->pre_processor_ul = nr_ulsch_preprocessor;
+    nrmac->dl_ri_pmi_select = nr_dl_ri_pmi_select_default;
+    nrmac->dl_mcs_select = nr_dl_mcs_select_default;
+    nrmac->dl_beam_select = nr_dl_beam_select_default;
+    nrmac->dl_tda_select = nr_dl_tda_select_default;
+    nrmac->dl_rb_alloc = nr_dl_proportional_fair;
   }
+  if (!IS_SOFTMODEM_NOSTATS)
+    threadCreate(&nrmac->stats_thread,
+                 nrmac_stats_thread,
+                 nrmac,
+                 "MAC_STATS",
+                 -1,
+                 sched_get_priority_min(SCHED_OAI) + 1);
+  mac_rrc_init(nrmac, node_type);
 
-  for (module_id_t i = 0; i < RC.nb_nr_macrlc_inst; i++) {
-    gNB_MAC_INST *nrmac = RC.nrmac[i];
-    nrmac->if_inst = NR_IF_Module_init(i);
-  }
+  nr_rlc_op_mode_t mode = NODE_IS_MONOLITHIC(node_type) ? NR_RLC_OP_MODE_MONO_GNB : NR_RLC_OP_MODE_SPLIT_GNB;
+  int success = nr_rlc_module_init(mode);
+  AssertFatal(success == 0,"Could not initialize RLC layer\n");
+
+  nrmac->if_inst = NR_IF_Module_init(0);
 
   du_init_f1_ue_data();
 
   srand48(0);
+
+  return nrmac;
 }
 
 periodic_ue_sched_t create_period_structure(nr_cell_sched_t *cell, nr_periodic_channel_t channel)
@@ -371,6 +353,14 @@ static void destroy_periodic_sched(periodic_ue_sched_t p)
   free(p.list);
 }
 
+void ind_delete_nr_ue_data(void *p)
+{
+  // access_ue_list has pointers to NR_UE_info_t, and this functions gets a
+  // pointer to the pointer
+  NR_UE_info_t **UE = p;
+  delete_nr_ue_data(*UE);
+}
+
 void mac_top_destroy_gNB(gNB_MAC_INST *mac)
 {
   for (size_t i = 0; i < sizeofArray(mac->cells); i++) {
@@ -388,12 +378,10 @@ void mac_top_destroy_gNB(gNB_MAC_INST *mac)
 #endif /* E3_AGENT */
   }
   NR_UEs_t *UE_info = &mac->UE_info;
-  for (int i = 0; i < sizeofArray(UE_info->connected_ue_list); ++i)
-    if (UE_info->connected_ue_list[i])
-      delete_nr_ue_data(mac, UE_info->connected_ue_list[i]);
-  for (int i = 0; i < sizeofArray(UE_info->access_ue_list); ++i)
-    if (UE_info->access_ue_list[i])
-      delete_nr_ue_data(mac, UE_info->access_ue_list[i]);
+  hashtable_destroy(&UE_info->connected_ues, delete_nr_ue_data);
+  seq_arr_free(&UE_info->connected_ues_list, NULL);
+  seq_arr_free(&UE_info->access_ue_list, ind_delete_nr_ue_data);
+  uid_linear_allocator_init(&UE_info->uid_allocator); // no UE present
   if (mac->f1_config.setup_resp)
     free_f1ap_setup_response(mac->f1_config.setup_resp);
   free(mac->f1_config.setup_resp);
@@ -410,4 +398,14 @@ void nr_mac_send_f1_setup_req(void)
   gNB_MAC_INST *mac = RC.nrmac[0];
   DevAssert(mac);
   mac->mac_rrc.f1_setup_request(mac->f1_config.setup_req);
+}
+
+void nr_mac_send_config_req(gNB_MAC_INST *nrmac, nfapi_nr_config_request_scf_t *cfg)
+{
+  if (NFAPI_MODE == NFAPI_MONOLITHIC) {
+    // nothing to be sent in the other cases
+    NR_PHY_Config_t phycfg = {.phy_id = 0, .cfg = cfg};
+    DevAssert(nrmac->if_inst->NR_PHY_config_req);
+    nrmac->if_inst->NR_PHY_config_req(&phycfg);
+  }
 }

@@ -997,6 +997,13 @@ int get_ssb_subcarrier_offset(uint32_t absoluteFrequencySSB, uint32_t absoluteFr
     scaling = 3;
   if (scs > 2) // FR2
     scaling <<= (scs - 2);
+  // k_SSB grid, see TS 38.211 7.4.3.1
+  AssertFatal(absolute_diff % scaling == 0,
+              "Invalid absoluteFrequencySSB %u with absoluteFrequencyPointA %u: the SSB-to-pointA "
+              "frequency offset is not on the k_SSB grid (ARFCN difference %u is not a multiple of %d). "
+              "No valid k_SSB exists; the SSB cannot be transmitted at the configured raster position. "
+              "Choose an SSB ARFCN whose distance to point A is a multiple of 15 kHz (FR1)\n",
+              absoluteFrequencySSB, absoluteFrequencyPointA, absolute_diff, scaling);
   int sco_limit = scs == 1 ? 24 : 12;
   int subcarrier_offset = (absolute_diff / scaling) % sco_limit;
   // 30kHz is the only case where k_SSB is expressed in terms of a different SCS (15kHz)
@@ -1015,6 +1022,11 @@ uint32_t get_ssb_offset_to_pointA(uint32_t absoluteFrequencySSB,
   // only difference wrt NR-ARFCN is delta frequency 5kHz if f < 3 GHz for ARFCN
   uint32_t absolute_diff = (absoluteFrequencySSB - absoluteFrequencyPointA);
   const int scaling_5khz = absoluteFrequencyPointA < 600000 ? 3 : 1;
+  // k_SSB grid, see TS 38.211 7.4.3.1
+  AssertFatal(absolute_diff % scaling_5khz == 0,
+              "Invalid absoluteFrequencySSB %u with absoluteFrequencyPointA %u: the SSB-to-pointA "
+              "frequency offset is not on the k_SSB grid (ARFCN difference %u is not a multiple of %d)\n",
+              absoluteFrequencySSB, absoluteFrequencyPointA, absolute_diff, scaling_5khz);
   const int scaling = (absoluteFrequencyPointA >= 2016667) ? 1 << (ssbSubcarrierSpacing - 2) : 1 << ssbSubcarrierSpacing;
   const int scaled_abs_diff = absolute_diff / (scaling_5khz * scaling);
   // absoluteFrequencySSB is the central frequency of SSB which is made by 20RBs in total

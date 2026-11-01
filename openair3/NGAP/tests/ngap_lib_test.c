@@ -102,6 +102,28 @@ static void test_ngap_paging_encode_decode(void)
   free_ng_paging(&orig);
 }
 
+/** @brief Test decoding of all GUAMI fields */
+static void test_ngap_guami_decode(void)
+{
+  const uint16_t set_ids[] = {1, 0x155, 0x3ff};
+  const uint8_t pointers[] = {1, 0x2a, 0x3f};
+  for (size_t i = 0; i < sizeofArray(set_ids); i++) {
+    NGAP_GUAMI_t guami = {0};
+    MCC_MNC_TO_PLMNID(208, 95, 2, &guami.pLMNIdentity);
+    AMF_REGION_TO_BIT_STRING(0x80, &guami.aMFRegionID);
+    AMF_SETID_TO_BIT_STRING(set_ids[i], &guami.aMFSetID);
+    AMF_POINTER_TO_BIT_STRING(pointers[i], &guami.aMFPointer);
+
+    nr_guami_t decoded = decode_ngap_guami(&guami);
+    AssertFatal(decoded.plmn.mcc == 208 && decoded.plmn.mnc == 95 && decoded.plmn.mnc_digit_length == 2, "PLMN mismatch\n");
+    AssertFatal(decoded.amf_region_id == 0x80, "amf_region_id 0x%x != 0x80\n", decoded.amf_region_id);
+    AssertFatal(decoded.amf_set_id == set_ids[i], "amf_set_id 0x%x != 0x%x\n", decoded.amf_set_id, set_ids[i]);
+    AssertFatal(decoded.amf_pointer == pointers[i], "amf_pointer 0x%x != 0x%x\n", decoded.amf_pointer, pointers[i]);
+    ASN_STRUCT_FREE_CONTENTS_ONLY(asn_DEF_NGAP_GUAMI, &guami);
+  }
+  LOG_A(NGAP, "decode_ngap_guami() test passed\n");
+}
+
 // Stub for uniqCfg required by logging/config system
 configmodule_interface_t *uniqCfg = NULL;
 
@@ -112,6 +134,7 @@ int main(void)
   set_log(NGAP, OAILOG_INFO);
 
   test_ngap_paging_encode_decode();
-  LOG_A(NGAP, "All NGAP paging tests passed!\n");
+  test_ngap_guami_decode();
+  LOG_A(NGAP, "All NGAP tests passed!\n");
   return 0;
 }

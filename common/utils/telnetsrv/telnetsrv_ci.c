@@ -32,17 +32,12 @@
 
 static int get_single_ue_rnti_mac(void)
 {
-  NR_UE_info_t *ue = NULL;
-  UE_iterator(RC.nrmac[0]->UE_info.connected_ue_list, it) {
-    if (it && ue)
-      return -1;
-    if (it)
-      ue = it;
-  }
-  if (!ue)
+  NR_UEs_t *UEs = &RC.nrmac[0]->UE_info;
+  if (get_num_connected_ue(UEs) > 1)
     return -1;
-
-  return ue->rnti;
+  FOR_EACH_CONNECTED_UE(UEs, UE)
+    return UE->rnti;
+  return -1;
 }
 
 int get_single_rnti(char *buf, int debug, telnet_printfunc_t prnt)
@@ -245,7 +240,7 @@ int force_ul_failure(char *buf, int debug, telnet_printfunc_t prnt)
   int rnti = fetch_rnti(buf, prnt);
   if (rnti < 0)
     ERROR_MSG_RET("could not identify UE (no UE, no such RNTI, or multiple UEs)\n");
-  NR_UE_info_t *UE = find_nr_UE(&RC.nrmac[0]->UE_info, rnti);
+  NR_UE_info_t *UE = find_connected_nr_ue(&RC.nrmac[0]->UE_info, rnti);
   nr_mac_trigger_ul_failure(&UE->UE_sched_ctrl, UE->current_UL_BWP.scs);
   return 0;
 }
@@ -256,7 +251,7 @@ int force_ue_release(char *buf, int debug, telnet_printfunc_t prnt)
   int rnti = fetch_rnti(buf, prnt);
   if (rnti < 0)
     ERROR_MSG_RET("could not identify UE (no UE, no such RNTI, or multiple UEs)\n");
-  NR_UE_info_t *UE = find_nr_UE(&RC.nrmac[0]->UE_info, rnti);
+  NR_UE_info_t *UE = find_connected_nr_ue(&RC.nrmac[0]->UE_info, rnti);
   NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
   sched_ctrl->ul_failure_timer = 2;
   nr_mac_check_ul_failure(RC.nrmac[0], UE->rnti, sched_ctrl);
@@ -269,7 +264,7 @@ static int get_current_bwp(char *buf, int debug, telnet_printfunc_t prnt)
   int rnti = fetch_rnti(buf, prnt);
   if (rnti < 0)
     ERROR_MSG_RET("could not identify UE (no UE, no such RNTI, or multiple UEs)\n");
-  NR_UE_info_t *UE = find_nr_UE(&RC.nrmac[0]->UE_info, rnti);
+  NR_UE_info_t *UE = find_connected_nr_ue(&RC.nrmac[0]->UE_info, rnti);
   if (!UE)
     ERROR_MSG_RET("could not find UE with RNTI %04x\n", rnti);
   int dl_bwp = UE->current_DL_BWP.bwp_id;
@@ -393,7 +388,7 @@ static int set_pusch_target_snr(char *buf, int debug, telnet_printfunc_t prnt)
 
   gNB_MAC_INST *nrmac = RC.nrmac[0];
   NR_SCHED_LOCK(&nrmac->sched_lock);
-  UE_iterator(nrmac->UE_info.connected_ue_list, it) {
+  FOR_EACH_CONNECTED_UE(&nrmac->UE_info, it) {
     nr_mac_set_target_snrx10(&it->UE_sched_ctrl.pusch_pc, new_snr * 10);
   }
   NR_SCHED_UNLOCK(&nrmac->sched_lock);

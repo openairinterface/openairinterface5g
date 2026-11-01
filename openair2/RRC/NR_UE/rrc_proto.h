@@ -40,6 +40,7 @@ void *rrc_nrue(void *args_p);
 void nr_rrc_handle_timers(NR_UE_RRC_INST_t *rrc);
 void handle_rlf_detection(NR_UE_RRC_INST_t *rrc);
 void handle_302_expired_stopped(NR_UE_RRC_INST_t *rrc);
+void handle_t304_expiry(NR_UE_RRC_INST_t *rrc);
 
 int get_from_lte_ue_fd();
 

@@ -2,6 +2,9 @@
 
 Fronthaul stack for 7.2x split using DPDK. Currently supports O-RU only; O-DU support is not implemented.
 
+The shared receive, send and timer components are described in the
+[fronthaul core documentation](./core/README.md).
+
 ## Architecture overview
 
 ### Software component diagram

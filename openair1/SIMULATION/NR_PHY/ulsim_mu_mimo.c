@@ -602,7 +602,8 @@ int main(int argc, char *argv[])
                                 .timer_config.t311 = 3000,
                                 .timer_config.n311 = 1,
                                 .timer_config.t319 = 400,
-                                .spatial_stream_index = {0, 1, 2, 3, 4, 5, 6, 7}};
+                                .spatial_stream_index = {0, 1, 2, 3, 4, 5, 6, 7},
+                                .beam_config.beams_per_period = 1};
   const nr_rlc_configuration_t rlc_config = {.srb =
                                                  {
                                                      .t_poll_retransmit = 45,
@@ -630,9 +631,9 @@ int main(int argc, char *argv[])
 
   RC.nb_nr_macrlc_inst = 1;
   nr_cell_sched_t *cell;
-  mac_top_init_gNB(ngran_gNB, scc, &conf, &rlc_config, &cell);
-  cell->beam_info = (NR_beam_info_t){.beams_per_period = 1};
-  nr_mac_config_scc(RC.nrmac[0], cell, scc, &conf);
+  gNB_MAC_INST *nrmac = mac_top_init_gNB(ngran_gNB, &rlc_config, &cell);
+  nr_mac_cell_config_scc(cell, scc, &conf);
+  nr_mac_send_config_req(nrmac, &cell->config);
 
   NR_UE_NR_Capability_t *UE_Capability_nr = CALLOC(1, sizeof(NR_UE_NR_Capability_t));
   prepare_sim_uecap(UE_Capability_nr, scc, mu, N_RB_UL, 0, mcs_table);
@@ -648,7 +649,7 @@ int main(int argc, char *argv[])
 
   // UE dedicated configuration
   for (int u = 0; u < NUM_UE; u++) {
-    nr_mac_add_test_ue(RC.nrmac[0], cell, n_rnti + u, scg);
+    nr_mac_add_test_ue(nrmac, cell, n_rnti + u, scg);
   }
   gNB->frame_parms.nb_antennas_tx = 1;
   gNB->frame_parms.nb_antennas_rx = n_rx;

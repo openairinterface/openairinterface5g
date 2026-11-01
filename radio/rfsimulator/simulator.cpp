@@ -1070,6 +1070,22 @@ static void process_recv_header(buffer_t *b, bool first_time)
   return;
 }
 
+static void rfsim_add_scaled_samples(const c16_t *src, int count, float gain, c16_t *dst)
+{
+  // Intentional to avoid floating-point arithmetic when not needed
+  if (gain == 1.0f) {
+    for (int i = 0; i < count; ++i) {
+      dst[i].r += src[i].r;
+      dst[i].i += src[i].i;
+    }
+    return;
+  }
+  for (int i = 0; i < count; ++i) {
+    dst[i].r += src[i].r * gain;
+    dst[i].i += src[i].i * gain;
+  }
+}
+
 /**
  * @brief Combines samples from received packets into a single buffer for the rx beam
  *
@@ -1123,11 +1139,7 @@ static void combine_received_beams(rfsimulator_state_t *t,
     for (uint aatx = 0; aatx < pkt->header.nbAnt; aatx++) {
       float gain_linear = powf(10, (own_gain_dB + sender_gain_db[aatx]) / 20.0);
       c16_t *tx_ant_buffer_in = &buffer[aatx * pkt->header.size + read_start_idx];
-      for (int s = write_start_idx; s < write_end_idx; s++) {
-        samples[aatx][s].r += tx_ant_buffer_in->r * gain_linear;
-        samples[aatx][s].i += tx_ant_buffer_in->i * gain_linear;
-        tx_ant_buffer_in++;
-      }
+      rfsim_add_scaled_samples(tx_ant_buffer_in, write_end_idx - write_start_idx, gain_linear, &samples[aatx][write_start_idx]);
     }
     packets_copy.pop();
   }
@@ -1235,6 +1247,8 @@ static void rfsimulator_read_internal(rfsimulator_state_t *t,
         }
 
         for (int aarx = 0; aarx < nbAnt; aarx++) {
+          for (auto &b : ant_buffers)
+            std::fill(b.begin(), b.end(), c16_t{0, 0});
           combine_received_beams(t,
                                  ptr->received_packets,
                                  timestamp - channel_offset - (channel_length - 1),

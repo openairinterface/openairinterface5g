@@ -18,7 +18,7 @@ review policy).
 Every commit in a pull request must pass two independent CI checks, described
 in [CONTRIBUTING.md](../CONTRIBUTING.md#commit-guidelines):
 
-1. **[Developer Certificate of Origin (DCO)](https://en.wikipedia.org/wiki/Developer_Certificate_of_Origin)**:
+1. **[Developer Certificate of Origin (DCO)](https://developercertificate.org/)**:
    the commit message carries a `Signed-off-by:` trailer.
 2. **[Verified commits](https://docs.github.com/en/authentication/managing-commit-signature-verification/about-commit-signature-verification)**:
    the commit is cryptographically signed with an SSH or GPG key.

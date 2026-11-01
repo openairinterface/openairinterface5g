@@ -178,7 +178,7 @@ static void cp_pdusession_transfer_to_pdusession(pdusession_t *dst, const pduses
   dst->n3_incoming = src->n3_incoming;
   /* QoS handling */
   DevAssert(!dst->qos.data);
-  DevAssert(src->nb_qos < MAX_QOS_FLOWS);
+  DevAssert(src->nb_qos <= MAX_QOS_FLOWS);
   // Initialise mapped QoS list per PDU Session
   seq_arr_init(&dst->qos, sizeof(nr_rrc_qos_t));
   // Add QoS flow to list
@@ -507,6 +507,13 @@ int rrc_gNB_process_NGAP_INITIAL_CONTEXT_SETUP_REQ(MessageDef *msg_p, instance_t
   // this is malloced pointers, we pass it for later free()
   UE->nas_pdu = req->nas_pdu;
 
+  /* TS 38.413 8.3.1.2: store the UE Aggregate Maximum Bit Rate when received, even without PDU session to set up:
+   * the AMF does not repeat it in a later PDU Session Resource Setup Request */
+  if (req->has_ue_ambr) {
+    UE->ambr.dl_br = req->ue_ambr.br_dl;
+    UE->ambr.ul_br = req->ue_ambr.br_ul;
+  }
+
   if (req->nb_of_pdusessions > 0) {
     AssertFatal(req->has_ue_ambr, "UE aggregate maximum bitrate is required when there are PDU sessions to setup");
 
@@ -536,10 +543,6 @@ int rrc_gNB_process_NGAP_INITIAL_CONTEXT_SETUP_REQ(MessageDef *msg_p, instance_t
       UE->initial_pdus = calloc_or_fail(ps_count, sizeof(*UE->initial_pdus));
       memcpy(UE->initial_pdus, psessions, ps_count * sizeof(*UE->initial_pdus));
       UE->n_initial_pdu = ps_count;
-
-      /* If we have at least one session to set up, store AMBR */
-      UE->ambr.dl_br = req->ue_ambr.br_dl;
-      UE->ambr.ul_br = req->ue_ambr.br_ul;
     }
   }
 
@@ -769,6 +772,10 @@ int rrc_gNB_process_NGAP_DOWNLINK_NAS(MessageDef *msg_p, instance_t instance)
 
   gNB_RRC_UE_t *UE = &ue_context_p->ue_context;
   UE->amf_ue_ngap_id = req->amf_ue_ngap_id;
+  if (req->has_ue_ambr) {
+    UE->ambr.dl_br = req->ue_ambr.br_dl;
+    UE->ambr.ul_br = req->ue_ambr.br_ul;
+  }
   UE->nas_pdu = req->nas_pdu;
   rrc_forward_ue_nas_message(rrc, UE);
   return 0;
@@ -1060,7 +1067,7 @@ static void nr_rrc_apply_qos_add_modify(gNB_RRC_INST *rrc,
                                         e1ap_bearer_mod_req_t *e1_req,
                                         bool drb_needs_e1_refresh[MAX_DRBS_PER_UE + 1])
 {
-  DevAssert(transfer->nb_qos_to_add_modify < MAX_QOS_FLOWS);
+  DevAssert(transfer->nb_qos_to_add_modify <= MAX_QOS_FLOWS);
   DevAssert(e1_req->numPDUSessionsMod < NR_MAX_NB_PDU_SESSIONS);
   pdu_session_to_mod_t *pdu_mod = &e1_req->pduSessionMod[e1_req->numPDUSessionsMod++];
   pdu_mod->sessionId = dst->pdusession_id;
@@ -1188,7 +1195,7 @@ static void nr_rrc_update_pdusession(gNB_RRC_INST *rrc,
   DevAssert(UE);
   DevAssert(e1_req);
   const pdusession_mod_req_transfer_t *transfer = &sessMod->pdusessionTransfer;
-  DevAssert(transfer->nb_qos_to_add_modify < MAX_QOS_FLOWS);
+  DevAssert(transfer->nb_qos_to_add_modify <= MAX_QOS_FLOWS);
   bool drb_needs_e1_refresh[MAX_DRBS_PER_UE + 1] = {false};
   pdusession_t *dst = &session->param;
   dst->pdusession_id = sessMod->pdusession_id;

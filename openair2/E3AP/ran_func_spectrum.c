@@ -196,7 +196,7 @@ bool nr_mac_ul_slot_is_sensing_reserved(const nr_cell_sched_t *cell, int slot)
 /* Beams active this period (1 unless multi-beam is configured). */
 static inline int nr_mac_active_beams(const nr_cell_sched_t *cell)
 {
-  return cell->beam_info.beam_allocation ? cell->beam_info.beams_per_period : 1;
+  return cell->beam_info.beam_allocation ? cell->beam_info.config.beams_per_period : 1;
 }
 
 /* Hard-reserve the just-reseeded UL slot for sensing: stamp every beam's row
@@ -545,7 +545,7 @@ static int nr_sensing_add_ul_ctrl_occupancy(gNB_MAC_INST *mac,
    * transmits its configured SR/CSI/SRS per RRC (e.g. SR to recover from a UL
    * failure), so an is_active gate would leak those PRBs into the free-tile
    * telemetry. Telemetry-only, so no scheduling impact. */
-  UE_iterator (mac->UE_info.connected_ue_list, UE) {
+  FOR_EACH_CONNECTED_UE(&mac->UE_info, UE) {
     const NR_UE_UL_BWP_t *ul_bwp = &UE->current_UL_BWP;
     const int bwp_start = ul_bwp->BWPStart;
     const int bwp_size = ul_bwp->BWPSize;

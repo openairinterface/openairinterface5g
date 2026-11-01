@@ -18,7 +18,7 @@ uint32_t num_act_rb(NR_UEs_t* const UE_info)
   assert(UE_info!= NULL);
 
   uint32_t act_rb = 0;
-  UE_iterator(UE_info->connected_ue_list, UE) {
+  FOR_EACH_CONNECTED_UE(UE_info, UE) {
     uint16_t const rnti = UE->rnti;
     for(int rb_id = 1; rb_id < 6; ++rb_id ){
       nr_rlc_statistics_t rlc = {0};
@@ -35,7 +35,7 @@ void active_avg_to_tx(NR_UEs_t* const UE_info)
 {
   assert(UE_info!= NULL);
 
-  UE_iterator(UE_info->connected_ue_list, UE) {
+  FOR_EACH_CONNECTED_UE(UE_info, UE) {
     uint16_t const rnti = UE->rnti;
     for(int rb_id = 1; rb_id < 6; ++rb_id ){
       nr_rlc_statistics_t rlc = {0};
@@ -73,7 +73,7 @@ bool read_rlc_sm(void* data)
   rlc->msg.tstamp = time_now_us();
 
   uint32_t i = 0;
-  UE_iterator(UE_info->connected_ue_list, UE) {
+  FOR_EACH_CONNECTED_UE(UE_info, UE) {
     uint16_t const rnti = UE->rnti;
     //for every LC ID
     for(int rb_id = 1; rb_id < 6; ++rb_id ){

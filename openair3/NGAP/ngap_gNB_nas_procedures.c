@@ -344,6 +344,20 @@ int ngap_gNB_handle_nas_downlink(sctp_assoc_t assoc_id, uint32_t stream, NGAP_NG
     }
   }
 
+  /* UE Aggregate Maximum Bit Rate (optional): the NG-RAN node shall store it (TS 38.413 8.6.2.2), the AMF does not
+   * repeat it in a later PDU Session Resource Setup Request */
+  ngap_ambr_t ue_ambr;
+  bool has_ue_ambr = false;
+  NGAP_FIND_PROTOCOLIE_BY_ID(NGAP_DownlinkNASTransport_IEs_t,
+                             ie,
+                             container,
+                             NGAP_ProtocolIE_ID_id_UEAggregateMaximumBitRate,
+                             false);
+  if (ie != NULL) {
+    ue_ambr = decode_ngap_UEAggregateMaximumBitRate(&ie->value.choice.UEAggregateMaximumBitRate);
+    has_ue_ambr = true;
+  }
+
   NGAP_FIND_PROTOCOLIE_BY_ID(NGAP_DownlinkNASTransport_IEs_t, ie, container,
                              NGAP_ProtocolIE_ID_id_NAS_PDU, true);
   /* Forward the NAS PDU to NR-RRC */
@@ -351,7 +365,8 @@ int ngap_gNB_handle_nas_downlink(sctp_assoc_t assoc_id, uint32_t stream, NGAP_NG
                                       ue_desc_p->gNB_ue_ngap_id,
                                       ue_desc_p->amf_ue_ngap_id,
                                       ie->value.choice.NAS_PDU.buf,
-                                      ie->value.choice.NAS_PDU.size);
+                                      ie->value.choice.NAS_PDU.size,
+                                      has_ue_ambr ? &ue_ambr : NULL);
 
   return 0;
 }

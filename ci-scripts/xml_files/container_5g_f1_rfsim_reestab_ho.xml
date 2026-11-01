@@ -1,0 +1,146 @@
+<!-- SPDX-License-Identifier: LicenseRef-CSSL-1.0 -->
+
+<!-- F1 HO to an unreachable target DU: T304 expires and the UE re-establishes on the source DU -->
+
+<testCaseList>
+  <htmlTabName>CU-DU F1 HO Re-establishment</htmlTabName>
+
+  <testCase>
+    <class>Pull_Local_Registry</class>
+    <desc>Pull Images from Local Registry</desc>
+    <node>localhost</node>
+    <images>oai-gnb-asan oai-nr-ue-asan</images>
+  </testCase>
+
+  <testCase>
+    <class>Create_Workspace</class>
+    <desc>Create new Workspace</desc>
+    <node>localhost</node>
+  </testCase>
+
+  <testCase>
+    <class>Deploy_Object</class>
+    <desc>Deploy OAI 5G CoreNetwork</desc>
+    <node>localhost</node>
+    <yaml_path>ci-scripts/yaml_files/5g_f1_rfsimulator</yaml_path>
+    <services>mysql oai-amf oai-smf oai-upf oai-ext-dn</services>
+  </testCase>
+
+  <testCase>
+    <class>Deploy_Object</class>
+    <desc>Deploy OAI 5G CU + DU-PCI0 + UE RF sim SA</desc>
+    <node>localhost</node>
+    <yaml_path>ci-scripts/yaml_files/5g_f1_rfsimulator</yaml_path>
+    <services>oai-cu oai-du-pci0 oai-nr-ue</services>
+  </testCase>
+
+  <testCase>
+    <class>Attach_UE</class>
+    <desc>Attach OAI UE (Wait for IP)</desc>
+    <id>rfsim5g_ue</id>
+    <node>localhost</node>
+  </testCase>
+
+  <testCase>
+    <class>IdleSleep</class>
+    <desc>Delay 2 second to stabilize connection</desc>
+    <idle_sleep_time_in_sec>2</idle_sleep_time_in_sec>
+  </testCase>
+
+  <testCase>
+    <class>Ping</class>
+    <desc>Ping ext-dn from NR-UE</desc>
+    <id>rfsim5g_ue</id>
+    <node>localhost</node>
+    <svr_id>rfsim5g_ext_dn</svr_id>
+    <svr_node>localhost</svr_node>
+    <ping_args>-c 20 -i0.25</ping_args>
+    <ping_packetloss_threshold>5</ping_packetloss_threshold>
+  </testCase>
+
+  <testCase>
+    <class>Deploy_Object</class>
+    <desc>Deploy OAI 5G (target) DU-PCI1 RF sim SA</desc>
+    <node>localhost</node>
+    <yaml_path>ci-scripts/yaml_files/5g_f1_rfsimulator</yaml_path>
+    <services>oai-du-pci1</services>
+  </testCase>
+
+  <testCase>
+    <class>IdleSleep</class>
+    <desc>Sleep</desc>
+    <idle_sleep_time_in_sec>15</idle_sleep_time_in_sec>
+  </testCase>
+
+  <testCase>
+    <class>Custom_Command</class>
+    <desc>Simulate severe DL radio channel disruption on target DU-PCI1 (ploss 60)</desc>
+    <node>localhost</node>
+    <command>echo channelmod modify 1 ploss 60 | ncat 192.168.71.181 8091</command>
+  </testCase>
+
+  <testCase>
+    <class>Custom_Command</class>
+    <desc>Keep DU-PCI1's injected noise low so it doesn't pollute the UE's shared RX buffer</desc>
+    <node>localhost</node>
+    <command>echo channelmod modify 1 noise_power_dB -10 | ncat 192.168.71.181 8091</command>
+  </testCase>
+
+  <testCase>
+    <class>Custom_Command</class>
+    <desc>Trigger Handover to unreachable target DU-PCI1</desc>
+    <node>localhost</node>
+    <command>echo ci trigger_f1_ho | ncat 192.168.71.150 9090</command>
+  </testCase>
+
+  <testCase>
+    <class>IdleSleep</class>
+    <desc>Sleep for T304 (~2s) expiry and re-establishment at source to complete</desc>
+    <idle_sleep_time_in_sec>40</idle_sleep_time_in_sec>
+  </testCase>
+
+  <testCase>
+    <class>Custom_Command</class>
+    <desc>Verify UE landed back on source DU-PCI0 (3584), not the failed target DU-PCI1</desc>
+    <node>localhost</node>
+    <command>echo ci fetch_du_by_ue_id | ncat 192.168.71.150 9090 | grep "3584"</command>
+  </testCase>
+
+  <testCase>
+    <class>Ping</class>
+    <desc>Ping ext-dn from NR-UE after re-establishment at source</desc>
+    <id>rfsim5g_ue</id>
+    <node>localhost</node>
+    <svr_id>rfsim5g_ext_dn</svr_id>
+    <svr_node>localhost</svr_node>
+    <ping_args>-c 20 -i0.5 -w25</ping_args>
+    <ping_packetloss_threshold>80</ping_packetloss_threshold>
+  </testCase>
+
+  <testCase>
+    <class>Custom_Command</class>
+    <desc>Verify a re-establishment was counted</desc>
+    <node>localhost</node>
+    <command>echo ci get_reestab_count | ncat 192.168.71.150 9090 | grep -E 'UE RNTI [0-9a-f]{4} reestab 1'</command>
+  </testCase>
+
+  <testCase>
+    <class>Undeploy_Object</class>
+    <always_exec>true</always_exec>
+    <desc>Undeploy all OAI 5G stack</desc>
+    <node>localhost</node>
+    <yaml_path>ci-scripts/yaml_files/5g_f1_rfsimulator</yaml_path>
+    <analysis>
+      <services>oai-cu=EndsWithBye oai-du-pci0=RetxCheck=30,100,100,100 oai-du-pci0=EndsWithBye oai-du-pci1=RetxCheck=30,100,100,100 oai-du-pci1=EndsWithBye oai-nr-ue</services>
+    </analysis>
+  </testCase>
+
+  <testCase>
+    <class>Clean_Test_Server_Images</class>
+    <always_exec>true</always_exec>
+    <desc>Clean Test Images on Test Server</desc>
+    <node>localhost</node>
+    <images>oai-gnb-asan oai-nr-ue-asan</images>
+  </testCase>
+
+</testCaseList>

@@ -176,14 +176,14 @@ void nr_schedule_pucch(gNB_MAC_INST *nrmac, nr_cell_sched_t *cell, frame_t frame
   if (!is_ul_slot(slot, &cell->frame_structure))
     return;
 
-  UE_iterator(nrmac->UE_info.access_ue_list, init_UE) {
+  FOR_EACH_RA_UE(&nrmac->UE_info, init_UE) {
     if (init_UE->pcell != cell)
       continue;
     if (init_UE->ra->ra_state == nrRA_WAIT_Msg4_MsgB_ACK)
       schedule_pucch_core(cell, nrmac, init_UE, frame, slot);
   }
 
-  UE_iterator(nrmac->UE_info.connected_ue_list, UE) {
+  FOR_EACH_CONNECTED_UE(&nrmac->UE_info, UE) {
     if (UE->pcell != cell)
       continue;
     schedule_pucch_core(cell, nrmac, UE, frame, slot);
@@ -207,7 +207,7 @@ void nr_csi_meas_reporting(gNB_MAC_INST *nrmac, nr_cell_sched_t *cell, frame_t f
   const NR_ServingCellConfigCommon_t *scc = cell->common_channels.ServingCellConfigCommon;
   const int NTN_gNB_Koffset = get_NTN_Koffset(scc);
 
-  UE_iterator(nrmac->UE_info.connected_ue_list, UE) {
+  FOR_EACH_CONNECTED_UE(&nrmac->UE_info, UE) {
     if (UE->pcell != cell)
       continue;
     NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;
@@ -922,10 +922,10 @@ void handle_nr_uci_pucch_0_1(module_id_t mod_id, int cell_id, frame_t frame, slo
   gNB_MAC_INST *nrmac = RC.nrmac[mod_id];
   NR_SCHED_LOCK(&nrmac->sched_lock);
   nr_cell_sched_t *cell = nr_mac_get_cell_by_phy_id(nrmac, cell_id);
-  NR_UE_info_t *UE = find_nr_UE(&nrmac->UE_info, uci_01->rnti);
+  NR_UE_info_t *UE = find_connected_nr_ue(&nrmac->UE_info, uci_01->rnti);
   bool is_ra = false;
   if (!UE) {
-    UE = find_ra_UE(&nrmac->UE_info, uci_01->rnti);
+    UE = find_ra_ue(&nrmac->UE_info, uci_01->rnti);
     if (UE)
       is_ra = true;
     else {
@@ -1009,7 +1009,7 @@ void handle_nr_uci_pucch_2_3_4(module_id_t mod_id, int cell_id, frame_t frame, s
   NR_SCHED_LOCK(&nrmac->sched_lock);
   nr_cell_sched_t *cell = nr_mac_get_cell_by_phy_id(nrmac, cell_id);
 
-  NR_UE_info_t *UE = find_nr_UE(&nrmac->UE_info, uci_234->rnti);
+  NR_UE_info_t *UE = find_connected_nr_ue(&nrmac->UE_info, uci_234->rnti);
   if (!UE) {
     NR_SCHED_UNLOCK(&nrmac->sched_lock);
     LOG_E(NR_MAC, "%s(): unknown RNTI %04x in PUCCH UCI\n", __func__, uci_234->rnti);
@@ -1337,7 +1337,7 @@ int nr_acknack_scheduling(nr_cell_sched_t *cell,
 void nr_sr_reporting(gNB_MAC_INST *nrmac, nr_cell_sched_t *cell, frame_t SFN, slot_t slot)
 {
   const NR_ServingCellConfigCommon_t *scc = cell->common_channels.ServingCellConfigCommon;
-  UE_iterator(nrmac->UE_info.connected_ue_list, UE) {
+  FOR_EACH_CONNECTED_UE(&nrmac->UE_info, UE) {
     if (UE->pcell != cell)
       continue;
     NR_UE_sched_ctrl_t *sched_ctrl = &UE->UE_sched_ctrl;

@@ -773,8 +773,6 @@ e1ap_bearer_setup_req_t cp_bearer_context_setup_request(const e1ap_bearer_setup_
   cp.anl = msg->anl;
   cp.bearerContextStatus = msg->bearerContextStatus;
   cp.numPDUSessions = msg->numPDUSessions;
-  strncpy(cp.secInfo.encryptionKey, msg->secInfo.encryptionKey, sizeof(cp.secInfo.encryptionKey));
-  strncpy(cp.secInfo.integrityProtectionKey, msg->secInfo.integrityProtectionKey, sizeof(cp.secInfo.integrityProtectionKey));
   // Allocate and copy PDU Sessions array
   if (msg->numPDUSessions > 0 && msg->pduSession != NULL) {
     cp.pduSession = calloc_or_fail(msg->numPDUSessions, sizeof(*cp.pduSession));
@@ -803,9 +801,11 @@ bool eq_bearer_context_setup_request(const e1ap_bearer_setup_req_t *a, const e1a
   _EQ_CHECK_INT(a->servingPLMNid.mcc, b->servingPLMNid.mcc);
   _EQ_CHECK_INT(a->servingPLMNid.mnc, b->servingPLMNid.mnc);
   _EQ_CHECK_INT(a->servingPLMNid.mnc_digit_length, b->servingPLMNid.mnc_digit_length);
-  // Security Keys
-  _EQ_CHECK_STR(a->secInfo.encryptionKey, b->secInfo.encryptionKey);
-  _EQ_CHECK_STR(a->secInfo.integrityProtectionKey, b->secInfo.integrityProtectionKey);
+  // Security Keys (binary, not NUL-terminated)
+  if (memcmp(a->secInfo.encryptionKey, b->secInfo.encryptionKey, E1AP_SECURITY_KEY_SIZE) != 0)
+    return false;
+  if (memcmp(a->secInfo.integrityProtectionKey, b->secInfo.integrityProtectionKey, E1AP_SECURITY_KEY_SIZE) != 0)
+    return false;
   // PDU Sessions
   _EQ_CHECK_INT(a->numPDUSessions, b->numPDUSessions);
   _EQ_CHECK_OPTIONAL_PTR(a, b, pduSession);
@@ -1545,6 +1545,28 @@ static E1AP_PDU_Session_Resource_To_Setup_Mod_Item_t e1_encode_pdu_session_to_se
   return item;
 }
 
+/** @brief Encode Bit Rate IE (3GPP TS 38.463, 9.3.1.20) */
+static bool e1_encode_bit_rate(E1AP_BitRate_t *out, uint64_t in)
+{
+  if (in > NR_MAX_BIT_RATE || asn_uint642INTEGER(out, in) != 0) {
+    PRINT_ERROR("Failed to encode E1AP BitRate\n");
+    return false;
+  }
+  return true;
+}
+
+/** @brief Decode Bit Rate IE (3GPP TS 38.463, 9.3.1.20) */
+static bool e1_decode_bit_rate(uint64_t *out, const E1AP_BitRate_t *in)
+{
+  int64_t value;
+  if (asn_INTEGER2int64(in, &value) != 0 || value < 0 || value > NR_MAX_BIT_RATE) {
+    PRINT_ERROR("Unsupported E1AP BitRate\n");
+    return false;
+  }
+  *out = value;
+  return true;
+}
+
 /**
  * @brief Encodes the E1 Bearer Modification Request message
  */
@@ -1590,16 +1612,20 @@ E1AP_E1AP_PDU_t *encode_E1_bearer_context_mod_request(const e1ap_bearer_mod_req_
     ie4->id = E1AP_ProtocolIE_ID_id_UEDLAggregateMaximumBitRate;
     ie4->criticality = E1AP_Criticality_reject;
     ie4->value.present = E1AP_BearerContextModificationRequestIEs__value_PR_BitRate;
-    INT32_TO_OCTET_STRING(*in->ueDlAggMaxBitRate, &ie4->value.choice.BitRate);
+    if (!e1_encode_bit_rate(&ie4->value.choice.BitRate, *in->ueDlAggMaxBitRate)) {
+      AssertFatal(0 == 1, "Failed to encode UE DL Aggregate Maximum Bit Rate\n");
+    }
   }
 
   // UE DL Maximum Integrity Protected Data Rate (O)
   if (in->ueDlMaxIPBitRate) {
     asn1cSequenceAdd(out->protocolIEs.list, E1AP_BearerContextModificationRequestIEs_t, ie5);
     ie5->id = E1AP_ProtocolIE_ID_id_UEDLMaximumIntegrityProtectedDataRate;
-    ie5->criticality = E1AP_Criticality_ignore;
-    ie5->value.present = E1AP_BearerContextModificationRequestIEs__value_PR_BitRate;
-    INT32_TO_OCTET_STRING(*in->ueDlMaxIPBitRate, &ie5->value.choice.BitRate);
+    ie5->criticality = E1AP_Criticality_reject;
+    ie5->value.present = E1AP_BearerContextModificationRequestIEs__value_PR_BitRate_1;
+    if (!e1_encode_bit_rate(&ie5->value.choice.BitRate_1, *in->ueDlMaxIPBitRate)) {
+      AssertFatal(0 == 1, "Failed to encode UE DL Maximum Integrity Protected Data Rate\n");
+    }
   }
 
   // Bearer Context Status Change (O)
@@ -1826,13 +1852,15 @@ bool decode_E1_bearer_context_mod_request(const E1AP_E1AP_PDU_t *pdu, e1ap_beare
         break;
 
       case E1AP_ProtocolIE_ID_id_UEDLAggregateMaximumBitRate:
+        _EQ_CHECK_INT(ie->value.present, E1AP_BearerContextModificationRequestIEs__value_PR_BitRate);
         out->ueDlAggMaxBitRate = malloc_or_fail(sizeof(*out->ueDlAggMaxBitRate));
-        OCTET_STRING_TO_UINT32(&ie->value.choice.BitRate, *out->ueDlAggMaxBitRate);
+        CHECK_E1AP_DEC(e1_decode_bit_rate(out->ueDlAggMaxBitRate, &ie->value.choice.BitRate));
         break;
 
       case E1AP_ProtocolIE_ID_id_UEDLMaximumIntegrityProtectedDataRate:
+        _EQ_CHECK_INT(ie->value.present, E1AP_BearerContextModificationRequestIEs__value_PR_BitRate_1);
         out->ueDlMaxIPBitRate = malloc_or_fail(sizeof(*out->ueDlMaxIPBitRate));
-        OCTET_STRING_TO_UINT32(&ie->value.choice.BitRate, *out->ueDlMaxIPBitRate);
+        CHECK_E1AP_DEC(e1_decode_bit_rate(out->ueDlMaxIPBitRate, &ie->value.choice.BitRate_1));
         break;
 
       case E1AP_ProtocolIE_ID_id_BearerContextStatusChange:
@@ -2107,9 +2135,14 @@ bool eq_bearer_context_mod_request(const e1ap_bearer_mod_req_t *a, const e1ap_be
   if (a->secInfo && b->secInfo) {
     _EQ_CHECK_LONG(a->secInfo->cipheringAlgorithm, b->secInfo->cipheringAlgorithm);
     _EQ_CHECK_LONG(a->secInfo->integrityProtectionAlgorithm, b->secInfo->integrityProtectionAlgorithm);
-    _EQ_CHECK_STR(a->secInfo->encryptionKey, b->secInfo->encryptionKey);
-    _EQ_CHECK_STR(a->secInfo->integrityProtectionKey, b->secInfo->integrityProtectionKey);
+    if (memcmp(a->secInfo->encryptionKey, b->secInfo->encryptionKey, E1AP_SECURITY_KEY_SIZE) != 0)
+      return false;
+    if (memcmp(a->secInfo->integrityProtectionKey, b->secInfo->integrityProtectionKey, E1AP_SECURITY_KEY_SIZE) != 0)
+      return false;
   }
+  // Bit Rates (O)
+  _EQ_CHECK_OPTIONAL_IE(a, b, ueDlAggMaxBitRate, _EQ_CHECK_UINT64);
+  _EQ_CHECK_OPTIONAL_IE(a, b, ueDlMaxIPBitRate, _EQ_CHECK_UINT64);
   // Bearer Context Status (O)
   _EQ_CHECK_OPTIONAL_IE(a, b, bearerContextStatus, _EQ_CHECK_INT);
   // Inactivity Timer (O)

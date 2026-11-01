@@ -240,6 +240,28 @@ union xran_cp_radioapp_section_ext3_non_first {
   } all_bits;
 } __attribute__((__packed__));
 
+/**
+ * @ingroup xran_cp_pkt
+ *
+ * @description
+ *      Flexible Beamforming Weights Extension Type(ExtType 11) defined in
+ *      CUS v16.01 7.7.11 (Table 7.7.11.1-1), with bundleOffset and contInd.
+ *      extLen is 16 bits, so the first 4 bytes are converted as one 32-bit word.
+ *      The structure is reordered for byte order conversion.
+ */
+struct xran_cp_radioapp_section_ext11 {
+  uint32_t bundleOffset: 6; /**< 7.7.11.10 PRB bundle offset (reserved in older versions) */
+  uint32_t RAD: 1; /**< 7.7.11.8 reset after PRB discontinuity */
+  uint32_t disableBFWs: 1; /**< 7.7.11.7 only beamIds are carried, no weights */
+  uint32_t extLen: 16; /**< 7.6.2.3 extension length, in 32bits words */
+  uint32_t extType: 7; /**< 7.6.2.1 extension type */
+  uint32_t ef: 1; /**< 7.6.2.2 extension flag */
+  uint8_t numBundPrb; /**< 7.7.11.4 number of bundled PRBs per beamforming weights, 0 is reserved */
+  /* bfwCompHdr (7.7.11.2), absent if disableBFWs = 1 */
+  uint8_t bfwCompMeth: 4; /**< Beamforming weight Compression method (Table 7.7.1.2-3) */
+  uint8_t bfwIqWidth: 4; /**< Beamforming weight IQ bit width (Table 7.7.1.2-2) */
+} __attribute__((__packed__));
+
 /**********************************************************
  * Scheduling and Beam-forming Commands 5.4.2
  **********************************************************/
@@ -408,7 +430,9 @@ enum xran_cp_sectionextcmd {
   XRAN_CP_SECTIONEXTCMD_9 = 9, /**< Dynamic Spectrum Sharing parameters */
   XRAN_CP_SECTIONEXTCMD_10 = 10, /**< Multiple ports grouping */
   XRAN_CP_SECTIONEXTCMD_11 = 11, /**< Flexible BF weights */
-  XRAN_CP_SECTIONEXTCMD_MAX /* 12~127 reserved for future use */
+  XRAN_CP_SECTIONEXTCMD_19 = 19, /**< Compact beamforming information for multiple port (CUS v16.01 7.7.19) */
+  XRAN_CP_SECTIONEXTCMD_20 = 20, /**< Puncturing extension (CUS v16.01 7.7.20) */
+  XRAN_CP_SECTIONEXTCMD_MAX /* 12~18 and 21~127 are not listed */
 };
 
 /** Macro to convert bfwIqWidth defined in 5.4.7.1.1, Table 5-15 */

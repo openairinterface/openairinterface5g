@@ -77,7 +77,11 @@ typedef struct {
   uint64_t cplane_err_dup_prach;
   uint64_t ul_cplane_err_invalid_num_symbols;
   uint64_t cplane_ext1_received;
-  uint64_t cplane_err_sect_ext; // malformed section extension
+  uint64_t cplane_ext11_received;
+  uint64_t cplane_err_sect_ext1; // malformed ext1: bad extLen or doesn't decode
+  uint64_t cplane_err_sect_ext11; // malformed ext11: bad extLen or doesn't decode
+  uint64_t cplane_err_sect_ext_chain; // ef promises an extension but the packet ends
+  uint64_t cplane_err_sect_ext_other; // malformed extension of another type: bad extLen
   uint64_t uplane_err_late;
   uint64_t uplane_err_early;
   uint64_t uplane_err_dup;
@@ -136,7 +140,7 @@ void *init_packet_processor(int numerology,
 void write_ul_iq(void *context, uint32_t *rxdataF, int symbol, const ul_job_t *job);
 void write_prach_iq(void *context, uint32_t **txdataF, int nb_rx, int frame, int slot_in_frame, int symbol);
 void cleanup_packet_processor(void *context);
-void set_num_bf_weights_ext1(void *context, int num_bf_weights);
+void set_num_bf_weights(void *context, int num_bf_weights);
 void handle_absolute_symbol_tick(void *context, uint64_t absolute_symbol);
 void handle_uplane_packet(void *context, void *pkt);
 void handle_cplane_packet(void *context, void *pkt);

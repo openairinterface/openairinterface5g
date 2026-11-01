@@ -105,6 +105,8 @@ typedef struct UE_RRC_SI_INFO_NR_s {
   uint32_t default_otherSI_map[MAX_SI_GROUPS];
   bool sib1_validity;
   NR_timer_t sib1_timer;
+  /// stored SIB1, to revert back to the source PCell upon T304 expiry
+  NR_SIB1_t *sib1;
   bool sib2_validity;
   NR_timer_t sib2_timer;
   bool sib3_validity;
@@ -264,6 +266,22 @@ typedef struct NR_UE_RRC_INST_s {
   notifiedFIFO_t *mac_input_nf;
   /* NAS PDU deferred until UL-DCCH exists: consumed in RRCSetupComplete/RRCResumeComplete dedicatedNAS-Message */
   as_nas_info_t pending_initial_nas;
+  /// source PCell snapshot, to revert back to the source PCell upon T304 expiry (TS 38.331 5.3.5.8.3)
+  struct {
+    bool valid;
+    uint32_t phyCellID;
+    rnti_t rnti;
+    uint8_t kgnb[32];
+    uint8_t nh[32];
+    uint64_t nhcc;
+    NR_CipheringAlgorithm_t cipheringAlgorithm;
+    e_NR_IntegrityProtAlgorithm integrityProtAlgorithm;
+    long keyToUse;
+    NR_RB_status_t Srb[NR_NUM_SRB];
+    NR_RB_status_t status_DRBs[MAX_DRBS_PER_UE];
+    NR_SIB1_t *sib1;
+    bool meas_config;
+  } ho_source;
 } NR_UE_RRC_INST_t;
 
 #define RRCLOG_D(f, ...) LOG_D(NR_RRC, "[UE %ld] RNTI 0x%04x " f, rrc->ue_id, rrc->rnti __VA_OPT__(, ) __VA_ARGS__)

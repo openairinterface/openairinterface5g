@@ -53,18 +53,6 @@ void nr_phy_init_RU(RU_t *ru)
   }
   if (ru->function != NGFI_RRU_IF5) { // we need to do RX/TX RU processing
     LOG_D(PHY, "nb_tx %d\n", ru->nb_tx);
-    ru->common.rxdata_7_5kHz = (int32_t**)malloc16(ru->nb_rx*sizeof(int32_t*) );
-    for (int i = 0; i < ru->nb_rx; i++) {
-      ru->common.rxdata_7_5kHz[i] = (int32_t*)malloc16_clear( 2*fp->samples_per_subframe*2*sizeof(int32_t) );
-      LOG_D(PHY, "rxdata_7_5kHz[%d] %p for RU %d\n", i, ru->common.rxdata_7_5kHz[i], ru->idx);
-    }
-
-    // allocate precoding input buffers (TX)
-    ru->common.txdataF = (int32_t **)malloc16(ru->nb_tx*sizeof(int32_t*));
-    // [hna] samples_per_frame without CP
-    for(int i = 0; i < ru->nb_tx; ++i)
-      ru->common.txdataF[i] = (int32_t *)malloc16_clear(fp->samples_per_slot_wCP * sizeof(int32_t));
-
     // allocate IFFT input buffers (TX)
     ru->common.txdataF_BF = (int32_t **)malloc16(nb_tx_streams * sizeof(int32_t*));
     LOG_D(PHY, "[INIT] common.txdata_BF= %p (%lu bytes)\n", ru->common.txdataF_BF, nb_tx_streams * sizeof(int32_t *));
@@ -108,15 +96,6 @@ void nr_phy_free_RU(RU_t *ru)
   } // else: IF5 or local RF -> nothing to free()
 
   if (ru->function != NGFI_RRU_IF5) { // we need to do RX/TX RU processing
-    for (int i = 0; i < ru->nb_rx; i++)
-      free_and_zero(ru->common.rxdata_7_5kHz[i]);
-    free_and_zero(ru->common.rxdata_7_5kHz);
-
-    // free beamforming input buffers (TX)
-    for (int i = 0; i < ru->nb_tx; i++)
-      free_and_zero(ru->common.txdataF[i]);
-    free_and_zero(ru->common.txdataF);
-
     // free IFFT input buffers (TX)
     for (int i = 0; i < nb_tx_streams; i++)
       free_and_zero(ru->common.txdataF_BF[i]);

@@ -405,6 +405,12 @@ void nrue_ru_set_freq(PHY_VARS_NR_UE *UE, uint64_t ul_carrier, uint64_t dl_carri
   dev->trx_set_freq_func(dev, cfg);
 }
 
+void nrue_ru_get_freq(const PHY_VARS_NR_UE *UE, uint64_t *ul_carrier, uint64_t *dl_carrier, int channel)
+{
+  const openair0_config_t *cfg = &openair0_cfg_g[UE->rf_map.card];
+  nr_rf_card_get_freq(cfg, ul_carrier, dl_carrier, channel);
+}
+
 int nrue_ru_adjust_rx_gain(PHY_VARS_NR_UE *UE, int gain_change)
 {
   openair0_config_t *cfg = &openair0_cfg_g[UE->rf_map.card];

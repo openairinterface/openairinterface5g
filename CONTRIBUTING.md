@@ -20,7 +20,7 @@ We want to make contributing to this project as easy and transparent as possible
 
 Every pull request must pass two CI checks before it can be merged:
 
-1. **[Developer Certificate of Origin (DCO)](https://en.wikipedia.org/wiki/Developer_Certificate_of_Origin)**:
+1. **[Developer Certificate of Origin (DCO)](https://developercertificate.org/)**:
    Each commit must include a `Signed-off-by:` trailer in the commit message.
    Use `git commit -s` (or `--signoff`).
 

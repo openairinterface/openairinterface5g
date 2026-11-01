@@ -6,10 +6,10 @@
  * \brief      Functional helpers to configure the RF boards at UE side
  */
 
+#include "common_lib.h"
 #include "openair1/PHY/defs_nr_UE.h"
 #include "openair1/PHY/phy_extern_nr_ue.h"
 #include "nr_transport_proto_ue.h"
-#include "executables/softmodem-common.h"
 
 void nr_get_carrier_frequencies(const PHY_VARS_NR_UE *ue, uint64_t *dl_carrier, uint64_t *ul_carrier)
 {
@@ -90,6 +90,17 @@ void nr_rf_card_config_freq(openair0_config_t *openair0_cfg,
   }
 }
 
+void nr_rf_card_get_freq(const openair0_config_t *openair0_cfg, uint64_t *ul_freq, uint64_t *dl_freq, int channel_id)
+{
+  // Sanity check assuming max nof channels is 4.
+  if (channel_id >= 4) {
+    LOG_E(PHY, "HW: Invalid channel id %d. Max is 4\n", channel_id);
+    return;
+  }
+
+  *ul_freq = openair0_cfg->tx_freq[channel_id];
+  *dl_freq = openair0_cfg->rx_freq[channel_id];
+}
 
 void nr_sl_rf_card_config_freq(PHY_VARS_NR_UE *ue, openair0_config_t *openair0_cfg, int freq_offset) {
 

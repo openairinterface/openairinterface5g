@@ -49,8 +49,8 @@ static NR_UE_info_t *nrdc_create_new_UE(gNB_MAC_INST *mac, nr_cell_sched_t *cell
 
   UE->nrdc_mode = true;
 
-  if (!add_new_UE_RA(mac, UE)) {
-    delete_nr_ue_data(mac, UE);
+  if (!add_new_ra_ue(&mac->UE_info, UE)) {
+    release_nr_ue_inst(&mac->UE_info.uid_allocator, UE);
     LOG_E(NR_MAC, "UE list full while creating new UE\n");
     return NULL;
   }
@@ -134,7 +134,7 @@ void nrdc_ue_context_modification_request(const f1ap_ue_context_mod_req_t *req)
   };
 
   NR_SCHED_LOCK(&mac->sched_lock);
-  NR_UE_info_t *UE = find_nr_UE(&RC.nrmac[0]->UE_info, req->gNB_DU_ue_id);
+  NR_UE_info_t *UE = find_connected_nr_ue(&RC.nrmac[0]->UE_info, req->gNB_DU_ue_id);
   if (!UE) {
     LOG_E(NR_MAC, "could not find UE with RNTI %04x\n", req->gNB_DU_ue_id);
     NR_SCHED_UNLOCK(&mac->sched_lock);

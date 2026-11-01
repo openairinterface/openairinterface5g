@@ -137,7 +137,7 @@ static void bench_ul_preprocessor_noop(gNB_MAC_INST *mac, nr_cell_sched_t *cell,
  * sees loaded buffers via nr_mac_rlc_status_ind(). */
 static void refill_rlc_buffers(gNB_MAC_INST *mac, int bytes_per_ue)
 {
-  UE_iterator(mac->UE_info.connected_ue_list, UE) {
+  FOR_EACH_CONNECTED_UE(&mac->UE_info, UE) {
     uint8_t *sdu = malloc(bytes_per_ue);
     AssertFatal(sdu, "malloc failed\n");
     memset(sdu, 0xAB, bytes_per_ue);
@@ -361,6 +361,7 @@ int main(int argc, char **argv)
       .timer_config.n311 = 1,
       .timer_config.t319 = 400,
       .num_agg_level_candidates = {0, 4, 4, 2, 0},
+      .beam_config.beams_per_period = 1,
   };
   const nr_rlc_configuration_t rlc_config = {
       .srb = {.t_poll_retransmit = 45, .t_reassembly = 35, .t_status_prohibit = 0,
@@ -375,10 +376,9 @@ int main(int argc, char **argv)
 
   RC.nb_nr_macrlc_inst = 1;
   nr_cell_sched_t *cell;
-  mac_top_init_gNB(ngran_gNB, scc, &conf, &rlc_config, &cell);
-  gNB_MAC_INST *gNB_mac = RC.nrmac[0];
-  cell->beam_info = (NR_beam_info_t){.beams_per_period = 1};
-  nr_mac_config_scc(gNB_mac, cell, scc, &conf);
+  gNB_MAC_INST *gNB_mac = mac_top_init_gNB(ngran_gNB, &rlc_config, &cell);
+  nr_mac_cell_config_scc(cell, scc, &conf);
+  nr_mac_send_config_req(gNB_mac, &cell->config);
 
   cell->dl_bler.harq_round_max = 4;
   cell->ul_bler.harq_round_max = 4;
@@ -420,7 +420,7 @@ int main(int argc, char **argv)
     bool ok = nr_mac_add_test_ue(gNB_mac, cell, rnti, cg);
     AssertFatal(ok, "Failed to add test UE %d (rnti=%04x)\n", u, rnti);
 
-    NR_UE_info_t *UE_info = gNB_mac->UE_info.connected_ue_list[u];
+    NR_UE_info_t *UE_info = find_connected_nr_ue(&gNB_mac->UE_info, rnti);
     AssertFatal(UE_info != NULL, "UE %d not found in connected list\n", u);
     configure_UE_BWP(cell, scc, UE_info, false, NR_SearchSpace__searchSpaceType_PR_ue_Specific, -1, -1);
 
@@ -493,7 +493,7 @@ int main(int argc, char **argv)
     /* ── Pre-slot: inject synthetic UE state (every slot) ── */
 
     /* 1) Simulate HARQ feedback: ACK or NACK based on target_bler */
-    UE_iterator(gNB_mac->UE_info.connected_ue_list, UE) {
+    FOR_EACH_CONNECTED_UE(&gNB_mac->UE_info, UE) {
       NR_UE_sched_ctrl_t *sc = &UE->UE_sched_ctrl;
       while (sc->feedback_dl_harq.head >= 0) {
         int pid = sc->feedback_dl_harq.head;
@@ -526,7 +526,7 @@ int main(int argc, char **argv)
      * region — only the scheduler's resulting status_size walk is measured. */
     if (bench_am_backlog > 0) {
       nr_rlc_ms_tick();
-      UE_iterator(gNB_mac->UE_info.connected_ue_list, UE)
+      FOR_EACH_CONNECTED_UE(&gNB_mac->UE_info, UE)
         retrigger_am_status(UE->rnti, bench_drb_lcid);
     }
 

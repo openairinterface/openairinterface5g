@@ -54,10 +54,7 @@
 THREAD_STRUCT thread_struct;
 
 char *uecap_file;
-PHY_VARS_gNB *gNB;
-PHY_VARS_NR_UE *UE;
 RAN_CONTEXT_t RC;
-RU_t *ru;
 //uint8_t nfapi_mode=0;
 uint64_t downlink_frequency[MAX_NUM_CCs][4];
 int64_t uplink_frequency_offset[MAX_NUM_CCs][4];
@@ -109,7 +106,7 @@ int main(int argc, char **argv){
 
   get_softmodem_params()->sl_mode = 0;
   double SNR, snr0 = -2.0, snr1 = 0.0, ue_speed0 = 0.0, ue_speed1 = 0.0;
-  double **s_re, **s_im, **r_re, **r_im, iqim = 0.0, delay_avg = 0, ue_speed = 0, fs=-1, bw;
+  double iqim = 0.0, delay_avg = 0, ue_speed = 0, fs=-1, bw;
   int i, l, aa, aarx, trial, n_frames = 1, rx_prach_start; //, ntrials=1;
   c16_t **txdata;
   int N_RB_UL = 106, delay = 0, NCS_config = 13, rootSequenceIndex = 1, threequarter_fs = 0, mu = 1, fd_occasion = 0,
@@ -379,25 +376,17 @@ int main(int argc, char **argv){
   SET_LOG_DEBUG(DEBUG_PRACH);
 
   // Configure gNB and RU
-  RC.gNB = (PHY_VARS_gNB**) malloc(2*sizeof(PHY_VARS_gNB *));
-  RC.gNB[0] = malloc(sizeof(PHY_VARS_gNB));
-  memset(RC.gNB[0],0,sizeof(PHY_VARS_gNB));
+  RC.gNB = malloc(sizeof(PHY_VARS_gNB *));
+  RC.gNB[0] = calloc_or_fail(1, sizeof(PHY_VARS_gNB));
 
-  RC.ru = (RU_t**) malloc(2*sizeof(RU_t *));
-  RC.ru[0] = (RU_t*) malloc(sizeof(RU_t ));
-  memset(RC.ru[0],0,sizeof(RU_t));
+  RC.ru = malloc(sizeof(RU_t *));
+  RC.ru[0] = calloc_or_fail(1,sizeof(RU_t ));
   RC.nb_RU = 1;
-
-  gNB          = RC.gNB[0];
-  ru           = RC.ru[0];
+  PHY_VARS_gNB * gNB = RC.gNB[0];
+  RU_t *ru = RC.ru[0];
   frame_parms  = &gNB->frame_parms;
   prach_config = &gNB->gNB_config.prach_config;
   frame_parms  = &gNB->frame_parms; //to be initialized I suppose (maybe not necessary for PBCH)
-
-  s_re = malloc(2*sizeof(double*));
-  s_im = malloc(2*sizeof(double*));
-  r_re = malloc(2*sizeof(double*));
-  r_im = malloc(2*sizeof(double*));
 
   frame_parms->nb_antennas_tx   = n_tx;
   frame_parms->nb_antennas_rx   = n_rx;
@@ -547,10 +536,9 @@ int main(int argc, char **argv){
   prach_pdu.prach_format                                                                = prach_format;
 
   // Configure UE
-  UE = malloc(sizeof(PHY_VARS_NR_UE));
-  memset((void*)UE,0,sizeof(PHY_VARS_NR_UE));
-  nrPHY_vars_UE_g = malloc(sizeof(PHY_VARS_NR_UE **));
-  nrPHY_vars_UE_g[0] = malloc(sizeof(PHY_VARS_NR_UE *));
+  PHY_VARS_NR_UE * UE = calloc_or_fail(1,sizeof(PHY_VARS_NR_UE));
+  nrPHY_vars_UE_g = calloc_or_fail(1,sizeof(PHY_VARS_NR_UE **));
+  nrPHY_vars_UE_g[0] = calloc_or_fail(1,sizeof(PHY_VARS_NR_UE *));
   nrPHY_vars_UE_g[0][0] = UE;
   memcpy(&UE->frame_parms,frame_parms,sizeof(NR_DL_FRAME_PARMS));
   UE->nrUE_config.prach_config.num_prach_fd_occasions_list = (fapi_nr_num_prach_fd_occasions_t *) malloc(num_prach_fd_occasions*sizeof(fapi_nr_num_prach_fd_occasions_t));
@@ -612,17 +600,16 @@ int main(int argc, char **argv){
     exit(-1);
   }
 
+  double *s_re[2];
+  double *s_im[2];
+  double *r_re[2];
+  double *r_im[2];
   for (i=0; i<2; i++) {
 
-    s_re[i] = malloc(FRAME_LENGTH_COMPLEX_SAMPLES*sizeof(double));
-    bzero(s_re[i],FRAME_LENGTH_COMPLEX_SAMPLES*sizeof(double));
-    s_im[i] = malloc(FRAME_LENGTH_COMPLEX_SAMPLES*sizeof(double));
-    bzero(s_im[i],FRAME_LENGTH_COMPLEX_SAMPLES*sizeof(double));
-
-    r_re[i] = malloc(FRAME_LENGTH_COMPLEX_SAMPLES*sizeof(double));
-    bzero(r_re[i],FRAME_LENGTH_COMPLEX_SAMPLES*sizeof(double));
-    r_im[i] = malloc(FRAME_LENGTH_COMPLEX_SAMPLES*sizeof(double));
-    bzero(r_im[i],FRAME_LENGTH_COMPLEX_SAMPLES*sizeof(double));
+    s_re[i] = calloc_or_fail(FRAME_LENGTH_COMPLEX_SAMPLES,sizeof(double));
+    s_im[i] = calloc_or_fail(FRAME_LENGTH_COMPLEX_SAMPLES,sizeof(double));
+    r_re[i] = calloc_or_fail(FRAME_LENGTH_COMPLEX_SAMPLES,sizeof(double));
+    r_im[i] = calloc_or_fail(FRAME_LENGTH_COMPLEX_SAMPLES,sizeof(double));
   }
 
   // compute PRACH sequence
@@ -837,12 +824,8 @@ int main(int argc, char **argv){
     free(r_im[i]);
   }
 
-  free(s_re);
-  free(s_im);
-  free(r_re);
-  free(r_im);
-
-  if (input_fd) fclose(input_fd);
+  if (input_fd) 
+      fclose(input_fd);
 
   loader_reset();
   logTerm();

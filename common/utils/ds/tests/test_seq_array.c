@@ -47,6 +47,35 @@ static void dummy_free_func(void* it)
   ++free_func_call_count;
 }
 
+// shrink with elements larger than the new capacity
+static void test_shrink_big_elements(void)
+{
+  typedef struct {
+    int id;
+    char pad[96];
+  } big_elm_t;
+  seq_arr_t big = {0};
+  seq_arr_init(&big, sizeof(big_elm_t));
+  for (int i = 0; i < 40; ++i) {
+    big_elm_t e = {.id = i};
+    seq_arr_push_back(&big, &e, sizeof(e));
+  }
+  // capacity is now 64: erasing down to 10 shrinks it to 32
+  while (seq_arr_size(&big) > 10)
+    seq_arr_erase(&big, seq_arr_front(&big));
+  assert(big.cap == 32);
+  for (int i = 0; i < 10; ++i)
+    assert(((big_elm_t*)seq_arr_at(&big, i))->id == 30 + i);
+  // fill the shrunk buffer up to its capacity
+  for (int i = 0; i < 20; ++i) {
+    big_elm_t e = {.id = 100 + i};
+    seq_arr_push_back(&big, &e, sizeof(e));
+  }
+  assert(seq_arr_size(&big) == 30);
+  assert(((big_elm_t*)seq_arr_at(&big, 29))->id == 119);
+  seq_arr_free(&big, NULL);
+}
+
 int main()
 {
   seq_arr_t arr = {0};
@@ -109,6 +138,8 @@ int main()
 
   // Free data structure
   seq_arr_free(&arr, NULL);
+
+  test_shrink_big_elements();
 
   return EXIT_SUCCESS;
 }

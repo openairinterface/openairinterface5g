@@ -45,6 +45,9 @@ set_property(TEST test_oru_pcap_frag PROPERTY LABELS fronthaul)
 add_test(NAME test_oru_pcap_ext1 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/run_oru_pcap_test.sh https://github.com/ConnorBlasie/openairinterface5g/releases/download/ext1-pcaps/capture-xran-odu-catb-4x32-273prb-ext1.pcap.xz $<TARGET_FILE:test_oru_pcap> 1 262 3 1 6 4 5 9600 4 32 384 --xran-ext1-reference 384 3072 -- ${DPDK_TEST_ARGS} "--file-prefix=test_oru_pcap_ext1")
 set_property(TEST test_oru_pcap_ext1 PROPERTY LABELS fronthaul)
 
+add_test(NAME test_oru_pcap_ext11 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/run_oru_pcap_test.sh https://github.com/ConnorBlasie/openairinterface5g/releases/download/ext11-pcaps/capture-xran-odu-catb-4x32-273prb-ext11.pcap.xz $<TARGET_FILE:test_oru_pcap> 1 262 3 1 6 4 5 9600 4 32 0 --xran-ext11-reference 384 3072 -- ${DPDK_TEST_ARGS} "--file-prefix=test_oru_pcap_ext11")
+set_property(TEST test_oru_pcap_ext11 PROPERTY LABELS fronthaul)
+
 add_test(NAME test_oru_pcap_beamids COMMAND ${CMAKE_CURRENT_BINARY_DIR}/run_oru_pcap_test.sh https://github.com/bpodrygajlo/openairinterface5g/releases/download/fhi72-pcaps-gnb-sa-band257-132prb-2x2/fronthaul.pcap.xz $<TARGET_FILE:test_oru_pcap> 3 1146820 3 1 10 2 5 9216 0 -- ${DPDK_TEST_ARGS} "--file-prefix=test_oru_pcap_beamids")
 set_property(TEST test_oru_pcap_beamids PROPERTY LABELS fronthaul)
 

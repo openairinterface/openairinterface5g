@@ -143,6 +143,10 @@ typedef struct {
   size_t mtu;
   fh_comp_method_t dl_comp_method;
   int num_bf_weights;
+  // ext11 decode output, sized at init for ORU_MAX_BF_WEIGHTS
+  int ext11_max_bundles;
+  uint16_t *ext11_beam_ids;
+  c16_t *ext11_weights;
 } oru_packet_processor_context_t;
 
 static inline void set_bit(uint8_t *bits, uint64_t bit)
@@ -247,6 +251,11 @@ void *init_packet_processor(int numerology,
               prach_kbar);
   ctx->prach_kbar = prach_kbar;
   ctx->dl_comp_method = dl_comp_method;
+  // A section has at most num_prb PRBs, and bundleOffset (6 bits) adds at most 63 bundles
+  ctx->ext11_max_bundles = num_prb + 63;
+  ctx->ext11_beam_ids = malloc(ctx->ext11_max_bundles * sizeof(*ctx->ext11_beam_ids));
+  ctx->ext11_weights = malloc((size_t)ctx->ext11_max_bundles * ORU_MAX_BF_WEIGHTS * sizeof(*ctx->ext11_weights));
+  AssertFatal(ctx->ext11_beam_ids != NULL && ctx->ext11_weights != NULL, "ext11 buffer allocation failed\n");
   uint32_t slots_per_subframe = 1 << numerology;
   uint32_t symbol_duration_uS = 1000 / slots_per_subframe / NR_SYMBOLS_PER_SLOT;
   ctx->T2a_min_cp_sym_diff = T2a_cp_min_uS / symbol_duration_uS;
@@ -288,7 +297,9 @@ void *init_packet_processor(int numerology,
   return ctx;
 }
 
-void set_num_bf_weights_ext1(void *context, int num_bf_weights)
+// Number of (bfwI, bfwQ) pairs per ext1/ext11 weight vector (M-plane array element count). The ext11 buffers are sized
+// for ORU_MAX_BF_WEIGHTS, so changing it while C-plane traffic runs can't overflow them.
+void set_num_bf_weights(void *context, int num_bf_weights)
 {
   oru_packet_processor_context_t *ctx = (oru_packet_processor_context_t *)context;
   AssertFatal(num_bf_weights >= 0 && num_bf_weights <= ORU_MAX_BF_WEIGHTS,
@@ -315,6 +326,8 @@ void cleanup_packet_processor(void *context)
     if (ctx->ul_free_jobs) {
       rte_ring_free(ctx->ul_free_jobs);
     }
+    free(ctx->ext11_beam_ids);
+    free(ctx->ext11_weights);
     free(ctx);
   }
 }
@@ -846,37 +859,95 @@ void handle_prach_cplane_packet(oru_packet_processor_context_t *ctx,
   oru_pcap_cplane_commit_prach(snap);
 }
 
-// Walks the section extensions following a section-1 header. Returns false if any extension is malformed.
-static bool parse_section1_extensions(oru_packet_processor_context_t *ctx, void *pkt, struct xran_cp_radioapp_section1 *section)
+// Counts a malformed section extension against its type
+static void count_section_ext_error(oru_packet_processor_context_t *ctx, uint8_t ext_type)
+{
+  switch (ext_type) {
+    case XRAN_CP_SECTIONEXTCMD_1:
+      ctx->stats.cplane_err_sect_ext1++;
+      break;
+    case XRAN_CP_SECTIONEXTCMD_11:
+      ctx->stats.cplane_err_sect_ext11++;
+      break;
+    default:
+      ctx->stats.cplane_err_sect_ext_other++;
+      break;
+  }
+}
+
+// Decodes the weights of an ext1 of ext_len bytes. They are only validated: applying them is a later stage.
+// Returns false if they don't decode.
+static bool parse_section_ext1(oru_packet_processor_context_t *ctx, const uint8_t *ext, size_t ext_len)
+{
+  ctx->stats.cplane_ext1_received++;
+  if (ctx->num_bf_weights == 0)
+    return true;
+  c16_t weights[ORU_MAX_BF_WEIGHTS];
+  return xran_decode_bfw_ext1(ext, ext_len, ctx->num_bf_weights, weights) == XRAN_BFW_OK;
+}
+
+// Decodes the beamIds and weights of an ext11 of ext_len bytes for a section of num_prb PRBs, the same way as ext1.
+// Returns false if they don't decode.
+static bool parse_section_ext11(oru_packet_processor_context_t *ctx, const uint8_t *ext, size_t ext_len, int num_prb)
+{
+  ctx->stats.cplane_ext11_received++;
+  if (ctx->num_bf_weights == 0)
+    return true;
+  xran_bfw_ext11_hdr_t hdr;
+  int n_bundles;
+  return xran_decode_bfw_ext11(ext,
+                               ext_len,
+                               num_prb,
+                               ctx->num_bf_weights,
+                               ctx->ext11_max_bundles,
+                               &hdr,
+                               &n_bundles,
+                               ctx->ext11_beam_ids,
+                               ctx->ext11_weights)
+         == XRAN_BFW_OK;
+}
+
+// Walks the section extensions following a section-1 header, counting malformed ext1, ext11 and other extensions, and
+// a chain that ends before an extension its ef promised. Stops at the first error, since the rest of the chain can't be
+// located.
+static void parse_section1_extensions(oru_packet_processor_context_t *ctx, void *pkt, struct xran_cp_radioapp_section1 *section)
 {
   const uint8_t *ext = (const uint8_t *)section + sizeof(*section);
   const uint8_t *end = (const uint8_t *)section + rte_pktmbuf_data_len((struct rte_mbuf *)pkt);
   bool ext_flag = section->hdr.u.s1.ef;
+  int num_prb = section->hdr.u1.common.numPrbc == 0 ? ctx->num_prb : section->hdr.u1.common.numPrbc;
 
-  // Iterate overchain of extensions until ef chain end with 0
+  // Walk the extension chain until ef is 0
   while (ext_flag) {
-    if (end - ext < 2)
-      return false;
-    // extType/ef are in the first byte, extLen (4-byte words) in the second
+    if (ext >= end) {
+      ctx->stats.cplane_err_sect_ext_chain++;
+      return;
+    }
+    // extType/ef are in the first byte, followed by an 8- or 16-bit extLen (4-byte words)
     uint8_t ext_type = ext[0] & 0x7F;
     ext_flag = ext[0] & 0x80;
-    size_t ext_len = (size_t)ext[1] * 4;
-    if (ext_len == 0 || ext_len > (size_t)(end - ext))
-      return false;
-    if (ext_type == XRAN_CP_SECTIONEXTCMD_1) {
-      ctx->stats.cplane_ext1_received++;
-      if (ctx->num_bf_weights > 0) {
-        // Current implementation does NOT use weight values - only checks for return vals
-        // Multiple iters will overwrite weights[]
-        // Handling weights[] will be handled in later integration stage PR
-        c16_t weights[ORU_MAX_BF_WEIGHTS];
-        if (xran_decode_bfw_ext1(ext, ext_len, ctx->num_bf_weights, weights) < 0)
-          return false;
-      }
+    size_t ext_len;
+    if (xran_section_ext_len(ext_type, ext, end - ext, &ext_len) != XRAN_BFW_OK) {
+      count_section_ext_error(ctx, ext_type);
+      return;
+    }
+    bool valid = true;
+    switch (ext_type) {
+      case XRAN_CP_SECTIONEXTCMD_1:
+        valid = parse_section_ext1(ctx, ext, ext_len);
+        break;
+      case XRAN_CP_SECTIONEXTCMD_11:
+        valid = parse_section_ext11(ctx, ext, ext_len, num_prb);
+        break;
+      default: // skipped
+        break;
+    }
+    if (!valid) {
+      count_section_ext_error(ctx, ext_type);
+      return;
     }
     ext += ext_len;
   }
-  return true;
 }
 
 void handle_cplane_packet(void *context, void *pkt)
@@ -917,10 +988,8 @@ void handle_cplane_packet(void *context, void *pkt)
         return;
       }
       *((uint64_t *)section) = rte_be_to_cpu_64(*((uint64_t *)section));
-      // First stage implementation - validate se1 has propoer formatting
-      // Will extract weights in following stage PR
-      if (!parse_section1_extensions(ctx, pkt, section))
-        ctx->stats.cplane_err_sect_ext++;
+      // Validates ext1/ext11 formatting; weights are extracted in a later stage
+      parse_section1_extensions(ctx, pkt, section);
       if (hdr->cmnhdr.field.dataDirection == XRAN_DIR_DL) {
         ctx->stats.cplane_received_dl++;
         handle_dl_cplane_packet(ctx, pkt, hdr, section, ant_id);

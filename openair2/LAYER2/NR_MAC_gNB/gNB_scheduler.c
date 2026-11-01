@@ -62,16 +62,16 @@ static void clear_beam_information(NR_beam_info_t *beam_info, int frame, int slo
 {
   // for now we use the same logic of UL_tti_req_ahead
   // reset after 1 frame with the exception of 15kHz
-  if (beam_info->bf_method == BF_METHOD_STRAIGHT_WIRE)
+  if (beam_info->config.bf_method == BF_METHOD_STRAIGHT_WIRE)
     return;
   // initialization done only once
   AssertFatal(beam_info->beam_allocation_size >= 0, "Beam information not initialized\n");
-  int idx_to_clear = (frame * slots_per_frame + slot) / beam_info->beam_duration;
+  int idx_to_clear = (frame * slots_per_frame + slot) / beam_info->config.beam_duration;
   idx_to_clear = (idx_to_clear + beam_info->beam_allocation_size - 1) % beam_info->beam_allocation_size;
-  if (slot % beam_info->beam_duration == 0) {
+  if (slot % beam_info->config.beam_duration == 0) {
     // resetting previous period allocation
     LOG_D(NR_MAC, "%d.%d Clear beam information for index %d\n", frame, slot, idx_to_clear);
-    for (int i = 0; i < beam_info->beams_per_period; i++)
+    for (int i = 0; i < beam_info->config.beams_per_period; i++)
       beam_info->beam_allocation[i][idx_to_clear] = -1;
   }
 }
@@ -146,8 +146,8 @@ void gNB_dlsch_ulsch_scheduler(module_id_t module_idP, const int cell_id, frame_
   start_meas(&cell->gNB_scheduler);
 
   int num_beams = 1;
-  if (cell->beam_info.bf_method != BF_METHOD_STRAIGHT_WIRE)
-    num_beams = cell->beam_info.beams_per_period;
+  if (cell->beam_info.config.bf_method != BF_METHOD_STRAIGHT_WIRE)
+    num_beams = cell->beam_info.config.beams_per_period;
   // clear vrb_maps
   for (int i = 0; i < num_beams; i++)
     memset(cell->common_channels.vrb_map[i], 0, sizeof(uint16_t) * MAX_BWP_SIZE);
@@ -170,12 +170,7 @@ void gNB_dlsch_ulsch_scheduler(module_id_t module_idP, const int cell_id, frame_
     dump_mac_stats(gNB, cell, stats_output, sizeof(stats_output), true);
     LOG_I(NR_MAC, "Frame.Slot %d.%d\n%s\n", frame, slot, stats_output);
 
-    // TODO: this should be replaced with a size() operation on connected_ue_list
-    int num_ue = 0;
-    UE_iterator(gNB->UE_info.connected_ue_list, it) {
-      (void) it; // not used
-      num_ue++;
-    }
+    int num_ue = get_num_connected_ue(&gNB->UE_info);
     if (gNB->print_ue_stats && num_ue > gNB->stats_max_ue) {
       gNB->print_ue_stats = false;
       LOG_W(NR_MAC,

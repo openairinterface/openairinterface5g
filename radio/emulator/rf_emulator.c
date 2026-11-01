@@ -45,6 +45,7 @@ typedef struct {
   bool run_timing_thread;
   int enable_noise;
   int noise_level_dBFS;
+  noise_device_t *noise_device;
 } emulator_state_t;
 
 static void *emulator_timing_job(void *arg)
@@ -108,7 +109,7 @@ static int emulator_start(openair0_device_t *device)
       float noise_level = emulator_state->noise_level_dBFS == INVALID_DBFS_VALUE
                                 ? 0.0f
                                 : (32767.0 / powf(10.0, .05 * -(emulator_state->noise_level_dBFS)));
-      init_noise_device(noise_level);
+      emulator_state->noise_device = init_noise_device(noise_level);
       LOG_I(HW, "Using noise level with %d dBFS/%f\n", emulator_state->noise_level_dBFS, noise_level);
     }
 
@@ -173,7 +174,8 @@ static void emulator_end(openair0_device_t *device)
     int ret = pthread_join(emulator_state->timing_thread, NULL);
     AssertFatal(ret == 0, "pthread_join() failed: errno: %d, %s\n", errno, strerror(errno));
     if (emulator_state->enable_noise > 0) {
-      free_noise_device();
+      free_noise_device(emulator_state->noise_device);
+      emulator_state->noise_device = NULL;
     }
   }
 }
@@ -240,12 +242,12 @@ static int emulator_write(openair0_device_t *device, openair0_timestamp_t timest
  * The buffers must be large enough to hold the number of samples \ref nsamps.
  * \param nsamps Number of samples. One sample is 2 byte I + 2 byte Q => 4 byte.
  */
-static void read_noise(void *buff, int nsamps)
+static void read_noise(noise_device_t *noise_device, void *buff, int nsamps)
 {
   int aligned_nsamps = ceil_mod(nsamps, (512 / 8) / sizeof(cf_t));
   cf_t samples[aligned_nsamps] __attribute__((aligned(64)));
   // Apply noise from global settings
-  get_noise_vector((float *)samples, nsamps * 2);
+  get_noise_vector(noise_device, (float *)samples, nsamps * 2);
 
   // Convert to c16_t
   c16_t samples_out[aligned_nsamps] __attribute__((aligned(64)));
@@ -305,7 +307,7 @@ static int emulator_read(openair0_device_t *device, openair0_timestamp_t *ptimes
 
   if (emulator_state->enable_noise > 0) {
     for (int i = 0; i < nbAnt; i++) {
-      read_noise(buff[i], nsamps);
+      read_noise(emulator_state->noise_device, buff[i], nsamps);
     }
   } else {
     for (int i = 0; i < nbAnt; i++) {

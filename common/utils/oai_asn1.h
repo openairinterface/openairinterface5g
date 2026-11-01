@@ -211,9 +211,5 @@ static inline uint64_t BIT_STRING_to_uint64(const BIT_STRING_t *asn) {
     free(STRUCT);                       \
     STRUCT = NULL;                      \
   } while (0)
-#define asn1cFreeSeq(ASN_DEF, LIST)                     \
-  do {                                                  \
-    ASN_STRUCT_FREE(ASN_DEF, LIST.array[--LIST.count]); \
-  } while (LIST.count > 0)                              \
 
 #endif

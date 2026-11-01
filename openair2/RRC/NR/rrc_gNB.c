@@ -503,7 +503,7 @@ static NR_SDAP_Config_t *nr_rrc_build_sdap_config_ie(const int pdusession_id,
                                                      pdusession_level_qos_parameter_t *qos,
                                                      const nr_sdap_configuration_t *sdap_config)
 {
-  DevAssert(n_flows < MAX_QOS_FLOWS);
+  DevAssert(n_flows <= MAX_QOS_FLOWS);
   // SDAP
   NR_SDAP_Config_t *sc = calloc_or_fail(1, sizeof(*sc));
   sc->defaultDRB = defaultDRB;

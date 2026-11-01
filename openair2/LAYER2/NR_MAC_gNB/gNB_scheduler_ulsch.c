@@ -729,13 +729,17 @@ static void handle_msg3_failed_rx(gNB_MAC_INST *mac, NR_RA_t *ra, rnti_t rnti, i
   // For RA 2-Step consider RA failed if MsgA-PUSCH not detected
   if (ra->ra_type == RA_2_STEP) {
     LOG_W(NR_MAC, "UE %04x RA failed at state %s (MsgA-PUSCH reception failed)\n", rnti, nrra_text[ra->ra_state]);
-    nr_release_ra_UE(mac, rnti);
+    NR_UE_info_t *UE = remove_ra_ue(&mac->UE_info, rnti);
+    DevAssert(UE); // must exist, otherwise would not be here.
+    release_nr_ue_inst(&mac->UE_info.uid_allocator, UE);
     return;
   }
 
   if (ra->msg3_round >= harq_round_max - 1) {
     LOG_W(NR_MAC, "UE %04x RA failed at state %s (Reached msg3 max harq rounds)\n", rnti, nrra_text[ra->ra_state]);
-    nr_release_ra_UE(mac, rnti);
+    NR_UE_info_t *UE = remove_ra_ue(&mac->UE_info, rnti);
+    DevAssert(UE); // must exist, otherwise would not be here.
+    release_nr_ue_inst(&mac->UE_info.uid_allocator, UE);
     return;
   }
 
@@ -760,7 +764,7 @@ static void nr_rx_ra_sdu(gNB_MAC_INST *mac,
                          rnti_t *rlc_rnti)
 {
   NR_ServingCellConfigCommon_t *scc = cell->common_channels.ServingCellConfigCommon;
-  NR_UE_info_t *UE = find_ra_UE(&mac->UE_info, rnti);
+  NR_UE_info_t *UE = find_ra_ue(&mac->UE_info, rnti);
   if (!UE) {
     LOG_D(NR_MAC, "UL SDU discarded. Couldn't find UE with RNTI %04x \n", rnti);
     return;
@@ -791,7 +795,7 @@ static void nr_rx_ra_sdu(gNB_MAC_INST *mac,
     UE->UE_sched_ctrl.ta_frame = (frame + 100) % MAX_FRAME_NUMBER;
     if (!transition_ra_connected_nr_ue(mac, UE)) {
       LOG_E(NR_MAC, "cannot add UE %04x: list is full\n", UE->rnti);
-      delete_nr_ue_data(mac, UE);
+      release_nr_ue_inst(&mac->UE_info.uid_allocator, UE);
     } else {
       LOG_A(NR_MAC, "(rnti 0x%04x) CFRA procedure succeeded!\n", UE->rnti);
     }
@@ -880,13 +884,15 @@ static void nr_rx_ra_sdu(gNB_MAC_INST *mac,
   rnti_t crnti = lcid_crnti_lookahead(sdu, sdu_len);
   if (crnti != 0) { // 3GPP TS 38.321 Table 7.1-1: RNTI values, RNTI 0x0000: N/A
     // Replace the current UE by the UE identified by C-RNTI
-    NR_UE_info_t *old_UE = find_nr_UE(&mac->UE_info, crnti);
+    NR_UE_info_t *old_UE = find_connected_nr_ue(&mac->UE_info, crnti);
     if (!old_UE) {
       // The UE identified by C-RNTI no longer exists at the gNB
       // Let's abort the current RA, so the UE will trigger a new RA later but using RRCSetupRequest instead. A better
       // solution may be implemented
       LOG_W(NR_MAC, "No UE found with C-RNTI %04x, ignoring Msg3 to have UE come back with new RA attempt\n", UE->rnti);
-      nr_release_ra_UE(mac, rnti);
+      NR_UE_info_t *UE = remove_ra_ue(&mac->UE_info, rnti);
+      if (UE)
+        release_nr_ue_inst(&mac->UE_info.uid_allocator, UE);
       return;
     }
     // in case UE beam has changed
@@ -907,7 +913,9 @@ static void nr_rx_ra_sdu(gNB_MAC_INST *mac,
       // we configure the UE using common search space with DCIX0 while waiting for a reconfiguration
       configure_UE_BWP(cell, scc, old_UE, false, NR_SearchSpace__searchSpaceType_PR_common, -1, -1);
     }
-    nr_release_ra_UE(mac, rnti);
+    NR_UE_info_t *UE = remove_ra_ue(&mac->UE_info, rnti);
+    DevAssert(UE); // must exist, otherwise would not be here.
+    release_nr_ue_inst(&mac->UE_info.uid_allocator, UE);
     LOG_A(NR_MAC, "%4d.%2d RA with C-RNTI %04x complete\n", frame, slot, crnti);
 
     // Decode the entire MAC PDU
@@ -958,7 +966,7 @@ static void _nr_rx_sdu(gNB_MAC_INST *gNB_mac,
   const int current_rnti = rntiP;
   LOG_D(NR_MAC, "rx_sdu for rnti %04x\n", current_rnti);
   const int pusch_failure_thres = cell->radio_config.pusch.failure_thres;
-  NR_UE_info_t *UE = find_nr_UE(&gNB_mac->UE_info, current_rnti);
+  NR_UE_info_t *UE = find_connected_nr_ue(&gNB_mac->UE_info, current_rnti);
   if (UE) {
     NR_UE_sched_ctrl_t *UE_scheduling_control = &UE->UE_sched_ctrl;
     if (sduP)
@@ -1543,7 +1551,7 @@ void handle_nr_srs_measurements(const module_id_t module_id,
   LOG_I(NR_MAC, "srs_ind->report_type = %i\n", srs_ind->report_type);
 #endif
 
-  NR_UE_info_t *UE = find_nr_UE(&nrmac->UE_info, srs_ind->rnti);
+  NR_UE_info_t *UE = find_connected_nr_ue(&nrmac->UE_info, srs_ind->rnti);
   if (!UE) {
     LOG_W(NR_MAC, "Could not find UE for RNTI %04x\n", srs_ind->rnti);
     NR_SCHED_UNLOCK(&nrmac->sched_lock);
@@ -2651,7 +2659,7 @@ static int nr_ue_max_ul_inactivity_slots(const frame_structure_t *fs, int ulsch_
 
 static int collect_ul_candidates(gNB_MAC_INST *mac,
                                  nr_cell_sched_t *cell,
-                                 NR_UE_info_t *UE_list[],
+                                 NR_UEs_t *UEs,
                                  nr_ul_candidate_t *candidates,
                                  int max_candidates,
                                  frame_t frame,
@@ -2666,7 +2674,7 @@ static int collect_ul_candidates(gNB_MAC_INST *mac,
   const float ul_slots_per_s = (float)get_ul_slots_per_period(fs) / fs->numb_slots_period * fs->numb_slots_frame * 100;
   const int max_inactivity = nr_ue_max_ul_inactivity_slots(fs, cell->ulsch_max_frame_inactivity);
 
-  UE_iterator (UE_list, UE) {
+  FOR_EACH_CONNECTED_UE(UEs, UE) {
     if (UE->pcell != cell)
       continue;
     if (numUE >= max_candidates)
@@ -2817,7 +2825,7 @@ void nr_ulsch_preprocessor(gNB_MAC_INST *nr_mac, nr_cell_sched_t *cell, post_pro
   const int koffset = get_NTN_Koffset(scc);
   const int min_rxtx = cell->radio_config.minRXTXTIME + koffset;
 
-  int num_beams = cell->beam_info.beam_allocation ? cell->beam_info.beams_per_period : 1;
+  int num_beams = cell->beam_info.beam_allocation ? cell->beam_info.config.beams_per_period : 1;
   int bw = scc->uplinkConfigCommon->frequencyInfoUL->scs_SpecificCarrierList.list.array[0]->carrierBandwidth;
 
   // FAPI cannot handle more than MAX_DCI_CORESET DCIs
@@ -2863,7 +2871,7 @@ void nr_ulsch_preprocessor(gNB_MAC_INST *nr_mac, nr_cell_sched_t *cell, post_pro
     nr_ul_candidate_t candidates[MAX_MOBILES_PER_GNB] = {0};
     int n_cand = collect_ul_candidates(nr_mac,
                                        cell,
-                                       nr_mac->UE_info.connected_ue_list,
+                                       &nr_mac->UE_info,
                                        candidates,
                                        MAX_MOBILES_PER_GNB,
                                        frame,

@@ -124,8 +124,7 @@ void phy_init_nr_gNB(PHY_VARS_gNB *gNB)
 
   nr_init_fde(); // Init array for frequency equalization of transform precoding of PUSCH
 
-
-  gNB->max_nb_pdsch = MAX_MOBILES_PER_GNB;
+  gNB->max_nb_pdsch = NR_MAX_SCHED_PER_SLOT;
   init_delay_table(fp->ofdm_symbol_size, MAX_DELAY_COMP, NR_MAX_OFDM_SYMBOL_SIZE, fp->delay_table);
   init_delay_table(128, MAX_DELAY_COMP, 128, fp->delay_table128);
 
@@ -164,8 +163,6 @@ void phy_init_nr_gNB(PHY_VARS_gNB *gNB)
   common_vars->txdataF = (c16_t **)malloc16_clear(Ptx * sizeof(*common_vars->txdataF));
   for (int j = 0; j < Ptx; j++)
     common_vars->txdataF[j] = (c16_t *)malloc16_clear(fp->samples_per_slot_wCP * sizeof(**common_vars->txdataF));
-  common_vars->debugBuff = (int32_t*)malloc16_clear(fp->samples_per_frame*sizeof(int32_t)*100);	
-  common_vars->debugBuff_sample_offset = 0; 
 
   // PRACH
   init_nr_prach(gNB);
@@ -236,8 +233,6 @@ void phy_free_nr_gNB(PHY_VARS_gNB *gNB)
   /* Do NOT free per-antenna txdataF/rxdataF: the gNB gets a pointer to the
    * RU's txdataF/rxdataF, and the RU will free that */
   free_and_zero(common_vars->rxdataF);
-
-  free_and_zero(common_vars->debugBuff);
 
   for (int ULSCH_id = 0; ULSCH_id < gNB->max_nb_pusch; ULSCH_id++) {
     NR_gNB_PUSCH *pusch_vars = &gNB->pusch_vars[ULSCH_id];
@@ -442,7 +437,7 @@ void init_nr_transport(PHY_VARS_gNB *gNB)
   else
     buffer_ul_slots = (nb_ul_slots_period < slot_ahead) ? nb_ul_slots_period : slot_ahead;
 
-  gNB->max_nb_pusch = buffer_ul_slots ? MAX_MOBILES_PER_GNB * buffer_ul_slots : 1;
+  gNB->max_nb_pusch = buffer_ul_slots ? NR_MAX_SCHED_PER_SLOT * buffer_ul_slots : 1;
 
   int max_nb_pucch = buffer_ul_slots ? MAX_MOBILES_PER_GNB * buffer_ul_slots : 1;
   bool ret;

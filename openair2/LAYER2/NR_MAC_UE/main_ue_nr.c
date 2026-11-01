@@ -234,10 +234,8 @@ static void release_dedicated_bwp0_config(NR_UE_MAC_INST_t *mac)
   if (mac->dl_BWPs.count > 0) {
     NR_UE_DL_BWP_t *bwp = mac->dl_BWPs.array[0];
     NR_BWP_PDCCH_t *pdcch = &mac->config_BWP_PDCCH[0];
-    for (int i = pdcch->list_Coreset.count; i > 0; i--)
-      asn_sequence_del(&pdcch->list_Coreset, i - 1, 1);
-    for (int i = pdcch->list_SS.count; i > 0; i--)
-      asn_sequence_del(&pdcch->list_SS, i - 1, 1);
+    asn_sequence_empty(&pdcch->list_Coreset);
+    asn_sequence_empty(&pdcch->list_SS);
     asn1cFreeStruc(asn_DEF_NR_PDSCH_Config, bwp->pdsch_Config);
     mac->current_DL_BWP = bwp;
     mac->sc_info.initial_dl_BWPSize = bwp->BWPSize;
@@ -309,29 +307,12 @@ void release_mac_configuration(NR_UE_MAC_INST_t *mac, NR_UE_MAC_reset_cause_t ca
   int first_bwp_rel = 0; // first BWP to release
   if (cause == RE_ESTABLISHMENT || cause == RRC_SETUP_REESTAB_RESUME) {
     first_bwp_rel = 1;
-    // release dedicated BWP0 config
-    NR_UE_DL_BWP_t *bwp = mac->dl_BWPs.array[0];
-    NR_BWP_PDCCH_t *pdcch = &mac->config_BWP_PDCCH[0];
-    for (int i = pdcch->list_Coreset.count; i > 0 ; i--)
-      asn_sequence_del(&pdcch->list_Coreset, i - 1, 1);
-    for (int i = pdcch->list_SS.count; i > 0 ; i--)
-      asn_sequence_del(&pdcch->list_SS, i - 1, 1);
-    asn1cFreeStruc(asn_DEF_NR_PDSCH_Config, bwp->pdsch_Config);
-    NR_UE_UL_BWP_t *ubwp = mac->ul_BWPs.array[0];
-    asn1cFreeStruc(asn_DEF_NR_PUCCH_Config, ubwp->pucch_Config);
-    asn1cFreeStruc(asn_DEF_NR_SRS_Config, ubwp->srs_Config);
-    asn1cFreeStruc(asn_DEF_NR_PUSCH_Config, ubwp->pusch_Config);
-    mac->current_DL_BWP = bwp;
-    mac->current_UL_BWP = ubwp;
-    mac->sc_info.initial_dl_BWPSize = bwp->BWPSize;
-    mac->sc_info.initial_dl_BWPStart = bwp->BWPStart;
-    mac->sc_info.initial_ul_BWPSize = ubwp->BWPSize;
-    mac->sc_info.initial_ul_BWPStart = ubwp->BWPStart;
+    release_dedicated_bwp0_config(mac);
   }
 
-  for (int i = first_bwp_rel; i < mac->dl_BWPs.count; i++)
+  for (int i = mac->dl_BWPs.count - 1; i >= first_bwp_rel; i--)
     release_dl_BWP(mac, i);
-  for (int i = first_bwp_rel; i < mac->ul_BWPs.count; i++)
+  for (int i = mac->ul_BWPs.count - 1; i >= first_bwp_rel; i--)
     release_ul_BWP(mac, i);
 
   memset(&mac->ssb_measurements, 0, sizeof(mac->ssb_measurements));

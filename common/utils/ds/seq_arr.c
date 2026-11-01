@@ -28,7 +28,7 @@ static void maybe_shrink(seq_arr_t* arr)
   if (arr->size > MIN_SIZE && occ < 0.25) {
     assert(arr->cap > MIN_SIZE);
     seq_arr_t tmp = {.data = NULL, .size = arr->size, .elt_size = arr->elt_size, .cap = arr->cap / 2};
-    tmp.data = calloc(tmp.cap, tmp.cap);
+    tmp.data = calloc(tmp.cap, tmp.elt_size);
     assert(tmp.data != NULL && "Memory exhausted");
     assert(arr->size <= tmp.cap);
     memcpy(tmp.data, arr->data, arr->size * arr->elt_size);

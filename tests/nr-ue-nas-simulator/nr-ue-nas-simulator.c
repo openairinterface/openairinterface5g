@@ -5,6 +5,7 @@
 #include "executables/softmodem-common.h"
 #include "common/utils/ocp_itti/intertask_interface.h"
 #include "common/ran_context.h"
+#include "common/utils/system.h"
 #include "nfapi/oai_integration/vendor_ext.h"
 #include "openair2/GNB_APP/gnb_config_common.h"
 #include "openair2/GNB_APP/gnb_config_ng.h"
@@ -417,6 +418,8 @@ void *rrc_gnb_task(void *args_p)
 
 int main(int argc, char **argv)
 {
+  start_background_system();
+
   // load the config file
   if ((uniqCfg = load_configmodule(argc, argv, CONFIG_ENABLECMDLINEONLY)) == NULL) {
     exit_fun("[SOFTMODEM] Error, configuration module init failed\n");

@@ -575,15 +575,17 @@ static void symbol_unscrambling_demux(puschSymbolProc_t *rdata, int ue_idx, int 
             // Subsequent bits d1...dN-1 are placeholders (y, x).
             if (bit_in_mod_symbol == 0)
               ue_pusch_vars->ack_llrs[a_idx++] = curr_re_llr[b] * curr_re_s[b]; // unscrambling for info bits
+            else if (bit_in_mod_symbol == 1)
+              ue_pusch_vars->ack_llrs[a_idx++] = curr_re_llr[b] * curr_re_s[b - 1]; // y repeats the scrambled c0 (38.211 6.3.1.1)
             else
-              ue_pusch_vars->ack_llrs[a_idx++] = curr_re_llr[b]; // not unscrambling for placeholders x and y
+              ue_pusch_vars->ack_llrs[a_idx++] = curr_re_llr[b]; // not unscrambling for placeholder x
           } else {
             // Table 5.3.3.1-2 of 38.212
             // Subsequent bits d1...dN-1 are placeholders (y, x).
             if (bit_in_mod_symbol == 0 || bit_in_mod_symbol == 1)
               ue_pusch_vars->ack_llrs[a_idx++] = curr_re_llr[b] * curr_re_s[b]; // unscrambling for info bits
             else
-              ue_pusch_vars->ack_llrs[a_idx++] = curr_re_llr[b]; // not unscrambling for placeholders x and y
+              ue_pusch_vars->ack_llrs[a_idx++] = curr_re_llr[b]; // not unscrambling for placeholders x
           }
         }
       } else {

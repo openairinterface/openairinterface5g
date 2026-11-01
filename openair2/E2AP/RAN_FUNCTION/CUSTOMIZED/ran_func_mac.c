@@ -19,12 +19,10 @@ bool read_mac_sm(void* data)
 
   mac->msg.tstamp = time_now_us();
 
-  NR_UEs_t *UE_info = &RC.nrmac[mod_id]->UE_info;
-  size_t num_ues = 0;
-  UE_iterator(UE_info->connected_ue_list, ue) {
-    if (ue)
-      num_ues += 1;
-  }
+  gNB_MAC_INST *mac_inst = RC.nrmac[0];
+  NR_SCHED_LOCK(&mac_inst->sched_lock);
+  NR_UEs_t *UE_info = &mac_inst->UE_info;
+  size_t num_ues = get_num_connected_ue(UE_info);
 
   mac->msg.len_ue_stats = num_ues;
   if(mac->msg.len_ue_stats > 0){
@@ -32,10 +30,8 @@ bool read_mac_sm(void* data)
     assert(mac->msg.ue_stats != NULL && "Memory exhausted" );
   }
 
-  gNB_MAC_INST *mac_inst = RC.nrmac[0];
-  NR_SCHED_LOCK(&mac_inst->sched_lock);
   size_t i = 0; //TODO
-  UE_iterator(UE_info->connected_ue_list, UE) {
+  FOR_EACH_CONNECTED_UE(UE_info, UE) {
     const NR_UE_sched_ctrl_t* sched_ctrl = &UE->UE_sched_ctrl;
     mac_ue_stats_impl_t* rd = &mac->msg.ue_stats[i];
 

@@ -560,7 +560,7 @@ bool decode_e1ap_cuup_setup_failure(const E1AP_E1AP_PDU_t *pdu, e1ap_setup_fail_
         E1AP_LIB_FIND_IE(E1AP_GNB_CU_UP_E1SetupFailureIEs_t, ie, in, E1AP_ProtocolIE_ID_id_Cause, true);
         out->cause = e1_decode_cause_ie(&ie->value.choice.Cause);
         break;
-      case E1AP_ProtocolIE_ID_id_Transport_Layer_Address_Info:
+      case E1AP_ProtocolIE_ID_id_TimeToWait:
         // Time To Wait (O)
         E1AP_LIB_FIND_IE(E1AP_GNB_CU_UP_E1SetupFailureIEs_t, ie, in, E1AP_ProtocolIE_ID_id_TimeToWait, false);
         out->time_to_wait = calloc_or_fail(1, sizeof(*out->time_to_wait));
@@ -633,8 +633,7 @@ bool eq_e1ap_cuup_setup_failure(const e1ap_setup_fail_t *a, const e1ap_setup_fai
   _EQ_CHECK_LONG(a->transac_id, b->transac_id);
   _EQ_CHECK_INT(a->cause.type, b->cause.type);
   _EQ_CHECK_INT(a->cause.value, b->cause.value);
-  if (a->time_to_wait && b->time_to_wait)
-    _EQ_CHECK_LONG(*a->time_to_wait, *b->time_to_wait);
+  _EQ_CHECK_OPTIONAL_IE(a, b, time_to_wait, _EQ_CHECK_LONG);
   if (a->crit_diag && b->crit_diag) {
     if (a->crit_diag->procedure_code && b->crit_diag->procedure_code)
       _EQ_CHECK_INT(*(a->crit_diag->procedure_code), *(b->crit_diag->procedure_code));

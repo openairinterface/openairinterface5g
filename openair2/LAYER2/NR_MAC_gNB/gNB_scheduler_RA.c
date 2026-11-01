@@ -16,6 +16,7 @@
 /* Utils */
 #include "common/utils/LOG/log.h"
 #include "common/utils/bits.h"
+#include "common/utils/alg/find.h"
 #include "UTIL/OPT/opt.h"
 
 /* rlc */
@@ -672,7 +673,7 @@ int nr_fill_successrar(const NR_UE_sched_ctrl_t *ue_sched_ctl,
 /** @brief find UE with RA process for given preamble */
 static NR_UE_info_t *get_existing_ra(gNB_MAC_INST *nr_mac, const nr_cell_sched_t* cell, uint16_t preamble_index)
 {
-  UE_iterator(nr_mac->UE_info.access_ue_list, UE) {
+  FOR_EACH_RA_UE(&nr_mac->UE_info, UE) {
     if (UE->pcell != cell) {
       continue;
     }
@@ -685,13 +686,48 @@ static NR_UE_info_t *get_existing_ra(gNB_MAC_INST *nr_mac, const nr_cell_sched_t
   return NULL;
 }
 
+static bool find_rnti(const void *search, const void *current)
+{
+  rnti_t s = *(const rnti_t *) search;
+  const NR_UE_info_t *c = *(const NR_UE_info_t **) current;
+  // note: not all UEs necessarily have c->ra when being removed from RA list
+  // TODO why does 2-step RA removal (before this commit) not check c->ra->RA_rnti?
+  return (c->ra && c->ra->ra_type == RA_2_STEP && c->ra->RA_rnti == s) || s == c->rnti;
+}
+
 /** @brief add UE to list of UEs doing RA.
  *
- * Remove with nr_release_ra_UE(). */
-bool add_new_UE_RA(gNB_MAC_INST *nr_mac, NR_UE_info_t *UE)
+ * Remove with remove_ra_ue(). */
+bool add_new_ra_ue(NR_UEs_t *UEs, NR_UE_info_t *UE)
 {
   DevAssert(UE->ra); // a UE in the acess_ue_list needs to have an RA process
-  return add_UE_to_list(NR_NB_RA_PROC_MAX, nr_mac->UE_info.access_ue_list, UE);
+  if (seq_arr_size(&UEs->access_ue_list) >= NR_NB_RA_PROC_MAX)
+    return false;
+  /* store pointer to UE! */
+  seq_arr_push_back(&UEs->access_ue_list, &UE, sizeof(UE));
+  return true;
+}
+
+/** @brief release a UE from list of UEs doing RA.
+ *
+ * The corresponding function to add is add_new_ra_ue(). */
+NR_UE_info_t *remove_ra_ue(NR_UEs_t *UEs, rnti_t rnti)
+{
+  elm_arr_t el = find_if(&UEs->access_ue_list, &rnti, find_rnti);
+  if (el.found) {
+    NR_UE_info_t *found = *(NR_UE_info_t **)el.it;
+    seq_arr_erase(&UEs->access_ue_list, el.it);
+    return found;
+  }
+  return NULL;
+}
+
+NR_UE_info_t *find_ra_ue(NR_UEs_t *UEs, rnti_t rnti)
+{
+  elm_arr_t el = find_if(&UEs->access_ue_list, &rnti, find_rnti);
+  if (el.found)
+    return *(NR_UE_info_t **)el.it;
+  return NULL;
 }
 
 static uint8_t nr_get_msg3_tpc(uint32_t preamble_power)
@@ -799,9 +835,9 @@ void nr_initiate_ra_proc(module_id_t module_idP,
     }
 
     UE = get_new_nr_ue_inst(&nr_mac->UE_info.uid_allocator, rnti, NULL, cell);
-    if (!add_new_UE_RA(nr_mac, UE)) {
+    if (!add_new_ra_ue(&nr_mac->UE_info, UE)) {
       LOG_E(NR_MAC, "FAILURE: %4d.%2d initiating RA procedure for preamble index %d: no free RA process\n", frame, slot, preamble_index);
-      delete_nr_ue_data(nr_mac, UE);
+      release_nr_ue_inst(&nr_mac->UE_info.uid_allocator, UE);
       NR_SCHED_UNLOCK(&nr_mac->sched_lock);
       return;
     }
@@ -2198,9 +2234,12 @@ bool nr_check_Msg4_MsgB_Ack(gNB_MAC_INST *nr_mac, nr_cell_sched_t *cell, frame_t
       if (UE->CellGroup) {
         // we configure the UE using common search space with DCIX0 while waiting for a reconfiguration
         configure_UE_BWP(cell, scc, UE, false, NR_SearchSpace__searchSpaceType_PR_common, -1, -1);
-        transition_ra_connected_nr_ue(nr_mac, UE);
+        if (!transition_ra_connected_nr_ue(nr_mac, UE))
+          release_nr_ue_inst(&nr_mac->UE_info.uid_allocator, UE);
       } else {  // in case of  UE reject
-        nr_release_ra_UE(nr_mac, UE->rnti);
+        NR_UE_info_t *ue = remove_ra_ue(&nr_mac->UE_info, UE->rnti);
+        if (ue)
+          release_nr_ue_inst(&nr_mac->UE_info.uid_allocator, ue);
         return true;
       }
     } else {
@@ -2218,20 +2257,6 @@ bool nr_check_Msg4_MsgB_Ack(gNB_MAC_INST *nr_mac, nr_cell_sched_t *cell, frame_t
   return false;
 }
 
-/** @brief remove the UE with RNTI rnti from list of UEs doing RA.
- *
- * The corresponding function to add is add_new_UE_RA(). */
-void nr_release_ra_UE(gNB_MAC_INST *mac, rnti_t rnti)
-{
-  NR_UEs_t *UE_info = &mac->UE_info;
-  NR_UE_info_t *UE = remove_UE_from_list(NR_NB_RA_PROC_MAX, UE_info->access_ue_list, rnti);
-  if (UE) {
-    delete_nr_ue_data(mac, UE);
-  } else {
-    LOG_W(NR_MAC,"Call to release RA UE with rnti %04x, but not existing\n", rnti);
-  }
-}
-
 void nr_schedule_RA(gNB_MAC_INST *mac,
                     nr_cell_sched_t *cell,
                     frame_t frameP,
@@ -2244,7 +2269,7 @@ void nr_schedule_RA(gNB_MAC_INST *mac,
   // releasing a UE modifies access_ue_list: collect them and release after the loop
   rnti_t to_release[NR_NB_RA_PROC_MAX];
   int num_release = 0;
-  UE_iterator(mac->UE_info.access_ue_list, UE) {
+  FOR_EACH_RA_UE(&mac->UE_info, UE) {
     if (UE->pcell != cell)
       continue;
     NR_RA_t *ra = UE->ra;
@@ -2281,7 +2306,10 @@ void nr_schedule_RA(gNB_MAC_INST *mac,
         break;
     }
   }
-  for (int i = 0; i < num_release; i++)
-    nr_release_ra_UE(mac, to_release[i]);
+  for (int i = 0; i < num_release; i++) {
+    NR_UE_info_t *UE = remove_ra_ue(&mac->UE_info, to_release[i]);
+    DevAssert(UE); // must exist, otherwise would not be handled here
+    release_nr_ue_inst(&mac->UE_info.uid_allocator, UE);
+  }
   stop_meas(&cell->schedule_ra);
 }

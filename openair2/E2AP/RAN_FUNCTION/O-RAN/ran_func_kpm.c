@@ -280,7 +280,7 @@ static arr_ue_id_t filter_ues_by_s_nssai_in_du_or_monolithic(const test_info_lst
   gNB_MAC_INST *mac = RC.nrmac[0];
   NR_SCHED_LOCK(&mac->sched_lock);
   // Take MAC info
-  UE_iterator(mac->UE_info.connected_ue_list, ue) {
+  FOR_EACH_CONNECTED_UE(&mac->UE_info, ue) {
     NR_UE_sched_ctrl_t *sched_ctrl = &ue->UE_sched_ctrl;
     // UE matches if any of its DRBs matches
     for (size_t l = 0; l < seq_arr_size(&sched_ctrl->lc_config); ++l) {

@@ -200,6 +200,8 @@ void nr_rf_card_config_freq(openair0_config_t *openair0_cfg,
                             uint64_t dl_Carrier,
                             int freq_offset);
 
+void nr_rf_card_get_freq(const openair0_config_t *openair0_cfg, uint64_t *ul_freq, uint64_t *dl_freq, int channel_id);
+
 void nr_sl_rf_card_config_freq(PHY_VARS_NR_UE *ue,
                                openair0_config_t *openair0_cfg,
                                int freq_offset);

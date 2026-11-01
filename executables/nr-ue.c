@@ -205,16 +205,16 @@ static void UE_synch(void *arg) {
 
   LOG_I(PHY, "[UE thread Synch] Running Initial Synch \n");
 
+  // Start with the last set hardware frequency to track frequency offset.
   uint64_t dl_carrier, ul_carrier;
+  nrue_ru_get_freq(UE, &ul_carrier, &dl_carrier, 0);
+
   const NR_DL_FRAME_PARMS *fp = &UE->frame_parms;
   nr_initial_sync_t ret = {0};
   if (UE->sl_mode == 2) {
     fp = &UE->SL_UE_PHY_PARAMS.sl_frame_params;
-    dl_carrier = fp->sl_CarrierFreq;
-    ul_carrier = fp->sl_CarrierFreq;
     ret = sl_nr_slss_search(UE, &syncD->proc, SL_NR_SSB_REPETITION_IN_FRAMES, syncD->input_sz, syncD->input);
   } else {
-    nr_get_carrier_frequencies(UE, &dl_carrier, &ul_carrier);
     ret = nr_initial_sync(&syncD->proc, UE, syncD->input_sz, syncD->input, syncD->gscnInfo, syncD->numGscn);
   }
 
@@ -547,6 +547,19 @@ static int handle_sync_req_from_mac(PHY_VARS_NR_UE *UE, Actor_t *dl_actors, Acto
   return 1;
 }
 
+/** @brief Process what RRC thread sent to MAC */
+static void nr_ue_dequeue_rrc_to_mac_msgs(PHY_VARS_NR_UE *UE)
+{
+  do {
+    notifiedFIFO_elt_t *elt = pollNotifiedFIFO(&get_mac_inst(UE->Mod_id)->input_nf);
+    if (!elt) {
+      break;
+    }
+    process_msg_rcc_to_mac(NotifiedFifoData(elt), UE->Mod_id);
+    delNotifiedFIFO_elt(elt);
+  } while (true);
+}
+
 static int UE_dl_preprocessing(PHY_VARS_NR_UE *UE,
                                const UE_nr_rxtx_proc_t *proc,
                                int *tx_wait_for_dlsch,
@@ -559,15 +572,7 @@ static int UE_dl_preprocessing(PHY_VARS_NR_UE *UE,
   if (UE->sl_mode == 2)
     fp = &UE->SL_UE_PHY_PARAMS.sl_frame_params;
 
-  // process what RRC thread sent to MAC
-  do {
-    notifiedFIFO_elt_t *elt = pollNotifiedFIFO(&get_mac_inst(UE->Mod_id)->input_nf);
-    if (!elt) {
-      break;
-    }
-    process_msg_rcc_to_mac(NotifiedFifoData(elt), UE->Mod_id);
-    delNotifiedFIFO_elt(elt);
-  } while (true);
+  nr_ue_dequeue_rrc_to_mac_msgs(UE);
 
   if (UE->if_inst)
     UE->if_inst->slot_indication(UE->Mod_id, false);
@@ -719,6 +724,16 @@ static void readFrame(PHY_VARS_NR_UE *UE, openair0_timestamp_t *timestamp, int d
   }
   if (!result)
     free(rxp[0]);
+}
+
+static int sync_frame_start(int decoded_frame, int skipped_frames, int samples_per_frame, int *rx_offset)
+{
+  // Sometimes offset is negative meaning we need to skip ahead to next frame
+  if (*rx_offset < 0) {
+    *rx_offset += samples_per_frame;
+    decoded_frame++;
+  }
+  return (decoded_frame + skipped_frames) % MAX_FRAME_NUMBER;
 }
 
 static void syncInFrame(PHY_VARS_NR_UE *UE, openair0_timestamp_t *timestamp, int duration_rx_to_tx, openair0_timestamp_t rx_offset)
@@ -935,7 +950,7 @@ void *UE_thread(void *arg)
           LOG_A(PHY, "UE synchronized! decoded_frame_rx=%d skipped_frames=%d\n", decoded_frame_rx, skipped_frames);
           // shift the frame index with all the frames we trashed meanwhile we perform the synch search
           syncData_t *syncMsg = (syncData_t *)NotifiedFifoData(res);
-          decoded_frame_rx = (decoded_frame_rx + skipped_frames) % MAX_FRAME_NUMBER;
+          decoded_frame_rx = sync_frame_start(decoded_frame_rx, skipped_frames, fp->samples_per_frame, &syncMsg->rx_offset);
           intialSyncOffset = syncMsg->rx_offset;
         }
         delNotifiedFIFO_elt(res);
@@ -963,6 +978,12 @@ void *UE_thread(void *arg)
     }
 
     AssertFatal(!syncRunning, "At this point synchronization can't be running\n");
+
+    if (!UE->is_synchronized)
+      nr_ue_dequeue_rrc_to_mac_msgs(UE);
+    /* check if MAC has sent sync request */
+    if (handle_sync_req_from_mac(UE, dl_actors, ul_actors) == 0)
+      continue;
 
     if (!UE->is_synchronized) {
       // seed the out-of-sync tick once from the last known synchronized frame/hfn:
@@ -1050,10 +1071,6 @@ void *UE_thread(void *arg)
       }
       continue;
     }
-
-    /* check if MAC has sent sync request */
-    if (handle_sync_req_from_mac(UE, dl_actors, ul_actors) == 0)
-      continue;
 
     // start of normal case, the UE is in sync
     absolute_slot++;

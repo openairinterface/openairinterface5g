@@ -106,6 +106,8 @@ static sdu_size_t             pdcp_output_header_bytes_to_write;
 static sdu_size_t             pdcp_output_sdu_bytes_to_write;
 notifiedFIFO_t         pdcp_sdu_list;
 
+void pdcp_free(void *pdcp_pP);
+
 pdcp_enb_t pdcp_enb[MAX_NUM_CCs];
 pthread_t pdcp_stats_thread_desc;
 /*! \fn bool pdcp_config_req_asn1 (const protocol_ctxt_t* const ctxt_pP, srb_flag_t srb_flagP, uint32_t  action, rb_id_t rb_id,
@@ -1355,12 +1357,12 @@ bool pdcp_remove_UE(const protocol_ctxt_t *const  ctxt_pP)
 
   for (srb_id=1; srb_id<3; srb_id++) {
     key = PDCP_COLL_KEY_VALUE(ctxt_pP->module_id, ctxt_pP->rntiMaybeUEid, ctxt_pP->enb_flag, srb_id, SRB_FLAG_YES);
-    h_rc = hashtable_remove(pdcp_coll_p, key);
+    h_rc = hashtable_remove(pdcp_coll_p, key, pdcp_free);
   }
 
   for (drb_id=0; drb_id<LTE_maxDRB; drb_id++) {
     key = PDCP_COLL_KEY_VALUE(ctxt_pP->module_id, ctxt_pP->rntiMaybeUEid, ctxt_pP->enb_flag, drb_id, SRB_FLAG_NO);
-    h_rc = hashtable_remove(pdcp_coll_p, key);
+    h_rc = hashtable_remove(pdcp_coll_p, key, pdcp_free);
   }
 
   (void)h_rc; /* remove gcc warning "set but not used" */
@@ -1444,7 +1446,7 @@ rrc_pdcp_config_asn1_req(const protocol_ctxt_t *const  ctxt_pP,
       } else {
         action = CONFIG_ACTION_ADD;
         pdcp_p = calloc(1, sizeof(pdcp_t));
-        h_rc = hashtable_insert(pdcp_coll_p, key, pdcp_p);
+        h_rc = hashtable_insert(pdcp_coll_p, key, pdcp_p, pdcp_free);
 
         if (h_rc != HASH_TABLE_OK) {
           LOG_E(PDCP, PROTOCOL_PDCP_CTXT_FMT" CONFIG_ACTION_ADD key 0x%"PRIx64" FAILED\n",
@@ -1551,12 +1553,12 @@ rrc_pdcp_config_asn1_req(const protocol_ctxt_t *const  ctxt_pP,
       } else {
         action = CONFIG_ACTION_ADD;
         pdcp_p = calloc(1, sizeof(pdcp_t));
-        h_rc = hashtable_insert(pdcp_coll_p, key, pdcp_p);
+        h_rc = hashtable_insert(pdcp_coll_p, key, pdcp_p, pdcp_free);
 
         // save the first configured DRB-ID as the default DRB-ID
         if ((defaultDRB != NULL) && (*defaultDRB == drb_id)) {
           key_defaultDRB = PDCP_COLL_KEY_DEFAULT_DRB_VALUE(ctxt_pP->module_id, ctxt_pP->rntiMaybeUEid, ctxt_pP->enb_flag);
-          h_defaultDRB_rc = hashtable_insert(pdcp_coll_p, key_defaultDRB, pdcp_p);
+          h_defaultDRB_rc = hashtable_insert(pdcp_coll_p, key_defaultDRB, pdcp_p, pdcp_free);
         } else {
           h_defaultDRB_rc = HASH_TABLE_OK; // do not trigger any error handling if this is not a default DRB
         }
@@ -1689,7 +1691,7 @@ rrc_pdcp_config_asn1_req(const protocol_ctxt_t *const  ctxt_pP,
         kRRCenc_pP,
         kRRCint_pP,
         kUPenc_pP);
-      h_rc = hashtable_remove(pdcp_coll_p, key);
+      h_rc = hashtable_remove(pdcp_coll_p, key, pdcp_free);
 
       if ((defaultDRB != NULL) && (*defaultDRB == drb_id)) {
         // default DRB being removed. nevertheless this shouldn't happen as removing default DRB is not allowed in standard
@@ -1697,7 +1699,7 @@ rrc_pdcp_config_asn1_req(const protocol_ctxt_t *const  ctxt_pP,
         h_defaultDRB_rc = hashtable_get(pdcp_coll_p, key_defaultDRB, (void **)&pdcp_p);
 
         if (h_defaultDRB_rc == HASH_TABLE_OK) {
-          h_defaultDRB_rc = hashtable_remove(pdcp_coll_p, key_defaultDRB);
+          h_defaultDRB_rc = hashtable_remove(pdcp_coll_p, key_defaultDRB, pdcp_free);
         } else {
           LOG_E(PDCP, PROTOCOL_CTXT_FMT" PDCP REMOVE FAILED default DRB\n", PROTOCOL_CTXT_ARGS(ctxt_pP));
         }
@@ -2049,7 +2051,7 @@ void rrc_pdcp_config_req (
         stream_security_container_delete(pdcp_p->security_container_rrc);
         stream_security_container_delete(pdcp_p->security_container_up);
         pdcp_p->security_activated = 0;
-        h_rc = hashtable_remove(pdcp_coll_p, key);
+        h_rc = hashtable_remove(pdcp_coll_p, key, pdcp_free);
         break;
 
       case CONFIG_ACTION_SET_SECURITY_MODE:
@@ -2074,7 +2076,7 @@ void rrc_pdcp_config_req (
     switch (actionP) {
       case CONFIG_ACTION_ADD:
         pdcp_p = calloc(1, sizeof(pdcp_t));
-        h_rc = hashtable_insert(pdcp_coll_p, key, pdcp_p);
+        h_rc = hashtable_insert(pdcp_coll_p, key, pdcp_p, pdcp_free);
 
         if (h_rc != HASH_TABLE_OK) {
           LOG_E(PDCP, PROTOCOL_PDCP_CTXT_FMT" PDCP ADD FAILED\n",
@@ -2210,8 +2212,8 @@ void pdcp_layer_init(void)
    * Initialize SDU list
    */
   initNotifiedFIFO(&pdcp_sdu_list);
-  pdcp_coll_p = hashtable_create ((LTE_maxDRB + 2) * NUMBER_OF_UE_MAX, NULL, pdcp_free);
-  AssertFatal(pdcp_coll_p != NULL, "UNRECOVERABLE error, PDCP hashtable_create failed");
+  pdcp_coll_p = malloc_or_fail(sizeof(*pdcp_coll_p));
+  *pdcp_coll_p = hashtable_create ((LTE_maxDRB + 2) * NUMBER_OF_UE_MAX, NULL);
 
   for (instance = 0; instance < MAX_MOBILES_PER_ENB; instance++) {
     for (service_id = 0; service_id < LTE_maxServiceCount; service_id++) {
@@ -2284,7 +2286,8 @@ void pdcp_layer_cleanup (void)
 {
   //list_free (&pdcp_sdu_list);
   while(pollNotifiedFIFO(&pdcp_sdu_list)) {};
-  hashtable_destroy(&pdcp_coll_p);
+  hashtable_destroy(pdcp_coll_p, pdcp_free);
+  free(pdcp_coll_p);
 #ifdef MBMS_MULTICAST_OUT
 
   if(mbms_socket != -1) {

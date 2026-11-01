@@ -543,9 +543,9 @@ typedef struct e1ap_bearer_mod_req_s {
   // Security Information (O)
   security_information_t *secInfo;
   // UE DL Aggregate Maximum Bit Rate (O)
-  uint32_t *ueDlAggMaxBitRate;
+  uint64_t *ueDlAggMaxBitRate;
   // UE DL Maximum Integrity Protected Data Rate (O)
-  uint32_t *ueDlMaxIPBitRate;
+  uint64_t *ueDlMaxIPBitRate;
   // Bearer Context Status Change (O)
   BEARER_CONTEXT_STATUS_t *bearerContextStatus;
   // UE Inactivity Timer (O)

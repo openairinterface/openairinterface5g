@@ -46,8 +46,9 @@ void test_send_mbuf(void *io_controller, struct rte_mbuf **mbufs, uint32_t num_m
 }
 
 /*
- * --xran-ext1-reference: checks for the xran O-DU ext1 reference capture
- * (https://github.com/ConnorBlasie/openairinterface5g/releases/tag/ext1-pcaps).
+ * --xran-ext1-reference / --xran-ext11-reference: checks for the xran O-DU ext1 and ext11 reference captures
+ * (https://github.com/ConnorBlasie/openairinterface5g/releases/tag/ext1-pcaps and .../tag/ext11-pcaps).
+ * Both are made by the same kit and generator, only the section extension differs.
  */
 #define REF_NUM_ANT 4
 #define REF_NUM_BF_ELM 32
@@ -56,6 +57,8 @@ void test_send_mbuf(void *io_controller, struct rte_mbuf **mbufs, uint32_t num_m
 #define REF_SYMS_PER_SLOT 14
 #define REF_NUM_PRB 273
 #define REF_MAX_ELM 2
+#define REF_EXT11_BUND_PRB 8
+#define REF_MAX_EXT11_BUNDLES 18 // ceil(137 / 8)
 
 typedef struct {
   int start_prb;
@@ -74,11 +77,12 @@ typedef struct {
   uint16_t sym_seen;
 } ref_dl_section_t;
 
+static int ref_ext_type; // 1 or 11, 0 if not checking a reference capture
 static ref_dl_section_t ref_dl_sections[REF_NUM_ANT][256][REF_SLOTS_PER_FRAME][REF_MAX_ELM];
 static int ref_section_id[2][REF_MAX_ELM]; // [dl][elm], -1 until first seen
 
 static struct {
-  uint64_t pkts, cplane_dl, cplane_ul, ext1, uplane, iq_samples, errors;
+  uint64_t pkts, cplane_dl, cplane_ul, ext, uplane, iq_samples, errors;
   uint64_t dl_symbols_read, dl_symbols_silent, dl_iq_checked, dl_iq_errors, dl_iq_bad_symbols;
 } ref_cnt;
 
@@ -135,6 +139,93 @@ static void ref_check_section_id(bool dl, int k, int id)
   REF_CHECK(ref_section_id[dl][k] == id, "%s elm %d sectionId %d, earlier %d", dl ? "DL" : "UL", k, id, ref_section_id[dl][k]);
 }
 
+static void ref_check_ext1(const uint8_t *ext, const uint8_t *end, int ant, int slot, int k)
+{
+  // One per section, 3-byte header + 32 uncompressed 16-bit weights = 33 words
+  int ext_words = ext[1];
+  REF_CHECK(ext_words == 33 && ext + ext_words * 4 == end,
+            "extLen %d words, %ld bytes left in packet",
+            ext_words,
+            (long)(end - ext));
+  REF_CHECK(ext[2] == 0, "bfwCompHdr 0x%02x, expected uncompressed 16-bit", ext[2]);
+  c16_t w[REF_NUM_BF_ELM];
+  REF_CHECK(xran_decode_bfw_ext1(ext, end - ext, REF_NUM_BF_ELM, w) == XRAN_BFW_OK, "ext1 decode failed");
+  // xran zero-pads ext1 to the 4-byte boundary (xran_decode_bfw_ext1() does not check this yet)
+  for (const uint8_t *pad = ext + 3 + REF_NUM_BF_ELM * 4; pad < end; pad++)
+    REF_CHECK(*pad == 0, "ext1 padding byte 0x%02x", *pad);
+  for (int e = 0; e < REF_NUM_BF_ELM; e++)
+    REF_CHECK(w[e].r == 1024 * ant + e && w[e].i == 300 * (slot % REF_NUM_SLOTS_FILE) + k,
+              "ant %d slot %d elm %d weight %d: (%d,%d), expected (%d,%d)",
+              ant,
+              slot,
+              k,
+              e,
+              w[e].r,
+              w[e].i,
+              1024 * ant + e,
+              300 * (slot % REF_NUM_SLOTS_FILE) + k);
+}
+
+// One per section: RAD 1, 8 PRBs per bundle (the 137-PRB element's last bundle has 1 PRB), uncompressed 16-bit.
+// sample-app takes bundle b's weights from byte nAntElmTRx * 2 * b of the slot's weight buffer, i.e. half a vector
+// further per bundle (app_io_xran_ext_type11_populate()), so weight j of bundle b is buffer element n = 16 * b + j.
+// Its beamIds are 0x7000 + b.
+static void ref_check_ext11(const uint8_t *ext, const uint8_t *end, int ant, int slot, int num_prb)
+{
+  int n_bundles = (num_prb + REF_EXT11_BUND_PRB - 1) / REF_EXT11_BUND_PRB;
+  size_t used = 6 + n_bundles * (2 + REF_NUM_BF_ELM * 4);
+  size_t ext_len = (((size_t)ext[1] << 8) | ext[2]) * 4;
+  REF_CHECK(ext_len == ((used + 3) & ~(size_t)3) && ext + ext_len == end,
+            "extLen %zu bytes, %ld bytes left in packet, expected %zu",
+            ext_len,
+            (long)(end - ext),
+            (used + 3) & ~(size_t)3);
+  xran_bfw_ext11_hdr_t hdr;
+  uint16_t ids[REF_MAX_EXT11_BUNDLES];
+  c16_t w[REF_MAX_EXT11_BUNDLES * REF_NUM_BF_ELM];
+  int dec_bundles = 0;
+  xran_bfw_err_t err =
+      xran_decode_bfw_ext11(ext, end - ext, num_prb, REF_NUM_BF_ELM, REF_MAX_EXT11_BUNDLES, &hdr, &dec_bundles, ids, w);
+  REF_CHECK(err == XRAN_BFW_OK && dec_bundles == n_bundles,
+            "ext11 decode failed: %s, %d bundles, expected %d",
+            xran_bfw_strerror(err),
+            dec_bundles,
+            n_bundles);
+  // The decoder also accepts compressed weights; this test only covers the uncompressed 16-bit shape
+  REF_CHECK(!hdr.disableBFWs && hdr.RAD && hdr.bundleOffset == 0 && hdr.numBundPrb == REF_EXT11_BUND_PRB
+                && hdr.bfwCompMeth == XRAN_BFWCOMPMETHOD_NONE && hdr.bfwIqWidth == 16,
+            "ext11 header disableBFWs %d RAD %d bundleOffset %d numBundPrb %d bfwCompMeth %d bfwIqWidth %d, "
+            "expected 0/1/0/%d, uncompressed 16-bit",
+            hdr.disableBFWs,
+            hdr.RAD,
+            hdr.bundleOffset,
+            hdr.numBundPrb,
+            hdr.bfwCompMeth,
+            hdr.bfwIqWidth,
+            REF_EXT11_BUND_PRB);
+  for (const uint8_t *pad = ext + used; pad < end; pad++)
+    REF_CHECK(*pad == 0, "ext11 padding byte 0x%02x", *pad);
+  for (int b = 0; b < n_bundles; b++) {
+    REF_CHECK(ext[6 + b * (2 + REF_NUM_BF_ELM * 4)] >> 7 == 0, "bundle %d contInd set", b);
+    REF_CHECK(ids[b] == 0x7000 + b, "bundle %d beamId 0x%04x, expected 0x%04x", b, ids[b], 0x7000 + b);
+    for (int j = 0; j < REF_NUM_BF_ELM; j++) {
+      int n = REF_NUM_BF_ELM / 2 * b + j;
+      c16_t exp = {1024 * ant + n % REF_NUM_BF_ELM, 300 * (slot % REF_NUM_SLOTS_FILE) + n / REF_NUM_BF_ELM};
+      c16_t got = w[b * REF_NUM_BF_ELM + j];
+      REF_CHECK(got.r == exp.r && got.i == exp.i,
+                "ant %d slot %d bundle %d weight %d: (%d,%d), expected (%d,%d)",
+                ant,
+                slot,
+                b,
+                j,
+                got.r,
+                got.i,
+                exp.r,
+                exp.i);
+    }
+  }
+}
+
 static void ref_check_cplane(const uint8_t *p, const uint8_t *end, int ant)
 {
   REF_CHECK(end - p >= 16, "C-plane too short");
@@ -165,33 +256,22 @@ static void ref_check_cplane(const uint8_t *p, const uint8_t *end, int ant)
   REF_CHECK(beam_id == k + 1, "beamId %d, expected %d", beam_id, k + 1);
   ref_check_section_id(dl, k, sec_id);
 
-  // Section extension 1: one per section, 3-byte header + 32 uncompressed 16-bit weights = 33 words
   const uint8_t *ext = s + 8;
   REF_CHECK(ef == 1 && end - ext >= 3, "section has no extension");
-  int ext_type = ext[0] & 0x7F, ext_more = ext[0] >> 7, ext_words = ext[1];
-  REF_CHECK(ext_type == 1 && ext_more == 0, "extType %d ef %d, expected a single ext1", ext_type, ext_more);
-  REF_CHECK(ext_words == 33 && ext + ext_words * 4 == end,
-            "extLen %d words, %ld bytes left in packet",
-            ext_words,
-            (long)(end - ext));
-  REF_CHECK(ext[2] == 0, "bfwCompHdr 0x%02x, expected uncompressed 16-bit", ext[2]);
-  c16_t w[REF_NUM_BF_ELM];
-  REF_CHECK(xran_decode_bfw_ext1(ext, end - ext, REF_NUM_BF_ELM, w) == REF_NUM_BF_ELM, "ext1 decode failed");
-  // xran zero-pads ext1 to the 4-byte boundary (xran_decode_bfw_ext1() does not check this yet)
-  for (const uint8_t *pad = ext + 3 + REF_NUM_BF_ELM * 4; pad < end; pad++)
-    REF_CHECK(*pad == 0, "ext1 padding byte 0x%02x", *pad);
-  for (int e = 0; e < REF_NUM_BF_ELM; e++)
-    REF_CHECK(w[e].r == 1024 * ant + e && w[e].i == 300 * (slot % REF_NUM_SLOTS_FILE) + k,
-              "ant %d slot %d elm %d weight %d: (%d,%d), expected (%d,%d)",
-              ant,
-              slot,
-              k,
-              e,
-              w[e].r,
-              w[e].i,
-              1024 * ant + e,
-              300 * (slot % REF_NUM_SLOTS_FILE) + k);
-  ref_cnt.ext1++;
+  int ext_type = ext[0] & 0x7F, ext_more = ext[0] >> 7;
+  REF_CHECK(ext_type == ref_ext_type && ext_more == 0,
+            "extType %d ef %d, expected a single ext%d",
+            ext_type,
+            ext_more,
+            ref_ext_type);
+  uint64_t errors = ref_cnt.errors;
+  if (ref_ext_type == 1)
+    ref_check_ext1(ext, end, ant, slot, k);
+  else
+    ref_check_ext11(ext, end, ant, slot, num_prb);
+  if (ref_cnt.errors != errors)
+    return;
+  ref_cnt.ext++;
 
   if (dl) {
     ref_dl_section_t *d = &ref_dl_sections[ant][frame][slot][k];
@@ -360,26 +440,29 @@ static bool ref_report(uint64_t exp_c, uint64_t exp_u)
   // Every DL U-plane packet carries one PRB element of one antenna for one symbol
   uint64_t exp_dl_symbols = exp_u / (REF_NUM_ANT * REF_NUM_DL_ELM);
   printf(
-      "xran ext1 reference: packets %lu: C-plane DL %lu UL %lu (ext1 %lu), U-plane %lu (%lu IQ samples), incomplete DL "
-      "sections %lu, errors %lu\n",
+      "xran ext%d reference: packets %lu: C-plane DL %lu UL %lu (ext%d %lu), U-plane %lu (%lu IQ samples), incomplete "
+      "DL sections %lu, errors %lu\n",
+      ref_ext_type,
       ref_cnt.pkts,
       ref_cnt.cplane_dl,
       ref_cnt.cplane_ul,
-      ref_cnt.ext1,
+      ref_ext_type,
+      ref_cnt.ext,
       ref_cnt.uplane,
       ref_cnt.iq_samples,
       incomplete,
       ref_cnt.errors);
   printf(
-      "xran ext1 reference: read_dl_iq %lu scheduled symbols (expected %lu) + %lu silent, %lu IQ samples checked, %lu wrong "
+      "xran ext%d reference: read_dl_iq %lu scheduled symbols (expected %lu) + %lu silent, %lu IQ samples checked, %lu wrong "
       "in %lu symbols\n",
+      ref_ext_type,
       ref_cnt.dl_symbols_read,
       exp_dl_symbols,
       ref_cnt.dl_symbols_silent,
       ref_cnt.dl_iq_checked,
       ref_cnt.dl_iq_errors,
       ref_cnt.dl_iq_bad_symbols);
-  return ref_cnt.errors == 0 && incomplete == 0 && ref_cnt.cplane_dl + ref_cnt.cplane_ul == exp_c && ref_cnt.ext1 == exp_c
+  return ref_cnt.errors == 0 && incomplete == 0 && ref_cnt.cplane_dl + ref_cnt.cplane_ul == exp_c && ref_cnt.ext == exp_c
          && ref_cnt.uplane == exp_u && ref_cnt.dl_symbols_read == exp_dl_symbols && ref_cnt.dl_iq_errors == 0;
 }
 
@@ -389,7 +472,7 @@ int main(int argc, char *argv[])
     printf(
         "Usage: %s <pcap_file> <numerology> <initial_symbol> <num_dl_slots> <num_ul_slots> <num_dl_symbols> <num_ul_symbols> "
         "<tdd_pattern_length_slots> <mtu> <prach_eaxc_offset> [<num_bf_weights> <min_ext1_received>] "
-        "[--xran-ext1-reference <expected_cplane> <expected_uplane>] -- <eal args>\n",
+        "[--xran-ext1-reference|--xran-ext11-reference <expected_cplane> <expected_uplane>] -- <eal args>\n",
         argv[0]);
     return 1;
   }
@@ -434,13 +517,13 @@ int main(int argc, char *argv[])
   // Decode ext1 if present with N weights and require at least M min_ext1_received
   int num_bf_weights = 0;
   uint64_t min_ext1_received = 0;
-  // Check the capture and the processor's DL IQ against the xran ext1 reference capture's generator
-  bool ext1_reference = false;
+  // Check the capture and the processor's DL IQ against the xran ext1/ext11 reference capture's generator
   uint64_t ref_exp_cplane = 0, ref_exp_uplane = 0;
   int num_positional = 0;
   for (int i = 11; i < eal_args_start; i++) {
-    if (strcmp(argv[i], "--xran-ext1-reference") == 0 && i + 2 < eal_args_start) {
-      ext1_reference = true;
+    if ((strcmp(argv[i], "--xran-ext1-reference") == 0 || strcmp(argv[i], "--xran-ext11-reference") == 0)
+        && i + 2 < eal_args_start) {
+      ref_ext_type = strcmp(argv[i], "--xran-ext1-reference") == 0 ? 1 : 11;
       ref_exp_cplane = strtoull(argv[++i], NULL, 0);
       ref_exp_uplane = strtoull(argv[++i], NULL, 0);
     } else if (num_positional == 0) {
@@ -468,9 +551,11 @@ int main(int argc, char *argv[])
          tdd_pattern_length_slots);
   printf("  MTU: %zu\n", mtu);
   printf("  PRACH eAxC Offset: %d\n", prach_eaxc_offset);
-  printf("  BF weights per ext1: %d, min ext1 expected: %lu\n", num_bf_weights, min_ext1_received);
-  if (ext1_reference)
-    printf("  xran ext1 reference: expected C-plane %lu, U-plane %lu\n", ref_exp_cplane, ref_exp_uplane);
+  printf("  BF weights per ext1/ext11: %d, min ext1 expected: %lu (ext11 count: --xran-ext11-reference)\n",
+         num_bf_weights,
+         min_ext1_received);
+  if (ref_ext_type)
+    printf("  xran ext%d reference: expected C-plane %lu, U-plane %lu\n", ref_ext_type, ref_exp_cplane, ref_exp_uplane);
 
   void *ctx = init_packet_processor(numerology,
                                     273,
@@ -491,7 +576,7 @@ int main(int argc, char *argv[])
                                     FH_COMP_NONE,
                                     0);
   assert(ctx != NULL);
-  set_num_bf_weights_ext1(ctx, num_bf_weights);
+  set_num_bf_weights(ctx, num_bf_weights);
 
   char errbuf[PCAP_ERRBUF_SIZE];
   pcap_t *pcap = pcap_open_offline(argv[1], errbuf);
@@ -521,7 +606,7 @@ int main(int argc, char *argv[])
   while (pcap_next_ex(pcap, &pkthdr, &packet) >= 0) {
     pkt_count++;
     double ts = pkthdr->ts.tv_sec + pkthdr->ts.tv_usec / 1000000.0;
-    if (ext1_reference)
+    if (ref_ext_type)
       ref_check_packet(pkthdr, packet);
 
     struct rte_mbuf *mbuf = rte_pktmbuf_alloc(mp);
@@ -593,7 +678,7 @@ int main(int argc, char *argv[])
             uint64_t hf;
             while (get_ready_job_count(ctx) > 0) {
               int n = read_dl_iq_streams(ctx, dl_streams, dl_iq_arena, MAX_DL_FRAGMENTS_PER_SYMBOL, &hf, &f, &sl, &sy);
-              if (ext1_reference) {
+              if (ref_ext_type) {
                 place_dl_streams(txdataF, dl_streams, n);
                 ref_check_dl_iq(txdataF, f, sl, sy);
               }
@@ -625,7 +710,7 @@ int main(int argc, char *argv[])
     uint64_t hf;
     while (get_ready_job_count(ctx) > 0) {
       int n = read_dl_iq_streams(ctx, dl_streams, dl_iq_arena, MAX_DL_FRAGMENTS_PER_SYMBOL, &hf, &f, &sl, &sy);
-      if (ext1_reference) {
+      if (ref_ext_type) {
         place_dl_streams(txdataF, dl_streams, n);
         ref_check_dl_iq(txdataF, f, sl, sy);
       }
@@ -657,7 +742,11 @@ int main(int argc, char *argv[])
   printf("  Out of Mbufs: %lu\n", stats.out_of_mbufs);
   printf("  Application Too Slow Errors: %lu\n", stats.application_too_slow);
   printf("  C-Plane Section Extension 1 received: %lu\n", stats.cplane_ext1_received);
-  printf("  C-Plane Malformed Section Extension Errors: %lu\n", stats.cplane_err_sect_ext);
+  printf("  C-Plane Section Extension 11 received: %lu\n", stats.cplane_ext11_received);
+  printf("  C-Plane Malformed Section Extension 1 Errors: %lu\n", stats.cplane_err_sect_ext1);
+  printf("  C-Plane Malformed Section Extension 11 Errors: %lu\n", stats.cplane_err_sect_ext11);
+  printf("  C-Plane Malformed Section Extension Chain Errors: %lu\n", stats.cplane_err_sect_ext_chain);
+  printf("  C-Plane Malformed Section Extension Other Errors: %lu\n", stats.cplane_err_sect_ext_other);
 
   pcap_close(pcap);
   cleanup_packet_processor(ctx);
@@ -667,16 +756,27 @@ int main(int argc, char *argv[])
     free(txdataF[i]);
   free(dl_iq_arena);
 
-  if (stats.cplane_err_sect_ext != 0) {
-    printf("FAIL: %lu malformed section extension(s)\n", stats.cplane_err_sect_ext);
+  if (stats.cplane_err_sect_ext1 != 0 || stats.cplane_err_sect_ext11 != 0 || stats.cplane_err_sect_ext_chain != 0
+      || stats.cplane_err_sect_ext_other != 0) {
+    printf("FAIL: %lu malformed ext1, %lu malformed ext11, %lu malformed extension chains, %lu malformed other extensions\n",
+           stats.cplane_err_sect_ext1,
+           stats.cplane_err_sect_ext11,
+           stats.cplane_err_sect_ext_chain,
+           stats.cplane_err_sect_ext_other);
     return 1;
   }
   if (stats.cplane_ext1_received < min_ext1_received) {
     printf("FAIL: %lu ext1 received, expected at least %lu\n", stats.cplane_ext1_received, min_ext1_received);
     return 1;
   }
-  if (ext1_reference && !ref_report(ref_exp_cplane, ref_exp_uplane)) {
-    printf("FAIL: xran ext1 reference capture checks\n");
+  // Every extension in the reference window must also have reached the processor
+  uint64_t ext_received = ref_ext_type == 11 ? stats.cplane_ext11_received : stats.cplane_ext1_received;
+  if (ref_ext_type && ext_received < ref_exp_cplane) {
+    printf("FAIL: %lu ext%d received by the processor, expected at least %lu\n", ext_received, ref_ext_type, ref_exp_cplane);
+    return 1;
+  }
+  if (ref_ext_type && !ref_report(ref_exp_cplane, ref_exp_uplane)) {
+    printf("FAIL: xran ext%d reference capture checks\n", ref_ext_type);
     return 1;
   }
   return 0;

@@ -819,6 +819,9 @@ typedef struct ngap_downlink_nas_s {
   uint64_t amf_ue_ngap_id;
   /* NAS pdu */
   byte_array_t nas_pdu;
+  /* UE Aggregate Maximum Bit Rate (optional, TS 38.413 9.2.5.2) */
+  bool has_ue_ambr;
+  ngap_ambr_t ue_ambr;
 } ngap_downlink_nas_t;
 
 /* PDU Session Resource Setup/Modify Request Item */

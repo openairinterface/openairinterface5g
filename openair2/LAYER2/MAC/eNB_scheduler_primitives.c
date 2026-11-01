@@ -1799,7 +1799,7 @@ get_numnarrowbands(long dl_Bandwidth)
 //------------------------------------------------------------------------------
 {
   int nb_tab[6] = { 1, 2, 4, 8, 12, 16 };
-  AssertFatal(dl_Bandwidth < 7 || dl_Bandwidth >= 0, "dl_Bandwidth not in [0..6]\n");
+  AssertFatal(dl_Bandwidth >= 0 && dl_Bandwidth < 6, "dl_Bandwidth %ld not in [0..5]\n", dl_Bandwidth);
   return (nb_tab[dl_Bandwidth]);
 }
 
@@ -1809,7 +1809,7 @@ get_numnarrowbandbits(long dl_Bandwidth)
 //------------------------------------------------------------------------------
 {
   int nbbits_tab[6] = { 0, 1, 2, 3, 4, 4 };
-  AssertFatal(dl_Bandwidth < 7 || dl_Bandwidth >= 0, "dl_Bandwidth not in [0..6]\n");
+  AssertFatal(dl_Bandwidth >= 0 && dl_Bandwidth < 6, "dl_Bandwidth %ld not in [0..5]\n", dl_Bandwidth);
   return (nbbits_tab[dl_Bandwidth]);
 }
 

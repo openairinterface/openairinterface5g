@@ -107,7 +107,7 @@ static int get_stats(char *buf, int debug, telnet_printfunc_t prnt)
   static b_t last_total[MAX_MOBILES_PER_GNB] = {0}; // TODO: hash table?
   ue_stat_t ue_stat[MAX_MOBILES_PER_GNB] = {0};
   int num_ues = 0;
-  UE_iterator((NR_UE_info_t **)mac->UE_info.connected_ue_list, it) {
+  FOR_EACH_CONNECTED_UE(&mac->UE_info, it) {
     nr_rlc_statistics_t rlc = {0};
     nr_rlc_get_statistics(it->rnti, srb_flag, rb_id, &rlc);
     b_t *lt = &last_total[num_ues];
@@ -358,7 +358,7 @@ static int stop_modem(char *buf, int debug, telnet_printfunc_t prnt)
    * scheduler, which has many PUCCH structures filled with expected frame/slot
    * combinations that won't happen. */
   const gNB_MAC_INST *mac = RC.nrmac[0];
-  UE_iterator((NR_UE_info_t **)mac->UE_info.connected_ue_list, it) {
+  FOR_EACH_CONNECTED_UE(&mac->UE_info, it) {
     nr_mac_trigger_ul_failure(&it->UE_sched_ctrl, 1);
   }
   usleep(50000);

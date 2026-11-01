@@ -6,6 +6,9 @@
 #define OPENAIRINTERFACE5G_LIMITS_H_
 
 #        define MAX_MOBILES_PER_GNB 16
+/* PDSCH/PUSCH scheduled in one slot: the MAC schedules at most MAX_DCI_CORESET UEs per slot, plus RA and
+   broadcast messages. L1 preallocates its PDSCH/PUSCH structures from this, not from MAX_MOBILES_PER_GNB. */
+#define NR_MAX_SCHED_PER_SLOT 32
 #        define NUMBER_OF_eNB_MAX 1
 #ifndef NUMBER_OF_gNB_MAX
 #        define NUMBER_OF_gNB_MAX 1

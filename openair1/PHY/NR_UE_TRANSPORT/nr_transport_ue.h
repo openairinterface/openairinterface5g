@@ -19,10 +19,6 @@ typedef struct {
   unsigned char *payload_AB;
   /// Pointers to transport block segments
   uint8_t **c;
-  /// LDPC-code outputs
-  uint8_t **d;
-  /// LDPC-code outputs (TS 36.212 V15.4.0, Sec 5.3.2 p. 17)
-  uint8_t *e;
   /// Rate matching (Interleaving) outputs (TS 36.212 V15.4.0, Sec 5.4.2.2 p. 30)
   uint8_t *f;
   /// Number of code segments

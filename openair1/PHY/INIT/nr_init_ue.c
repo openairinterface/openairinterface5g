@@ -364,17 +364,13 @@ void free_nr_ue_ul_harq(NR_UL_UE_HARQ_t harq_list[NR_MAX_HARQ_PROCESSES], int nu
     {
       // nr_init_ul_harq_processes() makes single allocation(!)
       gpuFreeHost(harq_list[i].c[0]);
-      gpuFreeHost(harq_list[i].d[0]);
     }
 #else
     for (int r = 0; r < a_segments; r++) {
       free_and_zero(harq_list[i].c[r]);
-      free_and_zero(harq_list[i].d[r]);
     }
     free_and_zero(harq_list[i].c);
-    free_and_zero(harq_list[i].d);
 #endif
-    free_and_zero(harq_list[i].e);
     free_and_zero(harq_list[i].f);
   }
 }
@@ -455,34 +451,26 @@ void nr_init_ul_harq_processes(NR_UL_UE_HARQ_t harq_list[NR_MAX_HARQ_PROCESSES],
 
 #ifdef LDPC_CUDA
     size_t total_c_size = a_segments * 8448;
-    size_t total_d_size = a_segments * 68 * 384 * sizeof(uint32_t);
 
     uint8_t *tmp_c = gpuHostAlloc_or_fail(total_c_size, gpuHostAllocMapped);
-    uint8_t *tmp_d = gpuHostAlloc_or_fail(total_d_size, gpuHostAllocMapped);
     memset(tmp_c, 0, total_c_size);
-    memset(tmp_d, 0, total_d_size);
 
     harq_list[i].c = gpuHostAlloc_or_fail(a_segments * sizeof(uint8_t *), gpuHostAllocMapped);
-    harq_list[i].d = gpuHostAlloc_or_fail(a_segments * sizeof(uint8_t *), gpuHostAllocMapped);
 
     for (int r = 0; r < a_segments; r++) {
       harq_list[i].c[r] = tmp_c + (r * 8448);
-      harq_list[i].d[r] = (uint8_t *)(tmp_d + (r * 68 * 384 * sizeof(uint32_t)));
     }
 
 #else
     harq_list[i].c = malloc16(a_segments * sizeof(uint8_t *));
-    harq_list[i].d = malloc16(a_segments * sizeof(uint8_t *));
 
     for (int r = 0; r < a_segments; r++) {
       harq_list[i].c[r] = malloc16_clear(8448);
-      harq_list[i].d[r] = malloc16_clear(68 * 384);
     }
 #endif
 
-    uint32_t ef_size = 14 * num_rb * 12 * 16;
-    harq_list[i].e = malloc16_clear(ef_size);
-    harq_list[i].f = malloc16_clear(ef_size);
+    uint32_t f_size = 14 * num_rb * 12 * 16;
+    harq_list[i].f = malloc16_clear(f_size);
     harq_list[i].round = 0;
   }
 }

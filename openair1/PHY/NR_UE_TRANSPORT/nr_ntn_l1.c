@@ -78,8 +78,7 @@ void apply_ntn_timing_advance_and_doppler(PHY_VARS_NR_UE *UE, const NR_DL_FRAME_
     vel_sat = vel_sat_0;
   }
 
-  position_t pos_ue = {0};
-  get_position_coordinates(UE->Mod_id, &pos_ue);
+  const position_t pos_ue = UE->position;
 
   // calculate directional vector from SAT to UE
   const position_t dir_sat_ue = {pos_ue.X - pos_sat.X, pos_ue.Y - pos_sat.Y, pos_ue.Z - pos_sat.Z};

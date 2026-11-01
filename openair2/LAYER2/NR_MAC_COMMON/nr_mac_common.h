@@ -360,7 +360,7 @@ unsigned int get_N_RA_RB(const unsigned int delta_f_RA_PRACH, const unsigned int
 
 void find_period_offset_SR(const NR_SchedulingRequestResourceConfig_t *SchedulingReqRec, int *period, int *offset);
 
-void csi_period_offset(const NR_CSI_ReportConfig_t *csirep,
+bool csi_period_offset(const NR_CSI_ReportConfig_t *csirep,
                        const struct NR_CSI_ResourcePeriodicityAndOffset *periodicityAndOffset,
                        int *period,
                        int *offset);
