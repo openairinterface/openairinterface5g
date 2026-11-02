@@ -1860,12 +1860,29 @@ void RCconfig_nr_macrlc(configmodule_interface_t *cfg)
 
   GET_PARAMS(GNBSParams, GNBSPARAMS_DESC, NULL);
   GET_PARAMS_LIST(GNBParamList, GNBParams, GNBPARAMS_DESC, GNB_CONFIG_STRING_GNB_LIST, NULL, GNBPARAMS_CHECK);
-  int num_gnbs = GNBSParams[GNB_ACTIVE_GNBS_IDX].numelt;
-  AssertFatal(num_gnbs == 1,
-              "Failed to parse config file: number of gnbs for gNB %s is %d != 1\n",
-              GNB_CONFIG_STRING_ACTIVE_GNBS,
-              num_gnbs);
-
+  int num_gnbs = GNBParamList.numelt;
+  // gNB-wide parameters (AMF, SCTP) must only appear in the first gNBs[] entry
+  for (int j = 1; j < num_gnbs; j++) {
+    char aprefix[MAX_OPTNAME_SIZE * 2 + 8];
+    snprintf(aprefix, sizeof(aprefix), "%s.[%d]", GNB_CONFIG_STRING_GNB_LIST, j);
+    verify_section_notset(cfg, aprefix, GNB_CONFIG_STRING_AMF_IP_ADDRESS);
+    verify_section_notset(cfg, aprefix, GNB_CONFIG_STRING_NETWORK_INTERFACES_CONFIG);
+    verify_section_notset(cfg, aprefix, GNB_CONFIG_STRING_SCTP_CONFIG);
+    snprintf(aprefix, sizeof(aprefix), "%s.[%d]", MACRLC_LIST, j);
+    verify_section_notset(cfg, aprefix, MACRLC_TRANSPORT_N_PREFERENCE);
+    verify_section_notset(cfg, aprefix, MACRLC_LOCAL_N_ADDRESS);
+    verify_section_notset(cfg, aprefix, MACRLC_LOCAL_N_ADDRESS_F1U);
+    verify_section_notset(cfg, aprefix, MACRLC_REMOTE_N_ADDRESS);
+    verify_section_notset(cfg, aprefix, MACRLC_LOCAL_N_PORTD);
+    verify_section_notset(cfg, aprefix, MACRLC_REMOTE_N_PORTD);
+    verify_section_notset(cfg, aprefix, MACRLC_TRANSPORT_S_PREFERENCE);
+    verify_section_notset(cfg, aprefix, MACRLC_TRANSPORT_S_SHM_PREFIX);
+    verify_section_notset(cfg, aprefix, MACRLC_TRANSPORT_S_POLL_CORE);
+    verify_section_notset(cfg, aprefix, MACRLC_LOCAL_S_ADDRESS);
+    verify_section_notset(cfg, aprefix, MACRLC_REMOTE_S_ADDRESS);
+    verify_section_notset(cfg, aprefix, MACRLC_LOCAL_S_PORTC);
+    verify_section_notset(cfg, aprefix, MACRLC_LOCAL_S_PORTD);
+  }
   // MAC / RLC
   GET_PARAMS_LIST(MacRLC_ParamList, MacRLC_Params, MACRLCPARAMS_DESC, MACRLC_LIST, NULL, MACRLCPARAMS_CHECK);
 
@@ -1885,7 +1902,7 @@ void RCconfig_nr_macrlc(configmodule_interface_t *cfg)
 
   ngran_node_t node_type = get_node_type();
   gNB_MAC_INST *nrmac = mac_top_init_gNB(node_type, &default_rlc_config);
-  nr_cell_sched_t *cell = NULL;
+
   uint64_t gnb_du_id = 0;
   uint32_t gnb_id = 0;
   char *name = NULL;
@@ -1900,25 +1917,30 @@ void RCconfig_nr_macrlc(configmodule_interface_t *cfg)
   int num = read_version(TO_STRING(NR_RRC_VERSION), &req->rrc_ver[0], &req->rrc_ver[1], &req->rrc_ver[2]);
   AssertFatal(num == 3, "could not read RRC version string %s\n", TO_STRING(NR_RRC_VERSION));
 
-  req->num_cells_available = 1;
+  req->num_cells_available = num_gnbs;
   req->cell = calloc_or_fail(req->num_cells_available, sizeof(*req->cell));
 
-  int idx = 0;
-  AssertFatal(MacRLC_ParamList.numelt == 1, "only one MACRLCs section supported!\n");
-  char aprefix[MAX_OPTNAME_SIZE * 2 + 8];
-  snprintf(aprefix, sizeof(aprefix), "%s.[%d].%s", GNB_CONFIG_STRING_GNB_LIST, idx, GNB_CONFIG_STRING_TIMERS_CONFIG);
-  GET_PARAMS(Timers_Params, GNB_TIMERS_PARAMS_DESC, aprefix);
-  NR_ServingCellConfigCommon_t *scc = get_scc_config(idx);
-  cell = nr_mac_cell_alloc(nrmac, scc);
-  const int bw = scc->downlinkConfigCommon->frequencyInfoDL->scs_SpecificCarrierList.list.array[0]->carrierBandwidth;
-
-  const paramdef_t *macrlc_p = MacRLC_ParamList.paramarray[idx];
+  const paramdef_t *macrlc_p = NULL;
   const int macrlc_np = sizeofArray(MacRLC_Params);
-  nr_mac_config_t config = get_mac_config(cfg, &num_tx, idx, GNBParamList.paramarray[idx], Timers_Params, macrlc_p, macrlc_np, bw);
+  AssertFatal(MacRLC_ParamList.numelt == num_gnbs,
+              "Number of MACRLCs entries (%d) must match number of gNBs entries (%d)\n",
+              MacRLC_ParamList.numelt,
+              num_gnbs);
+  for (int idx = 0; idx < num_gnbs; idx++) {
+    char aprefix[MAX_OPTNAME_SIZE * 2 + 8];
+    snprintf(aprefix, sizeof(aprefix), "%s.[%d].%s", GNB_CONFIG_STRING_GNB_LIST, idx, GNB_CONFIG_STRING_TIMERS_CONFIG);
+    GET_PARAMS(Timers_Params, GNB_TIMERS_PARAMS_DESC, aprefix);
+    NR_ServingCellConfigCommon_t *scc = get_scc_config(idx);
+    nr_cell_sched_t *cell = nr_mac_cell_alloc(nrmac, scc);
+    const int bw = scc->downlinkConfigCommon->frequencyInfoDL->scs_SpecificCarrierList.list.array[0]->carrierBandwidth;
 
-  nrmac->stats_max_ue = *gpd(macrlc_p, macrlc_np, MACRLC_STATS_MAX_UE)->iptr;
-  nrmac->print_ue_stats = nrmac->stats_max_ue > 0;
-  config_nr_mac_update_cell(cell, &config, scc->uplinkConfigCommon->initialUplinkBWP, idx, macrlc_p, macrlc_np);
+    macrlc_p = MacRLC_ParamList.paramarray[idx];
+    nr_mac_config_t config =
+        get_mac_config(cfg, &num_tx, idx, GNBParamList.paramarray[idx], Timers_Params, macrlc_p, macrlc_np, bw);
+
+    nrmac->stats_max_ue = *gpd(macrlc_p, macrlc_np, MACRLC_STATS_MAX_UE)->iptr;
+    nrmac->print_ue_stats = nrmac->stats_max_ue > 0;
+    config_nr_mac_update_cell(cell, &config, scc->uplinkConfigCommon->initialUplinkBWP, idx, macrlc_p, macrlc_np);
 
   nr_mac_cell_config_scc(cell, scc, &config);
 
@@ -1949,31 +1971,33 @@ void RCconfig_nr_macrlc(configmodule_interface_t *cfg)
                   num_tx);
     }
 #ifdef ENABLE_AERIAL
-    else {
-      AssertFatal(config.bt.num_weights_per_beam == config.aerial.num_tx_ant,
-                  "digital beam table has %d weight(s) per beam but " CONFIG_STRING_AERIAL "." AERIAL_NUM_TX_ANT
-                  " is %d\n",
-                  config.bt.num_weights_per_beam,
-                  config.aerial.num_tx_ant);
-    }
+      else {
+        AssertFatal(config.bt.num_weights_per_beam == config.aerial.num_tx_ant,
+                    "digital beam table has %d weight(s) per beam but " CONFIG_STRING_AERIAL "." AERIAL_NUM_TX_ANT " is %d\n",
+                    config.bt.num_weights_per_beam,
+                    config.aerial.num_tx_ant);
+      }
 #endif
-    /* The scheduler repeats the same beam ID on every beamforming port of a PDU
-     * (the dig_bf_interface_list loops), so with more than one CSI port a single
-     * beam's weights would be applied to all of them instead of one vector per
-     * port. */
-    const nr_pdsch_AntennaPorts_t *ap = &config.pdsch_AntennaPorts;
-    const int csi_ports = ap->N1 * ap->N2 * ap->XP;
-    AssertFatal(csi_ports == 1,
-                "a digital beam table is only supported with one CSI port, but pdsch_AntennaPorts N1 %d N2 %d XP %d give "
-                "%d: the same beam ID is signalled for every FAPI beamforming port\n",
-                ap->N1,
-                ap->N2,
-                ap->XP,
-                csi_ports);
-  }
+      /* The scheduler repeats the same beam ID on every beamforming port of a PDU
+       * (the dig_bf_interface_list loops), so with more than one CSI port a single
+       * beam's weights would be applied to all of them instead of one vector per
+       * port. */
+      const nr_pdsch_AntennaPorts_t *ap = &config.pdsch_AntennaPorts;
+      const int csi_ports = ap->N1 * ap->N2 * ap->XP;
+      AssertFatal(csi_ports == 1,
+                  "a digital beam table is only supported with one CSI port, but pdsch_AntennaPorts N1 %d N2 %d XP %d give "
+                  "%d: the same beam ID is signalled for every FAPI beamforming port\n",
+                  ap->N1,
+                  ap->N2,
+                  ap->XP,
+                  csi_ports);
+    }
 
+  }
   nrmac->positioning_config = RCconfig_nr_positioning();
 
+  // Transport related parameters we only read from the first MACRLC instance
+  macrlc_p = MacRLC_ParamList.paramarray[0];
   if (strcmp(*gpd(macrlc_p, macrlc_np, MACRLC_TRANSPORT_N_PREFERENCE)->strptr, "local_RRC") == 0) {
     // check number of instances is same as RRC/PDCP
 
@@ -2015,7 +2039,7 @@ void RCconfig_nr_macrlc(configmodule_interface_t *cfg)
     nvipc_params_t nvipc_p = {
       .nvipc_shm_prefix = strdup(*gpd(macrlc_p, macrlc_np, MACRLC_TRANSPORT_S_SHM_PREFIX)->strptr),
       .nvipc_poll_core = *gpd(macrlc_p, macrlc_np, MACRLC_TRANSPORT_S_POLL_CORE)->i8ptr,
-      .num_phys = 1,
+      .num_phys = num_gnbs,
     };
     nrmac->nvipc_params_s = nvipc_p;
     LOG_I(GNB_APP, "Configuring VNF for Aerial connection with prefix %s\n", nvipc_p.nvipc_shm_prefix);

@@ -714,7 +714,6 @@ int main( int argc, char **argv ) {
     stop_L1(0);
 
   if (RC.nb_nr_macrlc_inst > 0) {
-    DevAssert(RC.nb_nr_macrlc_inst == 1);
     mac_top_destroy_gNB(RC.nrmac[0]);
   }
 

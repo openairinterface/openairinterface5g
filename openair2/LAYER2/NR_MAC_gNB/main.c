@@ -248,8 +248,6 @@ static void mac_rrc_init(gNB_MAC_INST *mac, ngran_node_t node_type)
 
 gNB_MAC_INST *mac_top_init_gNB(ngran_node_t node_type, const nr_rlc_configuration_t *default_rlc_config)
 {
-  AssertFatal(RC.nb_nr_macrlc_inst == 1, "what is the point of calling %s() if you don't need exactly one MAC?\n", __func__);
-
   RC.nrmac = calloc_or_fail(1, sizeof(gNB_MAC_INST *));
   RC.nrmac[0] = calloc_or_fail(1, sizeof(gNB_MAC_INST));
   gNB_MAC_INST *nrmac = RC.nrmac[0];
