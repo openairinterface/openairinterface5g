@@ -922,7 +922,7 @@ static NR_ServingCellConfigCommon_t *get_scc_config(int idx)
     // check validity
     bool is_pattern2 = false;
     for (int i = 0; i < sizeofArray(pattern2Params); i++) {
-      is_pattern2 |= is_pattern2_config(pattern2Params);
+      is_pattern2 |= is_pattern2_config(&pattern2Params[i]);
     }
 
     if (is_pattern2) {
