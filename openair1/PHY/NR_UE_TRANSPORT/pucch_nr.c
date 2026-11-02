@@ -531,7 +531,7 @@ static inline void fill_pattern(uint64_t *b, uint32_t pattern, int N, uint16_t E
   }
 }
 
-void nr_uci_encoding(uint64_t payload, uint8_t nr_bit, uint8_t nrofPRB, uint16_t E, uint8_t Qm, uint64_t *b)
+void nr_uci_encoding(uint64_t payload, uint8_t nr_bit, uint8_t aggregation_level, uint16_t E, uint8_t Qm, uint64_t *b, bool onPUSCH)
 {
   /*
    * Implementing TS 38.212 Subclause 6.3.1.2 and 6.3.2
@@ -551,7 +551,7 @@ void nr_uci_encoding(uint64_t payload, uint8_t nr_bit, uint8_t nrofPRB, uint16_t
   uint8_t A = nr_bit;
 
 #ifdef DEBUG_NR_PUCCH_TX
-  printf("\t\t [nr_uci_encoding] start function with encoding A=%d bits into M_bit=%d (where nrofPRB=%d)\n", A, E, nrofPRB);
+  printf("\t\t [nr_uci_encoding] start function with encoding A=%d bits into M_bit=%d\n", A, E);
 #endif
 
   memset(b, 0, 8 * sizeof(uint64_t));
@@ -562,7 +562,8 @@ void nr_uci_encoding(uint64_t payload, uint8_t nr_bit, uint8_t nrofPRB, uint16_t
   } else { // A >= 12
     // Polar encoder handles encoding and rate matching internally
     payload = reverse_bits(payload, A);
-    polar_encoder_fast(&payload, b, 0, 0, NR_POLAR_UCI_PUCCH_MESSAGE_TYPE, A, nrofPRB);
+    int type = onPUSCH ? NR_POLAR_UCI_PUSCH_MESSAGE_TYPE : NR_POLAR_UCI_PUCCH_MESSAGE_TYPE;
+    polar_encoder_fast(&payload, b, 0, 0, type, A, aggregation_level);
   }
 }
 
@@ -579,7 +580,7 @@ void nr_generate_pucch2(c16_t **txdataF,
   uint64_t b[16] = {0}; // limit to 1024-bit encoded length
   // M_bit is the number of bits of block b (payload after encoding)
   uint16_t M_bit = nr_pucch_output_sequence_length(pucch_pdu->format_type, pucch_pdu->nr_of_symbols, pucch_pdu->prb_size, 0, 0, 0);
-  nr_uci_encoding(pucch_pdu->payload, pucch_pdu->n_bit, pucch_pdu->prb_size, M_bit, 0, &b[0]);
+  nr_uci_encoding(pucch_pdu->payload, pucch_pdu->n_bit, pucch_pdu->prb_size, M_bit, 0, &b[0], false);
   /*
    * Implementing TS 38.211
    * Subclauses 6.3.2.5.1 Scrambling (PUCCH format 2)
@@ -772,7 +773,7 @@ void nr_generate_pucch3_4(c16_t **txdataF,
                                           is_pi_over_2_bpsk_enabled,
                                           add_dmrs);
 
-  nr_uci_encoding(pucch_pdu->payload, pucch_pdu->n_bit, nrofPRB, M_bit, 0, b);
+  nr_uci_encoding(pucch_pdu->payload, pucch_pdu->n_bit, nrofPRB, M_bit, 0, b, false);
   /*
    * Implementing TS 38.211
    * Subclauses 6.3.2.6.1 Scrambling (PUCCH formats 3 and 4)

@@ -61,7 +61,7 @@ typedef struct nrPolar_params {
 
   struct nrPolar_params *nextPtr __attribute__((aligned(16)));
   bool busy;
-  uint32_t idx;
+  uint64_t idx;
   uint8_t n_max;
   uint8_t i_il;
   uint8_t i_seg;

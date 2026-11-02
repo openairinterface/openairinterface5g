@@ -532,6 +532,7 @@ static void map_uci_common(struct map_uci_common_arg p)
 
   uint32_t total_placed = 0;
   for (uint8_t sym = p.l1_c; sym < p.n_symbols && total_placed < p.G_uci; sym++) {
+    const uint32_t re_on_sym_total = p.m_ulsch_initial[sym];
     uint32_t uci_re_on_sym = p.m_uci_current[sym];
     if (p.uci_type_to_map == BIT_TYPE_CSI1 && p.resv_ack_count_symb) // need to remove reserved res
       uci_re_on_sym -= p.resv_ack_count_symb[sym] / p.nlqm;
@@ -544,7 +545,7 @@ static void map_uci_common(struct map_uci_common_arg p)
     uint32_t d_factor_re = get_d_factor_re(num_re_to_select, uci_re_on_sym);
     uint32_t re_offset = 0;
     uint32_t *cur_sym_resv_ack_pos = p.resv_ack_pos_symb[sym];
-    while (re_offset < uci_re_on_sym && total_placed < p.G_uci) {
+    while (re_offset < re_on_sym_total && total_placed < p.G_uci) {
       uci_on_pusch_bit_type_t cur_template = p.template[symbol_start_bit_idx[sym] + (re_offset * p.nlqm)];
       if (skip_mapping_current_uci(cur_template, p.uci_type_to_map)) {
         re_offset++;
@@ -567,7 +568,7 @@ static void map_uci_common(struct map_uci_common_arg p)
       if (p.uci_type_to_map == BIT_TYPE_CSI1 || p.uci_type_to_map == BIT_TYPE_CSI2) {
         uint32_t prev_re_offset = re_offset;
         re_offset += d_factor_re;
-        for (uint32_t re = prev_re_offset + 1; re <= re_offset && re < uci_re_on_sym; re++) {
+        for (uint32_t re = prev_re_offset + 1; re <= re_offset && re < re_on_sym_total; re++) {
           uci_on_pusch_bit_type_t t = p.template[symbol_start_bit_idx[sym] + (re * p.nlqm)];
           if (skip_mapping_current_uci(t, p.uci_type_to_map))
             re_offset++;
@@ -907,6 +908,18 @@ void nr_ue_ulsch_procedures(PHY_VARS_NR_UE *UE,
   bool uci_present = (pusch_pdu->pusch_uci.harq_ack_bit_length != 0) || (pusch_pdu->pusch_uci.csi_payload.p1_bits != 0);
   if (uci_present) {
     rm_info = calc_rate_match_info_uci(pusch_pdu, &ptrs_info, harq_process_ul_ue, &G[pusch_id]);
+    if (rm_info.E_uci_ACK > MAX_UCI_CODED_BITS
+        || rm_info.E_uci_CSI1 > MAX_UCI_CODED_BITS
+        || rm_info.E_uci_CSI2 > MAX_UCI_CODED_BITS) {
+      LOG_E(PHY,
+            "UCI on PUSCH encoded lengths ACK=%u CSI1=%u CSI2=%u exceed the %u-bit buffer capacity\n",
+            rm_info.E_uci_ACK,
+            rm_info.E_uci_CSI1,
+            rm_info.E_uci_CSI2,
+            MAX_UCI_CODED_BITS);
+      stop_meas_nr_ue_phy(UE, PUSCH_PROC_STATS);
+      return;
+    }
   }
 
   if (nr_ulsch_encoding(UE, ulsch_ue, frame, slot, G, 1, ULSCH_ids) == -1) {
@@ -921,7 +934,7 @@ void nr_ue_ulsch_procedures(PHY_VARS_NR_UE *UE,
   int N_PRB_oh = 0; // higher layer (RRC) parameter xOverhead in PUSCH-ServingCellConfig
 
   // b is the block of bits transmitted on the physical channel after payload coding
-  uint64_t b_ack[16] = {0}; // limit to 1024-bit encoded length
+  uint64_t b_ack[MAX_UCI_CODED_BITS / 64] = {0};
 
   if (pusch_pdu->pusch_uci.harq_ack_bit_length != 0) {
     if (pucch_pdu == NULL) {
@@ -932,10 +945,11 @@ void nr_ue_ulsch_procedures(PHY_VARS_NR_UE *UE,
 
     nr_uci_encoding(pusch_pdu->pusch_uci.harq_payload,
                     pusch_pdu->pusch_uci.harq_ack_bit_length,
-                    pucch_pdu->prb_size,
+                    rm_info.E_uci_ACK,
                     rm_info.E_uci_ACK,
                     mod_order,
-                    &b_ack[0]);
+                    &b_ack[0],
+                    true);
 
     LOG_D(PHY,
           "[UCI_ON_PUSCH] G_ulsch=%u (updated G[pusch_id]), G_ack=%u (M_bit), total_len=%u "
@@ -945,24 +959,26 @@ void nr_ue_ulsch_procedures(PHY_VARS_NR_UE *UE,
           G_initial_total_pusch_bits);
   }
 
-  uint64_t b_csi1[16] = {0}; // limit to 1024-bit encoded length
-  uint64_t b_csi2[16] = {0}; // limit to 1024-bit encoded length
+  uint64_t b_csi1[MAX_UCI_CODED_BITS / 64] = {0};
+  uint64_t b_csi2[MAX_UCI_CODED_BITS / 64] = {0};
   if (pusch_pdu->pusch_uci.csi_payload.p1_bits != 0) {
     nr_uci_encoding(pusch_pdu->pusch_uci.csi_payload.part1_payload,
                     pusch_pdu->pusch_uci.csi_payload.p1_bits,
-                    pucch_pdu->prb_size,
+                    rm_info.E_uci_CSI1,
                     rm_info.E_uci_CSI1,
                     mod_order,
-                    &b_csi1[0]);
+                    &b_csi1[0],
+                    true);
 
     // Process CSI Part 2 if any
     if (pusch_pdu->pusch_uci.csi_payload.p2_bits > 0)
       nr_uci_encoding(pusch_pdu->pusch_uci.csi_payload.part2_payload,
                       pusch_pdu->pusch_uci.csi_payload.p2_bits,
-                      pucch_pdu->prb_size,
+                      rm_info.E_uci_CSI2,
                       rm_info.E_uci_CSI2,
                       mod_order,
-                      &b_csi2[0]);
+                      &b_csi2[0],
+                      true);
   }
 
 
