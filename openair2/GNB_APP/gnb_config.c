@@ -1301,10 +1301,10 @@ void nfapi_stop_l1()
   }
 }
 
-static void get_bwp_config(nr_mac_config_t *configuration, const int bw)
+static void get_bwp_config(nr_mac_config_t *configuration, const int bw, const int idx)
 {
   char path[MAX_OPTNAME_SIZE * 2 + 8];
-  snprintf(path, sizeof(path), "%s.[%i]", GNB_CONFIG_STRING_GNB_LIST, 0);
+  snprintf(path, sizeof(path), "%s.[%i]", GNB_CONFIG_STRING_GNB_LIST, idx);
   GET_PARAMS_LIST(BWPParamList, BWPParams, GNBBWPPARAMS_DESC, GNB_CONFIG_STRING_BWP_LIST, path, BWPPARAMS_CHECK);
   configuration->num_additional_bwps = BWPParamList.numelt;
   AssertFatal(configuration->num_additional_bwps >= 0 && configuration->num_additional_bwps <= 4,
@@ -1662,8 +1662,7 @@ static nr_mac_config_t get_mac_config(configmodule_interface_t *cfg,
         config.pucch.failure_thres);
 
   // BWP
-  get_bwp_config(&config, bw);
-  AssertFatal(config.num_additional_bwps <= 4, "Impossible to configure more than 4 additional BWPs\n");
+  get_bwp_config(&config, bw, idx);
   config.first_active_bwp = *gnb_p[GNB_1ST_ACTIVE_BWP_IDX].iptr;
   AssertFatal(config.first_active_bwp <= config.num_additional_bwps, "1st active BWP does not belog to the configured BWPs\n");
 
