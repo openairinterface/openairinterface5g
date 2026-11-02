@@ -3,6 +3,7 @@
 add_library(noise_device noise_device.c)
 target_link_libraries(noise_device PRIVATE log_headers m)
 target_include_directories(noise_device PUBLIC ./)
+add_subdirectory(batched_fft)
 add_library(channel_pipeline channel_pipeline.c)
 if (ENABLE_CHANNEL_SIM_CUDA)
   target_sources(channel_pipeline PRIVATE
