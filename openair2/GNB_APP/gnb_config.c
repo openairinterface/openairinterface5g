@@ -753,11 +753,6 @@ static int get_prb_blacklist(int idx, uint16_t *prbbl)
   paramdef_t GNBParams[] = GNBPARAMS_DESC;
   config_getlist(config_get_if(), &GNBParamList, GNBParams, sizeofArray(GNBParams), NULL);
 
-  if (idx != 0) {
-    LOG_W(GNB_APP, "Warning: requested to read PRB blacklist from index %d, but only 0 supported\n", idx);
-  }
-  idx = 0;
-
   int num_prbbl = 0;
   char *ulprbbl = *GNBParamList.paramarray[idx][GNB_ULPRBBLACKLIST_IDX].strptr;
 
@@ -765,8 +760,9 @@ static int get_prb_blacklist(int idx, uint16_t *prbbl)
     return -1;
 
   LOG_D(NR_PHY, "PRB blacklist found: %s\n", ulprbbl);
+  char *buf = strdup(ulprbbl);
   char *save = NULL;
-  char *pt = strtok_r(ulprbbl, ",", &save);
+  char *pt = strtok_r(buf, ",", &save);
 
   while (pt) {
     const int rb = atoi(pt);
@@ -776,6 +772,7 @@ static int get_prb_blacklist(int idx, uint16_t *prbbl)
     pt = strtok_r(NULL, ",", &save);
     num_prbbl++;
   }
+  free(buf);
   return num_prbbl;
 }
 
