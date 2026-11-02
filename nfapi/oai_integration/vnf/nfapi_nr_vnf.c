@@ -329,7 +329,7 @@ int phy_nr_slot_indication(nfapi_nr_slot_indication_scf_t *ind)
   NR_UL_IND_t ul_ind;
   ul_ind.frame = ind->sfn;
   ul_ind.slot = ind->slot;
-  ul_ind.phy_id = 0;
+  ul_ind.phy_id = ind->header.phy_id;
   ul_ind.module_id = 0;
   INIT_UL_IND(ul_ind.crc_ind, number_crcs, ind->sfn, ind->slot);
   INIT_UL_IND(ul_ind.rx_ind, number_of_pdus, ind->sfn, ind->slot);
