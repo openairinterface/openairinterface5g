@@ -1849,7 +1849,7 @@ static void config_nr_mac_update_cell(nr_cell_sched_t *cell,
   uint16_t prbbl[MAX_BWP_SIZE] = {0};
   int num_ulprbbl = get_prb_blacklist(idx, prbbl);
   if (num_ulprbbl != -1) {
-    LOG_I(NR_PHY, "Copying %d blacklisted PRB to L1 context\n", num_ulprbbl);
+    LOG_D(NR_PHY, "Copying %d blacklisted PRB to L1 context\n", num_ulprbbl);
     memcpy(cell->ulprbbl, prbbl, MAX_BWP_SIZE * sizeof(prbbl[0]));
   }
 }
