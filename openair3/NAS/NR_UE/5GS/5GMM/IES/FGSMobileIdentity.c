@@ -13,6 +13,7 @@
 
 #define MIN_LEN_FGS_MOBILE_ID_IE 3 // type of identity "No identity"
 #define LEN_5G_FGS_TMSI_IE 9
+#define LEN_5G_GUTI_CONTENTS 11 // octets 4 to 14
 
 static int decode_guti_5gs_mobile_identity(Guti5GSMobileIdentity_t *guti, const uint8_t *buffer);
 
@@ -74,23 +75,25 @@ int decode_5gs_mobile_identity(FGSMobileIdentity *fgsmobileidentity, uint8_t iei
 {
   int decoded_rc = TLV_DECODE_VALUE_DOESNT_MATCH;
   int decoded = 0;
-  uint8_t ielen = 0;
+  uint16_t ielen = 0;
 
+  // IEI (if any), 2 octets of length and the type of identity (TS 24.501 §9.11.3.4)
+  CHECK_LENGTH_DECODER(len, (iei > 0) + MIN_LEN_FGS_MOBILE_ID_IE);
   if (iei > 0) {
     CHECK_IEI_DECODER(iei, *buffer);
     decoded++;
   }
-  uint16_t tmp;
-  memcpy(&tmp, buffer + decoded, sizeof(tmp));
-  ielen = (uint8_t)tmp;
-  decoded += 2;
+  IES_DECODE_U16(buffer, decoded, ielen);
   CHECK_LENGTH_DECODER(len - decoded, ielen);
+  CHECK_LENGTH_DECODER(ielen, 1); // type of identity
 
   uint8_t typeofidentity = *(buffer + decoded) & 0x7;
 
   AssertFatal(typeofidentity == FGS_MOBILE_IDENTITY_5G_GUTI, "Mobile Identity encoding of type %d not implemented\n", typeofidentity);
-  if (typeofidentity == FGS_MOBILE_IDENTITY_5G_GUTI)
+  if (typeofidentity == FGS_MOBILE_IDENTITY_5G_GUTI) {
+    CHECK_LENGTH_DECODER(ielen, LEN_5G_GUTI_CONTENTS);
     decoded_rc = decode_guti_5gs_mobile_identity(&fgsmobileidentity->guti, buffer + decoded);
+  }
 
   if (decoded_rc < 0) {
     return decoded_rc;
