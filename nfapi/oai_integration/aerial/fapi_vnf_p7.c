@@ -156,7 +156,7 @@ bool aerial_nr_send_p7_message(vnf_p7_t *vnf_p7, nfapi_nr_p7_message_header_t *h
 {
   // Common to both cases, we can set it now
   // In most cases we don't need the data pool, only the CPU_MSG
-  nv_ipc_msg_t send_msg = {.msg_id = header->message_id, .data_pool = NV_IPC_MEMPOOL_CPU_MSG, .cell_id = 0};
+  nv_ipc_msg_t send_msg = {.msg_id = header->message_id, .data_pool = NV_IPC_MEMPOOL_CPU_MSG, .cell_id = header->phy_id};
   // Check if TX_DATA request, if true, need to pack to data_buf
   if (header->message_id == NFAPI_NR_PHY_MSG_TYPE_TX_DATA_REQUEST) {
     // for this we need the secondary CPU_DATA pool
