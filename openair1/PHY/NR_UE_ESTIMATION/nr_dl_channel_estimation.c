@@ -759,7 +759,9 @@ void nr_pdcch_channel_estimation(const NR_DL_FRAME_PARMS *frame_parms,
       if (pilot_cnt % 3 == 2) {
         ch.r = ch_sum.r / 3;
         ch.i = ch_sum.i / 3;
-        multadd_real_vector_complex_scalar(filt16a_1, ch, dl_ch, 16);
+        // Replicate the RB average exactly, without the unity filter's fixed-point truncation.
+        for (int re = 0; re < NR_NB_SC_PER_RB; re++)
+          dl_ch[re] = ch;
         dl_ch += 12;
         ch_sum = (c32_t){0};
       }
