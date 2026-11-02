@@ -392,3 +392,15 @@ bool eq_ngap_plmn(const plmn_id_t *a, const plmn_id_t *b)
   _EQ_CHECK_INT(a->mnc_digit_length, b->mnc_digit_length);
   return true;
 }
+
+bool eq_ngap_guami(const nr_guami_t *a, const nr_guami_t *b)
+{
+  DevAssert(a != NULL && b != NULL);
+  if (!eq_ngap_plmn(&a->plmn, &b->plmn)) {
+    return false;
+  }
+  _EQ_CHECK_INT(a->amf_region_id, b->amf_region_id);
+  _EQ_CHECK_INT(a->amf_set_id, b->amf_set_id);
+  _EQ_CHECK_INT(a->amf_pointer, b->amf_pointer);
+  return true;
+}

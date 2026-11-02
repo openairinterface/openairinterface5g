@@ -239,9 +239,7 @@ ngap_gNB_amf_data_t *ngap_gNB_nnsf_select_amf_by_guami(ngap_gNB_instance_t *inst
 
     /* Looking for AMF guami matching the one provided by NAS */
     STAILQ_FOREACH(guami_p, &amf_data_p->served_guami, next) {
-      if (eq_ngap_plmn(&guami_p->guami.plmn, &guami.plmn)
-          && (guami_p->guami.amf_region_id == guami.amf_region_id) && (guami_p->guami.amf_set_id == guami.amf_set_id)
-          && (guami_p->guami.amf_pointer == guami.amf_pointer)) {
+      if (eq_ngap_guami(&guami_p->guami, &guami)) {
         return amf_data_p;
       }
     }
@@ -294,8 +292,7 @@ ngap_gNB_amf_data_t *ngap_gNB_nnsf_select_amf_by_guami_no_cause(ngap_gNB_instanc
 
     /* Looking for AMF guami matching the one provided by NAS */
     STAILQ_FOREACH(guami_p, &amf_data_p->served_guami, next) {
-      if (eq_ngap_plmn(&guami_p->guami.plmn, &guami.plmn)
-          && (guami_p->guami.amf_set_id == guami.amf_set_id) && (guami_p->guami.amf_region_id == guami.amf_region_id)) {
+      if (eq_ngap_guami(&guami_p->guami, &guami)) {
         return amf_data_p;
       }
     }
