@@ -132,40 +132,16 @@ void ngap_gNB_remove_amf_desc(ngap_gNB_instance_t * instance)
 
     struct ngap_gNB_amf_data_s *amf = NULL;
     struct ngap_gNB_amf_data_s *amfNext = NULL;
-    struct plmn_identity_s* plmnInfo;
-    struct served_region_id_s* regionInfo;
     struct served_guami_s* guamInfo;
-    struct amf_set_id_s* amfSet;
-    struct amf_pointer_s* amfPoint;
     for (amf = RB_MIN(ngap_amf_map, &instance->ngap_amf_head); amf; amf = amfNext) {
       amfNext = RB_NEXT(ngap_amf_map, &instance->ngap_amf_head, amf);
       RB_REMOVE(ngap_amf_map, &instance->ngap_amf_head, amf);
       while (!STAILQ_EMPTY(&amf->served_guami)) {
         guamInfo = STAILQ_FIRST(&amf->served_guami);
         STAILQ_REMOVE_HEAD(&amf->served_guami, next);
-
-        while (!STAILQ_EMPTY(&guamInfo->served_plmns)) {
-          plmnInfo = STAILQ_FIRST(&guamInfo->served_plmns);
-          STAILQ_REMOVE_HEAD(&guamInfo->served_plmns, next);
-          free(plmnInfo);
-        }
-        while (!STAILQ_EMPTY(&guamInfo->served_region_ids)) {
-          regionInfo = STAILQ_FIRST(&guamInfo->served_region_ids);
-          STAILQ_REMOVE_HEAD(&guamInfo->served_region_ids, next);
-          free(regionInfo);
-        }
-        while (!STAILQ_EMPTY(&guamInfo->amf_set_ids)) {
-          amfSet = STAILQ_FIRST(&guamInfo->amf_set_ids);
-          STAILQ_REMOVE_HEAD(&guamInfo->amf_set_ids, next);
-          free(amfSet);
-        }
-        while (!STAILQ_EMPTY(&guamInfo->amf_pointers)) {
-          amfPoint = STAILQ_FIRST(&guamInfo->amf_pointers);
-          STAILQ_REMOVE_HEAD(&guamInfo->amf_pointers, next);
-          free(amfPoint);
-        }
         free(guamInfo);
       }
+      free(amf->amf_name);
       free(amf);
     }
 }

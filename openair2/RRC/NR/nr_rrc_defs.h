@@ -127,7 +127,7 @@ typedef enum {
 
 typedef struct nr_rrc_config {
   uint32_t tac;
-  plmn_id_t plmn[PLMN_LIST_MAX_SIZE];
+  plmn_id_t plmn[NR_MAX_NB_PLMNS];
   uint8_t num_plmn;
 
   bool um_on_default_drb;

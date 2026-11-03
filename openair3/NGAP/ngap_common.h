@@ -45,6 +45,7 @@ byte_array_t encode_ngap_pdusession_setup_unsuccessful_transfer(const ngap_cause
 void encode_ngap_security_capabilities(NGAP_UESecurityCapabilities_t *out, const ngap_security_capabilities_t *in);
 
 bool eq_ngap_plmn(const plmn_id_t *a, const plmn_id_t *b);
+bool eq_ngap_guami(const nr_guami_t *a, const nr_guami_t *b);
 
 /** @}*/
 #endif /* NGAP_COMMON_H_ */

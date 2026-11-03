@@ -75,7 +75,6 @@ ngap_gNB_amf_data_t *ngap_gNB_nnsf_select_amf_by_plmn_id(ngap_gNB_instance_t *in
 
   RB_FOREACH(amf_data_p, ngap_amf_map, &instance_p->ngap_amf_head) {
     struct served_guami_s *guami_p = NULL;
-    struct plmn_identity_s *served_plmn_p = NULL;
     if (amf_data_p->state != NGAP_GNB_STATE_CONNECTED) {
       /* The association between AMF and gNB is not ready for the moment,
        * go to the next known AMF.
@@ -112,16 +111,13 @@ ngap_gNB_amf_data_t *ngap_gNB_nnsf_select_amf_by_plmn_id(ngap_gNB_instance_t *in
 
     /* Looking for served GUAMI PLMN Identity selected matching the one provided by the UE */
     STAILQ_FOREACH(guami_p, &amf_data_p->served_guami, next) {
-      STAILQ_FOREACH(served_plmn_p, &guami_p->served_plmns, next) {
-        if ((served_plmn_p->mcc == selected_plmn_identity.mcc) && (served_plmn_p->mnc == selected_plmn_identity.mnc)) {
-          break;
-        }
+      if (eq_ngap_plmn(&guami_p->guami.plmn, &selected_plmn_identity)) {
+        break;
       }
-      /* if found, we can stop the outer loop, too */
-      if (served_plmn_p) break;
     }
     /* if we didn't find such a served PLMN, go on with the next AMF */
-    if (!served_plmn_p) continue;
+    if (!guami_p)
+      continue;
 
     if (current_capacity < amf_data_p->relative_amf_capacity) {
       /* We find a better AMF, keep a reference to it */
@@ -179,25 +175,8 @@ ngap_gNB_amf_data_t *ngap_gNB_nnsf_select_amf_by_amf_setid(ngap_gNB_instance_t *
 
     /* Looking for AMF code matching the one provided by NAS */
     STAILQ_FOREACH(guami_p, &amf_data_p->served_guami, next) {
-      struct amf_set_id_s      *amf_setid_p = NULL;
-      struct plmn_identity_s   *served_plmn_p = NULL;
-
-      STAILQ_FOREACH(served_plmn_p, &guami_p->served_plmns, next) {
-        if ((served_plmn_p->mcc == selected_plmn_identity.mcc) && (served_plmn_p->mnc == selected_plmn_identity.mnc)) {
-          break;
-        }
-      }
-      STAILQ_FOREACH(amf_setid_p, &guami_p->amf_set_ids, next) {
-        if (amf_setid_p->amf_set_id == amf_setid) {
-          break;
-        }
-      }
-
-      /* The AMF matches the parameters provided by the NAS layer ->
-      * the AMF is knwown and the association is ready.
-      * Return the reference to the AMF to use it for this UE.
-      */
-      if (amf_setid_p && served_plmn_p) {
+      if (eq_ngap_plmn(&guami_p->guami.plmn, &selected_plmn_identity)
+          && (guami_p->guami.amf_set_id == amf_setid)) {
         return amf_data_p;
       }
     }
@@ -260,41 +239,7 @@ ngap_gNB_amf_data_t *ngap_gNB_nnsf_select_amf_by_guami(ngap_gNB_instance_t *inst
 
     /* Looking for AMF guami matching the one provided by NAS */
     STAILQ_FOREACH(guami_p, &amf_data_p->served_guami, next) {
-      struct served_region_id_s *region_id_p = NULL;
-      struct amf_set_id_s       *amf_set_id_p = NULL;
-      struct amf_pointer_s      *pointer_p = NULL;
-      struct plmn_identity_s   *served_plmn_p = NULL;
-
-      STAILQ_FOREACH(served_plmn_p, &guami_p->served_plmns, next) {
-        if ((served_plmn_p->mcc == guami.plmn.mcc) && (served_plmn_p->mnc == guami.plmn.mnc)) {
-          break;
-        }
-      }
-      
-      STAILQ_FOREACH(region_id_p, &guami_p->served_region_ids, next) {
-        if (region_id_p->amf_region_id == guami.amf_region_id) {
-          break;
-        }
-      }
-      STAILQ_FOREACH(amf_set_id_p, &guami_p->amf_set_ids, next) {
-        if (amf_set_id_p->amf_set_id == guami.amf_set_id) {
-          break;
-        }
-      }
-      STAILQ_FOREACH(pointer_p, &guami_p->amf_pointers, next) {
-        if (pointer_p->amf_pointer == guami.amf_pointer) {
-          break;
-        }
-      }
-
-      /* The AMF matches the parameters provided by the NAS layer ->
-      * the AMF is knwown and the association is ready.
-      * Return the reference to the AMF to use it for this UE.
-      */
-      if ((region_id_p != NULL) &&
-          (amf_set_id_p != NULL) &&
-          (pointer_p != NULL) &&
-          (served_plmn_p != NULL)) {
+      if (eq_ngap_guami(&guami_p->guami, &guami)) {
         return amf_data_p;
       }
     }
@@ -347,33 +292,7 @@ ngap_gNB_amf_data_t *ngap_gNB_nnsf_select_amf_by_guami_no_cause(ngap_gNB_instanc
 
     /* Looking for AMF guami matching the one provided by NAS */
     STAILQ_FOREACH(guami_p, &amf_data_p->served_guami, next) {
-      struct served_region_id_s *region_id_p = NULL;
-      struct amf_set_id_s       *amf_set_id_p = NULL;
-      struct plmn_identity_s    *served_plmn_p = NULL;
-
-      STAILQ_FOREACH(served_plmn_p, &guami_p->served_plmns, next) {
-        if ((served_plmn_p->mcc == guami.plmn.mcc) && (served_plmn_p->mnc == guami.plmn.mnc)) {
-          break;
-        }
-      }
-      STAILQ_FOREACH(amf_set_id_p, &guami_p->amf_set_ids, next) {
-        if (amf_set_id_p->amf_set_id == guami.amf_set_id) {
-          break;
-        }
-      }
-      STAILQ_FOREACH(region_id_p, &guami_p->served_region_ids, next) {
-        if (region_id_p->amf_region_id == guami.amf_region_id) {
-          break;
-        }
-      }
-
-      /* The AMF matches the parameters provided by the NAS layer ->
-      * the AMF is knwown and the association is ready.
-      * Return the reference to the AMF to use it for this UE.
-      */
-      if ((region_id_p != NULL) &&
-          (amf_set_id_p != NULL) &&
-          (served_plmn_p != NULL)) {
+      if (eq_ngap_guami(&guami_p->guami, &guami)) {
         return amf_data_p;
       }
     }
