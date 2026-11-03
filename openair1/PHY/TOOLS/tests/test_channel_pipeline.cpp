@@ -273,13 +273,14 @@ struct PipelineIo {
   }
 };
 
-using CpuParam = std::tuple<int, int, int, int>;
+using CpuParam = std::tuple<channel_pipeline_method_t, int, int, int, int>;
 
 class ChannelPipelineCpuTest : public ::testing::TestWithParam<CpuParam> {
  protected:
   void SetUp() override
   {
     pipeline = channel_pipeline_init(0.0f);
+    channel_pipeline_set_method(pipeline, std::get<0>(GetParam()));
     tpool = init_tpool(8);
   }
 
@@ -296,10 +297,10 @@ class ChannelPipelineCpuTest : public ::testing::TestWithParam<CpuParam> {
 
 TEST_P(ChannelPipelineCpuTest, MatchesReference)
 {
-  const int nb_rx = std::get<0>(GetParam());
-  const int nb_tx = std::get<1>(GetParam());
-  const int num_samples = std::get<2>(GetParam());
-  const int L = std::get<3>(GetParam());
+  const int nb_rx = std::get<1>(GetParam());
+  const int nb_tx = std::get<2>(GetParam());
+  const int num_samples = std::get<3>(GetParam());
+  const int L = std::get<4>(GetParam());
   const int total = num_samples + L - 1;
   // Input split: all in sig0; vrtsim layout (only the L - 1 history in sig0); an odd split.
   // Output split: all in sig0, or an odd split.
@@ -316,13 +317,14 @@ TEST_P(ChannelPipelineCpuTest, MatchesReference)
   }
 }
 
-// Setting new taps on a channel replaces the old ones, also with a different shape.
+// Setting new taps on a channel replaces everything built from the old ones, including the
+// frequency response of an FFT size already used.
 TEST_P(ChannelPipelineCpuTest, ChannelSetReplacesTaps)
 {
-  const int nb_rx = std::get<0>(GetParam());
-  const int nb_tx = std::get<1>(GetParam());
-  const int num_samples = std::get<2>(GetParam());
-  const int L = std::get<3>(GetParam());
+  const int nb_rx = std::get<1>(GetParam());
+  const int nb_tx = std::get<2>(GetParam());
+  const int num_samples = std::get<3>(GetParam());
+  const int L = std::get<4>(GetParam());
   PipelineIo a(nb_tx, nb_rx, num_samples, L, L - 1, num_samples);
   PipelineIo b(nb_tx, nb_rx, num_samples, L, L - 1, num_samples);
   // A different shape, so set also has to resize.
@@ -343,17 +345,19 @@ TEST_P(ChannelPipelineCpuTest, ChannelSetReplacesTaps)
 static std::string cpu_param_name(const ::testing::TestParamInfo<CpuParam> &info)
 {
   std::ostringstream name;
-  name << "Rx" << std::get<0>(info.param) << "_Tx" << std::get<1>(info.param) << "_Samples" << std::get<2>(info.param) << "_ChanLen"
-       << std::get<3>(info.param);
+  name << (std::get<0>(info.param) == CHANNEL_PIPELINE_METHOD_FFT ? "fft" : "direct") << "_Rx" << std::get<1>(info.param) << "_Tx"
+       << std::get<2>(info.param) << "_Samples" << std::get<3>(info.param) << "_ChanLen" << std::get<4>(info.param);
   return name.str();
 }
 
+static const auto cpu_methods = ::testing::Values(CHANNEL_PIPELINE_METHOD_DIRECT, CHANNEL_PIPELINE_METHOD_FFT);
 static const auto cpu_samples = ::testing::Values(1, 100, 1031, 30720);
 static const auto cpu_lengths = ::testing::Values(1, 7, 16, 64, 255);
 
 INSTANTIATE_TEST_SUITE_P(ChannelPipelineCpu,
                          ChannelPipelineCpuTest,
-                         ::testing::Combine(::testing::Values(1, 2, 4), // nb_rx
+                         ::testing::Combine(cpu_methods,
+                                            ::testing::Values(1, 2, 4), // nb_rx
                                             ::testing::Values(1, 3, 4), // nb_tx
                                             cpu_samples,
                                             cpu_lengths),
@@ -362,12 +366,12 @@ INSTANTIATE_TEST_SUITE_P(ChannelPipelineCpu,
 // Asymmetric antenna configurations: 8 gNB antennas against a 2-antenna UE, in both directions.
 INSTANTIATE_TEST_SUITE_P(ChannelPipelineCpu8x2,
                          ChannelPipelineCpuTest,
-                         ::testing::Combine(::testing::Values(8), ::testing::Values(2), cpu_samples, cpu_lengths),
+                         ::testing::Combine(cpu_methods, ::testing::Values(8), ::testing::Values(2), cpu_samples, cpu_lengths),
                          cpu_param_name);
 
 INSTANTIATE_TEST_SUITE_P(ChannelPipelineCpu2x8,
                          ChannelPipelineCpuTest,
-                         ::testing::Combine(::testing::Values(2), ::testing::Values(8), cpu_samples, cpu_lengths),
+                         ::testing::Combine(cpu_methods, ::testing::Values(2), ::testing::Values(8), cpu_samples, cpu_lengths),
                          cpu_param_name);
 
 // Noise is added on top of the convolution with the configured standard deviation.
@@ -376,12 +380,15 @@ TEST(ChannelPipelineCpuNoise, AddsNoiseOfConfiguredPower)
   const float sigma = 10.0f;
   void *tpool = init_tpool(8);
   channel_pipeline_t *pipeline = channel_pipeline_init(sigma);
-  PipelineIo io(2, 2, 30720, 16, 15, 30720);
-  io.reference();
-  io.run(pipeline, tpool, sigma);
-  double rms = std::sqrt(io.compare().second);
-  EXPECT_GT(rms, 0.8 * sigma);
-  EXPECT_LT(rms, 1.2 * sigma);
+  for (auto method : {CHANNEL_PIPELINE_METHOD_DIRECT, CHANNEL_PIPELINE_METHOD_FFT}) {
+    channel_pipeline_set_method(pipeline, method);
+    PipelineIo io(2, 2, 30720, 16, 15, 30720);
+    io.reference();
+    io.run(pipeline, tpool, sigma);
+    double rms = std::sqrt(io.compare().second);
+    EXPECT_GT(rms, 0.8 * sigma);
+    EXPECT_LT(rms, 1.2 * sigma);
+  }
   destroy_tpool(tpool);
   channel_pipeline_shutdown(pipeline);
 }

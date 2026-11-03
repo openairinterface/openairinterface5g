@@ -15,7 +15,7 @@ if (ENABLE_CHANNEL_SIM_CUDA)
     channel_pipeline_gpu.cu
   )
 endif()
-target_link_libraries(channel_pipeline PUBLIC thread-pool noise_device)
+target_link_libraries(channel_pipeline PUBLIC thread-pool noise_device PRIVATE batched_fft)
 if (ENABLE_CHANNEL_SIM_CUDA)
   target_link_libraries(channel_pipeline PUBLIC CUDA::toolkit CUDA::cufft)
 endif()

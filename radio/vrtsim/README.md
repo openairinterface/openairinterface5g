@@ -50,8 +50,10 @@ channel modelling is done on transmission instead of reception. To refect this,
 the model names are slightly different: the server expects a model named
 `server_tx_channel_model` while the client expects a model named `client_tx_channel_model`
 
-Without CUDA, the convolution runs on the CPU thread pool (`vrtsim.tpool`). Its
-kernels are NEON on aarch64 and AVX2 + FMA elsewhere, chosen at build time.
+Without CUDA, the convolution runs on the CPU thread pool (`vrtsim.tpool`). The CPU
+pipeline picks, per call, between a direct convolution and an FFT overlap-save
+convolution (faster for longer channels and more antennas). Its kernels are NEON on
+aarch64 and AVX2 + FMA elsewhere, chosen at build time.
 
 Additionally, `taps_client` is available in vrtsim. This allows to connect to
 channel emulation server and receive external taps (or channel impulse responses).

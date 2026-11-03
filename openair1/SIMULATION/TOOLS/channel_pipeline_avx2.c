@@ -30,6 +30,28 @@ static inline simde__m256i pack_c16(simde__m256 re, simde__m256 im)
   return simde_mm256_or_si256(simde_mm256_and_si256(r, simde_mm256_set1_epi32(0xffff)), simde_mm256_slli_epi32(i, 16));
 }
 
+// 8x8 transpose of 32-bit elements (one c16_t each).
+static inline void transpose8(simde__m256i m[8])
+{
+  simde__m256 r[8], t[8];
+  for (int i = 0; i < 8; i++)
+    r[i] = simde_mm256_castsi256_ps(m[i]);
+  for (int i = 0; i < 8; i += 2) {
+    t[i] = simde_mm256_unpacklo_ps(r[i], r[i + 1]);
+    t[i + 1] = simde_mm256_unpackhi_ps(r[i], r[i + 1]);
+  }
+  for (int i = 0; i < 8; i += 4) {
+    r[i] = simde_mm256_shuffle_ps(t[i], t[i + 2], 0x44);
+    r[i + 1] = simde_mm256_shuffle_ps(t[i], t[i + 2], 0xee);
+    r[i + 2] = simde_mm256_shuffle_ps(t[i + 1], t[i + 3], 0x44);
+    r[i + 3] = simde_mm256_shuffle_ps(t[i + 1], t[i + 3], 0xee);
+  }
+  for (int i = 0; i < 4; i++) {
+    m[i] = simde_mm256_castps_si256(simde_mm256_permute2f128_ps(r[i], r[i + 4], 0x20));
+    m[i + 4] = simde_mm256_castps_si256(simde_mm256_permute2f128_ps(r[i], r[i + 4], 0x31));
+  }
+}
+
 void channel_pipeline_c16_to_split(float *re, float *im, const c16_t *src, int n)
 {
   int i = 0;
@@ -111,5 +133,71 @@ void channel_pipeline_direct_mac(float *acc_re,
     simde_mm256_storeu_ps(ai + LANES, i1);
     simde_mm256_storeu_ps(ai + 2 * LANES, i2);
     simde_mm256_storeu_ps(ai + 3 * LANES, i3);
+  }
+}
+
+void channel_pipeline_freq_mac(float *y_re, float *y_im, const float *X, const float *H, int N, int nb_tx)
+{
+  const size_t xstride = (size_t)2 * N * LANES;
+  for (int n = 0; n < N; n++) {
+    simde__m256 yr = simde_mm256_setzero_ps(), yi = simde_mm256_setzero_ps();
+    for (int t = 0; t < nb_tx; t++) {
+      const float *xr = X + t * xstride + (size_t)n * LANES;
+      const float *xi = xr + (size_t)N * LANES;
+      const simde__m256 ar = simde_mm256_loadu_ps(xr), ai = simde_mm256_loadu_ps(xi);
+      const simde__m256 hr = simde_mm256_set1_ps(H[(size_t)t * 2 * N + n]);
+      const simde__m256 hi = simde_mm256_set1_ps(H[(size_t)t * 2 * N + N + n]);
+      yr = simde_mm256_fnmadd_ps(ai, hi, simde_mm256_fmadd_ps(ar, hr, yr));
+      yi = simde_mm256_fmadd_ps(ai, hr, simde_mm256_fmadd_ps(ar, hi, yi));
+    }
+    simde_mm256_storeu_ps(y_re + (size_t)n * LANES, yr);
+    simde_mm256_storeu_ps(y_im + (size_t)n * LANES, yi);
+  }
+}
+
+void channel_pipeline_gather_c16(float *re, float *im, const c16_t *src, int stride, int npts)
+{
+  int n = 0;
+  // 8x8 blocks through an in-register transpose (hardware gathers are slow)
+  for (; n + LANES <= npts; n += LANES) {
+    simde__m256i m[8];
+    for (int b = 0; b < 8; b++)
+      m[b] = simde_mm256_loadu_si256((const simde__m256i *)(src + n + (size_t)b * stride));
+    transpose8(m);
+    for (int j = 0; j < 8; j++) {
+      simde__m256 r, i;
+      unpack_c16(m[j], &r, &i);
+      simde_mm256_storeu_ps(re + (size_t)(n + j) * LANES, r);
+      simde_mm256_storeu_ps(im + (size_t)(n + j) * LANES, i);
+    }
+  }
+  const simde__m256i idx = simde_mm256_mullo_epi32(simde_mm256_setr_epi32(0, 1, 2, 3, 4, 5, 6, 7), simde_mm256_set1_epi32(stride));
+  for (; n < npts; n++) {
+    simde__m256 r, i;
+    unpack_c16(simde_mm256_i32gather_epi32((const int *)(src + n), idx, 4), &r, &i);
+    simde_mm256_storeu_ps(re + (size_t)n * LANES, r);
+    simde_mm256_storeu_ps(im + (size_t)n * LANES, i);
+  }
+}
+
+void channel_pipeline_scatter_c16(c16_t *dst, int stride, const float *re, const float *im, int npts)
+{
+  int n = 0;
+  for (; n + LANES <= npts; n += LANES) {
+    simde__m256i m[8];
+    for (int j = 0; j < 8; j++)
+      m[j] = pack_c16(simde_mm256_loadu_ps(re + (size_t)(n + j) * LANES), simde_mm256_loadu_ps(im + (size_t)(n + j) * LANES));
+    transpose8(m);
+    for (int b = 0; b < 8; b++)
+      simde_mm256_storeu_si256((simde__m256i *)(dst + n + (size_t)b * stride), m[b]);
+  }
+  // No scatter instruction: pack in registers, then 8 scalar stores.
+  for (; n < npts; n++) {
+    int32_t t[8];
+    simde_mm256_storeu_si256((simde__m256i *)t,
+                             pack_c16(simde_mm256_loadu_ps(re + (size_t)n * LANES), simde_mm256_loadu_ps(im + (size_t)n * LANES)));
+    int32_t *d = (int32_t *)(dst + n);
+    for (int b = 0; b < 8; b++)
+      d[b * stride] = t[b];
   }
 }
