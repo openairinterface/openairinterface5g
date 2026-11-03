@@ -156,6 +156,7 @@ static bool check_csi_resourceMapping_consistency(NR_CSI_RS_ResourceMapping_t re
           else if (density->present != NR_CSI_RS_ResourceMapping__density_PR_dot5
                    && density->present != NR_CSI_RS_ResourceMapping__density_PR_one)
             valid = false;
+          break;
         case NR_CSI_RS_ResourceMapping__nrofPorts_p24:
         case NR_CSI_RS_ResourceMapping__nrofPorts_p32:
           if (resourceMapping.cdm_Type == NR_CSI_RS_ResourceMapping__cdm_Type_noCDM)
