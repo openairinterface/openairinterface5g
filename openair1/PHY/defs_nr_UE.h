@@ -430,6 +430,8 @@ typedef struct PHY_VARS_NR_UE_s {
   uint8_t *phy_sim_test_buf;
 
   dynamic_barrier_t process_slot_tx_barriers[NUM_PROCESS_SLOT_TX_BARRIERS];
+  // Accessed atomically; counts every TX job return, including cancelled work.
+  uint64_t tx_jobs_completed;
 
   // Gain change required for automation RX gain change
   int adjust_rxgain;
