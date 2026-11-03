@@ -3998,6 +3998,11 @@ int ul_buffer_index(int frame, int slot, int slots_per_frame, int size)
 
 void UL_tti_req_ahead_initialization(nr_cell_sched_t *cell, int n, frame_t frameP, int slotP)
 {
+  if (cell->ul_next.f == UINT16_MAX) {
+    const NR_ServingCellConfigCommon_t *scc = cell->common_channels.ServingCellConfigCommon;
+    const fsn_t current = {frameP, slotP, *scc->ssbSubcarrierSpacing};
+    cell->ul_next = fsn_add_delta(current, cell->radio_config.minRXTXTIME + get_NTN_Koffset(scc));
+  }
 
   if(cell->UL_tti_req_ahead[1].Slot == 1)
     return;
