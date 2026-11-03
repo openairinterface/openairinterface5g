@@ -69,12 +69,15 @@ inline gpuError_t ErrorCheck(gpuError_t error_code, const char *filename, int li
 __global__ void cnProcKernel_BG1_R13_int8_Edge(const int8_t *__restrict__ d_cnBufAll,
                                                int8_t *__restrict__ d_bnBufAll,
                                                uint32_t Zc,
-                                               uint32_t ZcIdx)
+                                               uint32_t ZcIdx,
+                                               const uint8_t *skip)
 {
   uint32_t lane = threadIdx.x;
   uint32_t row = (blockIdx.x << 2) + threadIdx.y;
 
   uint32_t segIdx = blockIdx.y;
+  if (skip && skip[segIdx]) // code block already decoded (early termination)
+    return;
 
   if (row >= num_TotalBlocks_BG1_R13_Edge)
     return;
@@ -123,12 +126,15 @@ __global__ void cnProcKernel_BG1_R13_int8_Edge(const int8_t *__restrict__ d_cnBu
 __global__ void cnProcKernel_BG1_R13_int8_Node(const int8_t *__restrict__ d_cnBufAll,
                                                int8_t *__restrict__ d_bnBufAll,
                                                uint32_t Zc,
-                                               uint32_t ZcIdx)
+                                               uint32_t ZcIdx,
+                                               const uint8_t *skip)
 {
   uint32_t lane = threadIdx.x;
   uint32_t row = (blockIdx.x << 2) + threadIdx.y;
 
   uint32_t segIdx = blockIdx.y;
+  if (skip && skip[segIdx]) // code block already decoded (early termination)
+    return;
 
   if (row >= num_TotalBlocks_cn_BG1_R13_Node)
     return;
@@ -152,18 +158,19 @@ void nrLDPC_cnProc_BG1_R13_cuda_stream_core(int8_t *cnProcBuf,
                                             uint32_t Z,
                                             uint32_t ZcIdx,
                                             gpuStream_t *streams,
-                                            int8_t CudaStreamIdx)
+                                            int8_t CudaStreamIdx,
+                                            const uint8_t *skip)
 {
   if (n_segments > NodeEdge_Switch_Cn_R13) {
     cnProcKernel_BG1_R13_int8_Node<<<Kdim_cn_R13_Node[CudaStreamIdx].grid,
                                      Kdim_cn_R13_Node[CudaStreamIdx].block,
                                      0,
-                                     streams[CudaStreamIdx]>>>(cnProcBuf, bnProcBuf, Z, ZcIdx);
+                                     streams[CudaStreamIdx]>>>(cnProcBuf, bnProcBuf, Z, ZcIdx, skip);
   } else {
     cnProcKernel_BG1_R13_int8_Edge<<<Kdim_R13_Edge[CudaStreamIdx].grid,
                                      Kdim_R13_Edge[CudaStreamIdx].block,
                                      0,
-                                     streams[CudaStreamIdx]>>>(cnProcBuf, bnProcBuf, Z, ZcIdx);
+                                     streams[CudaStreamIdx]>>>(cnProcBuf, bnProcBuf, Z, ZcIdx, skip);
   }
 
   CHECK(gpuGetLastError());
@@ -174,12 +181,15 @@ __global__ void bnProcKernel_BG1_R13_int8_Edge(const int8_t *__restrict__ d_bnPr
                                                int8_t *__restrict__ d_llrProcBuf,
                                                int8_t *__restrict__ d_llrRes,
                                                uint32_t Zc,
-                                               uint32_t ZcIdx)
+                                               uint32_t ZcIdx,
+                                               const uint8_t *skip)
 {
   uint32_t lane = threadIdx.x;
   uint32_t row = (blockIdx.x << 2) + threadIdx.y;
 
   uint32_t segIdx = blockIdx.y;
+  if (skip && skip[segIdx]) // code block already decoded (early termination)
+    return;
 
   if (row >= num_TotalBlocks_BG1_R13_Edge)
     return;
@@ -217,12 +227,15 @@ __global__ void bnProcKernel_BG1_R13_int8_Node(const int8_t *__restrict__ d_bnPr
                                                int8_t *__restrict__ d_llrProcBuf,
                                                int8_t *__restrict__ d_llrRes,
                                                uint32_t Zc,
-                                               uint32_t ZcIdx)
+                                               uint32_t ZcIdx,
+                                               const uint8_t *skip)
 {
   uint32_t lane = threadIdx.x;
   uint32_t row = (blockIdx.x << 2) + threadIdx.y;
 
   uint32_t segIdx = blockIdx.y;
+  if (skip && skip[segIdx]) // code block already decoded (early termination)
+    return;
 
   if (row >= num_TotalBlocks_bn_BG1_R13_Node)
     return;
@@ -263,18 +276,19 @@ void nrLDPC_bnProc_BG1_R13_cuda_stream_core(int8_t *bnProcBuf,
                                             uint32_t Z,
                                             uint32_t ZcIdx,
                                             gpuStream_t *streams,
-                                            int8_t CudaStreamIdx)
+                                            int8_t CudaStreamIdx,
+                                            const uint8_t *skip)
 {
   if (n_segments > NodeEdge_Switch_Bn_R13) {
     bnProcKernel_BG1_R13_int8_Node<<<Kdim_bn_R13_Node[CudaStreamIdx].grid,
                                      Kdim_bn_R13_Node[CudaStreamIdx].block,
                                      0,
-                                     streams[CudaStreamIdx]>>>(bnProcBuf, cnProcBuf, llrProcBuf, llrRes, Z, ZcIdx);
+                                     streams[CudaStreamIdx]>>>(bnProcBuf, cnProcBuf, llrProcBuf, llrRes, Z, ZcIdx, skip);
   } else {
     bnProcKernel_BG1_R13_int8_Edge<<<Kdim_R13_Edge[CudaStreamIdx].grid,
                                      Kdim_R13_Edge[CudaStreamIdx].block,
                                      0,
-                                     streams[CudaStreamIdx]>>>(bnProcBuf, cnProcBuf, llrProcBuf, llrRes, Z, ZcIdx);
+                                     streams[CudaStreamIdx]>>>(bnProcBuf, cnProcBuf, llrProcBuf, llrRes, Z, ZcIdx, skip);
   }
   CHECK(gpuGetLastError());
 }
@@ -284,12 +298,15 @@ __global__ void bnProcKernel_BG1_R13_int8_Edge_last(const int8_t *__restrict__ d
                                                     int8_t *__restrict__ d_llrProcBuf,
                                                     int8_t *__restrict__ d_llrRes,
                                                     uint32_t Zc,
-                                                    uint32_t ZcIdx)
+                                                    uint32_t ZcIdx,
+                                                    const uint8_t *skip)
 {
   uint32_t lane = threadIdx.x;
   uint32_t row = (blockIdx.x << 2) + threadIdx.y;
 
   uint32_t segIdx = blockIdx.y;
+  if (skip && skip[segIdx]) // code block already decoded (early termination)
+    return;
 
   if (row >= num_TotalBlocks_BG1_R13_Edge)
     return;
@@ -327,12 +344,15 @@ __global__ void bnProcKernel_BG1_R13_int8_Node_last(const int8_t *__restrict__ d
                                                     int8_t *__restrict__ d_llrProcBuf,
                                                     int8_t *__restrict__ d_llrRes,
                                                     uint32_t Zc,
-                                                    uint32_t ZcIdx)
+                                                    uint32_t ZcIdx,
+                                                    const uint8_t *skip)
 {
   uint32_t lane = threadIdx.x;
   uint32_t row = (blockIdx.x << 2) + threadIdx.y;
 
   uint32_t segIdx = blockIdx.y;
+  if (skip && skip[segIdx]) // code block already decoded (early termination)
+    return;
 
   if (row >= num_TotalBlocks_bn_BG1_R13_Node)
     return;
@@ -373,18 +393,19 @@ void nrLDPC_bnProc_BG1_R13_cuda_stream_core_last(int8_t *bnProcBuf,
                                                  uint32_t Z,
                                                  uint32_t ZcIdx,
                                                  gpuStream_t *streams,
-                                                 int8_t CudaStreamIdx)
+                                                 int8_t CudaStreamIdx,
+                                                 const uint8_t *skip)
 {
   if (n_segments > NodeEdge_Switch_Bn_R13) {
     bnProcKernel_BG1_R13_int8_Node_last<<<Kdim_bn_R13_Node[CudaStreamIdx].grid,
                                           Kdim_bn_R13_Node[CudaStreamIdx].block,
                                           0,
-                                          streams[CudaStreamIdx]>>>(bnProcBuf, cnProcBuf, llrProcBuf, llrRes, Z, ZcIdx);
+                                          streams[CudaStreamIdx]>>>(bnProcBuf, cnProcBuf, llrProcBuf, llrRes, Z, ZcIdx, skip);
   } else {
     bnProcKernel_BG1_R13_int8_Edge_last<<<Kdim_R13_Edge[CudaStreamIdx].grid,
                                           Kdim_R13_Edge[CudaStreamIdx].block,
                                           0,
-                                          streams[CudaStreamIdx]>>>(bnProcBuf, cnProcBuf, llrProcBuf, llrRes, Z, ZcIdx);
+                                          streams[CudaStreamIdx]>>>(bnProcBuf, cnProcBuf, llrProcBuf, llrRes, Z, ZcIdx, skip);
   }
   CHECK(gpuGetLastError());
 }
@@ -396,12 +417,15 @@ void nrLDPC_bnProc_BG1_R13_cuda_stream_core_last(int8_t *bnProcBuf,
 __global__ void cnProcKernel_BG1_R23_int8_Edge(const int8_t *__restrict__ d_cnBufAll,
                                                int8_t *__restrict__ d_bnBufAll,
                                                uint32_t Zc,
-                                               uint32_t ZcIdx)
+                                               uint32_t ZcIdx,
+                                               const uint8_t *skip)
 {
   uint32_t lane = threadIdx.x;
   uint32_t row = (blockIdx.x << 2) + threadIdx.y;
 
   uint32_t segIdx = blockIdx.y;
+  if (skip && skip[segIdx]) // code block already decoded (early termination)
+    return;
 
   if (row >= num_TotalBlocks_BG1_R23_Edge)
     return;
@@ -450,12 +474,15 @@ __global__ void cnProcKernel_BG1_R23_int8_Edge(const int8_t *__restrict__ d_cnBu
 __global__ void cnProcKernel_BG1_R23_int8_Node(const int8_t *__restrict__ d_cnBufAll,
                                                int8_t *__restrict__ d_bnBufAll,
                                                uint32_t Zc,
-                                               uint32_t ZcIdx)
+                                               uint32_t ZcIdx,
+                                               const uint8_t *skip)
 {
   uint32_t lane = threadIdx.x;
   uint32_t row = (blockIdx.x << 2) + threadIdx.y;
 
   uint32_t segIdx = blockIdx.y;
+  if (skip && skip[segIdx]) // code block already decoded (early termination)
+    return;
 
   if (row >= num_TotalBlocks_cn_BG1_R23_Node)
     return;
@@ -479,18 +506,19 @@ void nrLDPC_cnProc_BG1_R23_cuda_stream_core(int8_t *cnProcBuf,
                                             uint32_t Z,
                                             uint32_t ZcIdx,
                                             gpuStream_t *streams,
-                                            int8_t CudaStreamIdx)
+                                            int8_t CudaStreamIdx,
+                                            const uint8_t *skip)
 {
   if (n_segments > NodeEdge_Switch_Cn_R23) {
     cnProcKernel_BG1_R23_int8_Node<<<Kdim_cn_R23_Node[CudaStreamIdx].grid,
                                      Kdim_cn_R23_Node[CudaStreamIdx].block,
                                      0,
-                                     streams[CudaStreamIdx]>>>(cnProcBuf, bnProcBuf, Z, ZcIdx);
+                                     streams[CudaStreamIdx]>>>(cnProcBuf, bnProcBuf, Z, ZcIdx, skip);
   } else {
     cnProcKernel_BG1_R23_int8_Edge<<<Kdim_R23_Edge[CudaStreamIdx].grid,
                                      Kdim_R23_Edge[CudaStreamIdx].block,
                                      0,
-                                     streams[CudaStreamIdx]>>>(cnProcBuf, bnProcBuf, Z, ZcIdx);
+                                     streams[CudaStreamIdx]>>>(cnProcBuf, bnProcBuf, Z, ZcIdx, skip);
   }
   CHECK(gpuGetLastError());
 }
@@ -500,12 +528,15 @@ __global__ void bnProcKernel_BG1_R23_int8_Edge(const int8_t *__restrict__ d_bnPr
                                                int8_t *__restrict__ d_llrProcBuf,
                                                int8_t *__restrict__ d_llrRes,
                                                uint32_t Zc,
-                                               uint32_t ZcIdx)
+                                               uint32_t ZcIdx,
+                                               const uint8_t *skip)
 {
   uint32_t lane = threadIdx.x;
   uint32_t row = (blockIdx.x << 2) + threadIdx.y;
 
   uint32_t segIdx = blockIdx.y;
+  if (skip && skip[segIdx]) // code block already decoded (early termination)
+    return;
 
   if (row >= num_TotalBlocks_BG1_R23_Edge)
     return;
@@ -544,12 +575,15 @@ __global__ void bnProcKernel_BG1_R23_int8_Node(const int8_t *__restrict__ d_bnPr
                                                int8_t *__restrict__ d_llrProcBuf,
                                                int8_t *__restrict__ d_llrRes,
                                                uint32_t Zc,
-                                               uint32_t ZcIdx)
+                                               uint32_t ZcIdx,
+                                               const uint8_t *skip)
 {
   uint32_t lane = threadIdx.x;
   uint32_t row = (blockIdx.x << 2) + threadIdx.y;
 
   uint32_t segIdx = blockIdx.y;
+  if (skip && skip[segIdx]) // code block already decoded (early termination)
+    return;
 
   if (row >= num_TotalBlocks_bn_BG1_R23_Node)
     return;
@@ -589,18 +623,19 @@ void nrLDPC_bnProc_BG1_R23_cuda_stream_core(int8_t *bnProcBuf,
                                             uint32_t Z,
                                             uint32_t ZcIdx,
                                             gpuStream_t *streams,
-                                            int8_t CudaStreamIdx)
+                                            int8_t CudaStreamIdx,
+                                            const uint8_t *skip)
 {
   if (n_segments > NodeEdge_Switch_Bn_R23) {
     bnProcKernel_BG1_R23_int8_Node<<<Kdim_bn_R23_Node[CudaStreamIdx].grid,
                                      Kdim_bn_R23_Node[CudaStreamIdx].block,
                                      0,
-                                     streams[CudaStreamIdx]>>>(bnProcBuf, cnProcBuf, llrProcBuf, llrRes, Z, ZcIdx);
+                                     streams[CudaStreamIdx]>>>(bnProcBuf, cnProcBuf, llrProcBuf, llrRes, Z, ZcIdx, skip);
   } else {
     bnProcKernel_BG1_R23_int8_Edge<<<Kdim_R23_Edge[CudaStreamIdx].grid,
                                      Kdim_R23_Edge[CudaStreamIdx].block,
                                      0,
-                                     streams[CudaStreamIdx]>>>(bnProcBuf, cnProcBuf, llrProcBuf, llrRes, Z, ZcIdx);
+                                     streams[CudaStreamIdx]>>>(bnProcBuf, cnProcBuf, llrProcBuf, llrRes, Z, ZcIdx, skip);
   }
   CHECK(gpuGetLastError());
 }
@@ -610,12 +645,15 @@ __global__ void bnProcKernel_BG1_R23_int8_Edge_last(const int8_t *__restrict__ d
                                                     int8_t *__restrict__ d_llrProcBuf,
                                                     int8_t *__restrict__ d_llrRes,
                                                     uint32_t Zc,
-                                                    uint32_t ZcIdx)
+                                                    uint32_t ZcIdx,
+                                                    const uint8_t *skip)
 {
   uint32_t lane = threadIdx.x;
   uint32_t row = (blockIdx.x << 2) + threadIdx.y;
 
   uint32_t segIdx = blockIdx.y;
+  if (skip && skip[segIdx]) // code block already decoded (early termination)
+    return;
 
   if (row >= num_TotalBlocks_BG1_R23_Edge)
     return;
@@ -654,12 +692,15 @@ __global__ void bnProcKernel_BG1_R23_int8_Node_last(const int8_t *__restrict__ d
                                                     int8_t *__restrict__ d_llrProcBuf,
                                                     int8_t *__restrict__ d_llrRes,
                                                     uint32_t Zc,
-                                                    uint32_t ZcIdx)
+                                                    uint32_t ZcIdx,
+                                                    const uint8_t *skip)
 {
   uint32_t lane = threadIdx.x;
   uint32_t row = (blockIdx.x << 2) + threadIdx.y;
 
   uint32_t segIdx = blockIdx.y;
+  if (skip && skip[segIdx]) // code block already decoded (early termination)
+    return;
 
   if (row >= num_TotalBlocks_bn_BG1_R23_Node)
     return;
@@ -699,18 +740,19 @@ void nrLDPC_bnProc_BG1_R23_cuda_stream_core_last(int8_t *bnProcBuf,
                                                  uint32_t Z,
                                                  uint32_t ZcIdx,
                                                  gpuStream_t *streams,
-                                                 int8_t CudaStreamIdx)
+                                                 int8_t CudaStreamIdx,
+                                                 const uint8_t *skip)
 {
   if (n_segments > NodeEdge_Switch_Bn_R23) {
     bnProcKernel_BG1_R23_int8_Node_last<<<Kdim_bn_R23_Node[CudaStreamIdx].grid,
                                           Kdim_bn_R23_Node[CudaStreamIdx].block,
                                           0,
-                                          streams[CudaStreamIdx]>>>(bnProcBuf, cnProcBuf, llrProcBuf, llrRes, Z, ZcIdx);
+                                          streams[CudaStreamIdx]>>>(bnProcBuf, cnProcBuf, llrProcBuf, llrRes, Z, ZcIdx, skip);
   } else {
     bnProcKernel_BG1_R23_int8_Edge_last<<<Kdim_R23_Edge[CudaStreamIdx].grid,
                                           Kdim_R23_Edge[CudaStreamIdx].block,
                                           0,
-                                          streams[CudaStreamIdx]>>>(bnProcBuf, cnProcBuf, llrProcBuf, llrRes, Z, ZcIdx);
+                                          streams[CudaStreamIdx]>>>(bnProcBuf, cnProcBuf, llrProcBuf, llrRes, Z, ZcIdx, skip);
   }
   CHECK(gpuGetLastError());
 }
@@ -720,12 +762,15 @@ void nrLDPC_bnProc_BG1_R23_cuda_stream_core_last(int8_t *bnProcBuf,
 __global__ void cnProcKernel_BG1_R89_int8_Edge(const int8_t *__restrict__ d_cnBufAll,
                                                int8_t *__restrict__ d_bnBufAll,
                                                uint32_t Zc,
-                                               uint32_t ZcIdx)
+                                               uint32_t ZcIdx,
+                                               const uint8_t *skip)
 {
   uint32_t lane = threadIdx.x;
   uint32_t row = (blockIdx.x << 2) + threadIdx.y;
 
   uint32_t segIdx = blockIdx.y;
+  if (skip && skip[segIdx]) // code block already decoded (early termination)
+    return;
 
   if (row >= num_TotalBlocks_BG1_R89_Edge)
     return;
@@ -774,12 +819,15 @@ __global__ void cnProcKernel_BG1_R89_int8_Edge(const int8_t *__restrict__ d_cnBu
 __global__ void cnProcKernel_BG1_R89_int8_Node(const int8_t *__restrict__ d_cnBufAll,
                                                int8_t *__restrict__ d_bnBufAll,
                                                uint32_t Zc,
-                                               uint32_t ZcIdx)
+                                               uint32_t ZcIdx,
+                                               const uint8_t *skip)
 {
   uint32_t lane = threadIdx.x;
   uint32_t row = (blockIdx.x << 2) + threadIdx.y;
 
   uint32_t segIdx = blockIdx.y;
+  if (skip && skip[segIdx]) // code block already decoded (early termination)
+    return;
 
   if (row >= num_TotalBlocks_cn_BG1_R89_Node)
     return;
@@ -803,18 +851,19 @@ void nrLDPC_cnProc_BG1_R89_cuda_stream_core(int8_t *cnProcBuf,
                                             uint32_t Z,
                                             uint32_t ZcIdx,
                                             gpuStream_t *streams,
-                                            int8_t CudaStreamIdx)
+                                            int8_t CudaStreamIdx,
+                                            const uint8_t *skip)
 {
   if (n_segments > NodeEdge_Switch_Cn_R89) {
     cnProcKernel_BG1_R89_int8_Node<<<Kdim_cn_R89_Node[CudaStreamIdx].grid,
                                      Kdim_cn_R89_Node[CudaStreamIdx].block,
                                      0,
-                                     streams[CudaStreamIdx]>>>(cnProcBuf, bnProcBuf, Z, ZcIdx);
+                                     streams[CudaStreamIdx]>>>(cnProcBuf, bnProcBuf, Z, ZcIdx, skip);
   } else {
     cnProcKernel_BG1_R89_int8_Edge<<<Kdim_R89_Edge[CudaStreamIdx].grid,
                                      Kdim_R89_Edge[CudaStreamIdx].block,
                                      0,
-                                     streams[CudaStreamIdx]>>>(cnProcBuf, bnProcBuf, Z, ZcIdx);
+                                     streams[CudaStreamIdx]>>>(cnProcBuf, bnProcBuf, Z, ZcIdx, skip);
   }
   CHECK(gpuGetLastError());
 }
@@ -824,12 +873,15 @@ __global__ void bnProcKernel_BG1_R89_int8_Edge(const int8_t *__restrict__ d_bnPr
                                                int8_t *__restrict__ d_llrProcBuf,
                                                int8_t *__restrict__ d_llrRes,
                                                uint32_t Zc,
-                                               uint32_t ZcIdx)
+                                               uint32_t ZcIdx,
+                                               const uint8_t *skip)
 {
   uint32_t lane = threadIdx.x;
   uint32_t row = (blockIdx.x << 2) + threadIdx.y;
 
   uint32_t segIdx = blockIdx.y;
+  if (skip && skip[segIdx]) // code block already decoded (early termination)
+    return;
 
   if (row >= num_TotalBlocks_BG1_R89_Edge)
     return;
@@ -868,12 +920,15 @@ __global__ void bnProcKernel_BG1_R89_int8_Node(const int8_t *__restrict__ d_bnPr
                                                int8_t *__restrict__ d_llrProcBuf,
                                                int8_t *__restrict__ d_llrRes,
                                                uint32_t Zc,
-                                               uint32_t ZcIdx)
+                                               uint32_t ZcIdx,
+                                               const uint8_t *skip)
 {
   uint32_t lane = threadIdx.x;
   uint32_t row = (blockIdx.x << 2) + threadIdx.y;
 
   uint32_t segIdx = blockIdx.y;
+  if (skip && skip[segIdx]) // code block already decoded (early termination)
+    return;
 
   if (row >= num_TotalBlocks_bn_BG1_R89_Node)
     return;
@@ -913,18 +968,19 @@ void nrLDPC_bnProc_BG1_R89_cuda_stream_core(int8_t *bnProcBuf,
                                             uint32_t Z,
                                             uint32_t ZcIdx,
                                             gpuStream_t *streams,
-                                            int8_t CudaStreamIdx)
+                                            int8_t CudaStreamIdx,
+                                            const uint8_t *skip)
 {
   if (n_segments > NodeEdge_Switch_Bn_R89) {
     bnProcKernel_BG1_R89_int8_Node<<<Kdim_bn_R89_Node[CudaStreamIdx].grid,
                                      Kdim_bn_R89_Node[CudaStreamIdx].block,
                                      0,
-                                     streams[CudaStreamIdx]>>>(bnProcBuf, cnProcBuf, llrProcBuf, llrRes, Z, ZcIdx);
+                                     streams[CudaStreamIdx]>>>(bnProcBuf, cnProcBuf, llrProcBuf, llrRes, Z, ZcIdx, skip);
   } else {
     bnProcKernel_BG1_R89_int8_Edge<<<Kdim_R89_Edge[CudaStreamIdx].grid,
                                      Kdim_R89_Edge[CudaStreamIdx].block,
                                      0,
-                                     streams[CudaStreamIdx]>>>(bnProcBuf, cnProcBuf, llrProcBuf, llrRes, Z, ZcIdx);
+                                     streams[CudaStreamIdx]>>>(bnProcBuf, cnProcBuf, llrProcBuf, llrRes, Z, ZcIdx, skip);
   }
   CHECK(gpuGetLastError());
 }
@@ -934,12 +990,15 @@ __global__ void bnProcKernel_BG1_R89_int8_Edge_last(const int8_t *__restrict__ d
                                                     int8_t *__restrict__ d_llrProcBuf,
                                                     int8_t *__restrict__ d_llrRes,
                                                     uint32_t Zc,
-                                                    uint32_t ZcIdx)
+                                                    uint32_t ZcIdx,
+                                                    const uint8_t *skip)
 {
   uint32_t lane = threadIdx.x;
   uint32_t row = (blockIdx.x << 2) + threadIdx.y;
 
   uint32_t segIdx = blockIdx.y;
+  if (skip && skip[segIdx]) // code block already decoded (early termination)
+    return;
 
   if (row >= num_TotalBlocks_BG1_R89_Edge)
     return;
@@ -978,12 +1037,15 @@ __global__ void bnProcKernel_BG1_R89_int8_Node_last(const int8_t *__restrict__ d
                                                     int8_t *__restrict__ d_llrProcBuf,
                                                     int8_t *__restrict__ d_llrRes,
                                                     uint32_t Zc,
-                                                    uint32_t ZcIdx)
+                                                    uint32_t ZcIdx,
+                                                    const uint8_t *skip)
 {
   uint32_t lane = threadIdx.x;
   uint32_t row = (blockIdx.x << 2) + threadIdx.y;
 
   uint32_t segIdx = blockIdx.y;
+  if (skip && skip[segIdx]) // code block already decoded (early termination)
+    return;
 
   if (row >= num_TotalBlocks_bn_BG1_R89_Node)
     return;
@@ -1023,18 +1085,19 @@ void nrLDPC_bnProc_BG1_R89_cuda_stream_core_last(int8_t *bnProcBuf,
                                                  uint32_t Z,
                                                  uint32_t ZcIdx,
                                                  gpuStream_t *streams,
-                                                 int8_t CudaStreamIdx)
+                                                 int8_t CudaStreamIdx,
+                                                 const uint8_t *skip)
 {
   if (n_segments > NodeEdge_Switch_Bn_R89) {
     bnProcKernel_BG1_R89_int8_Node_last<<<Kdim_bn_R89_Node[CudaStreamIdx].grid,
                                           Kdim_bn_R89_Node[CudaStreamIdx].block,
                                           0,
-                                          streams[CudaStreamIdx]>>>(bnProcBuf, cnProcBuf, llrProcBuf, llrRes, Z, ZcIdx);
+                                          streams[CudaStreamIdx]>>>(bnProcBuf, cnProcBuf, llrProcBuf, llrRes, Z, ZcIdx, skip);
   } else {
     bnProcKernel_BG1_R89_int8_Edge_last<<<Kdim_R89_Edge[CudaStreamIdx].grid,
                                           Kdim_R89_Edge[CudaStreamIdx].block,
                                           0,
-                                          streams[CudaStreamIdx]>>>(bnProcBuf, cnProcBuf, llrProcBuf, llrRes, Z, ZcIdx);
+                                          streams[CudaStreamIdx]>>>(bnProcBuf, cnProcBuf, llrProcBuf, llrRes, Z, ZcIdx, skip);
   }
   CHECK(gpuGetLastError());
 }
@@ -1094,9 +1157,12 @@ __global__ void llrOutPut_Kernel_BG1_int8_BIG_stream(uint32_t R,
                                                      e_nrLDPC_outMode outMode,
                                                      ldpc_cuda_bridge_t *d_buffer,
                                                      uint32_t numLLR,
-                                                     uint32_t K)
+                                                     uint32_t K,
+                                                     const uint8_t *skip)
 {
   uint32_t segIdx = blockIdx.y;
+  if (skip && skip[segIdx]) // code block already decoded (early termination)
+    return;
 
   int8_t *d_out = d_buffer->p_out_ptr;
 
@@ -1118,7 +1184,8 @@ void nrLDPC_OutPut_BG1_cuda_stream_core(int8_t *llrRes,
                                         uint32_t numLLR,
                                         uint32_t K,
                                         gpuStream_t *streams,
-                                        int8_t CudaStreamIdx)
+                                        int8_t CudaStreamIdx,
+                                        const uint8_t *skip)
 {
   llrOutPut_Kernel_BG1_int8_BIG_stream<<<Kdim_llr[CudaStreamIdx].grid, Kdim_llr[CudaStreamIdx].block, 0, streams[CudaStreamIdx]>>>(
       R,
@@ -1127,7 +1194,8 @@ void nrLDPC_OutPut_BG1_cuda_stream_core(int8_t *llrRes,
       outMode,
       buffer,
       numLLR,
-      K);
+      K,
+      skip);
 
   CHECK(gpuGetLastError());
 }
@@ -1171,37 +1239,91 @@ static inline uint32_t get_lut_col_index_host(uint32_t Zc)
 //------------------------------------------------------------------------
 //------------------------------------------------------------------------
 
-#define ENQUEUE_LDPC_DECODER_SEQUENCE(q_streams, q_idx) \
-do { \
-    uint8_t ZcIdx = get_lut_col_index_host(Z); \
-    nrLDPC_llrPreProc_BG1_cuda_stream_core(buffer, numLLR, llrProcBuf, cnProcBuf, Z, ZcIdx, R, q_streams, q_idx); \
-    if (R == 13) { \
-        for (int i = 0; i <= numMaxIter; i++) { \
-            nrLDPC_cnProc_BG1_R13_cuda_stream_core(cnProcBuf, bnProcBuf, n_segments, Z, ZcIdx, q_streams, q_idx); \
-            if (i == numMaxIter) \
-                nrLDPC_bnProc_BG1_R13_cuda_stream_core_last(bnProcBuf, cnProcBuf, llrProcBuf, llrRes, n_segments, Z, ZcIdx, q_streams, q_idx); \
-            else \
-                nrLDPC_bnProc_BG1_R13_cuda_stream_core(bnProcBuf, cnProcBuf, llrProcBuf, llrRes, n_segments, Z, ZcIdx, q_streams, q_idx); \
-        } \
-    } else if (R == 23) { \
-        for (int i = 0; i <= numMaxIter; i++) { \
-            nrLDPC_cnProc_BG1_R23_cuda_stream_core(cnProcBuf, bnProcBuf, n_segments, Z, ZcIdx, q_streams, q_idx); \
-            if (i == numMaxIter) \
-                nrLDPC_bnProc_BG1_R23_cuda_stream_core_last(bnProcBuf, cnProcBuf, llrProcBuf, llrRes, n_segments, Z, ZcIdx, q_streams, q_idx); \
-            else \
-                nrLDPC_bnProc_BG1_R23_cuda_stream_core(bnProcBuf, cnProcBuf, llrProcBuf, llrRes, n_segments, Z, ZcIdx, q_streams, q_idx); \
-        } \
-    } else if (R == 89) { \
-        for (int i = 0; i <= numMaxIter; i++) { \
-            nrLDPC_cnProc_BG1_R89_cuda_stream_core(cnProcBuf, bnProcBuf, n_segments, Z, ZcIdx, q_streams, q_idx); \
-            if (i == numMaxIter) \
-                nrLDPC_bnProc_BG1_R89_cuda_stream_core_last(bnProcBuf, cnProcBuf, llrProcBuf, llrRes, n_segments, Z, ZcIdx, q_streams, q_idx); \
-            else \
-                nrLDPC_bnProc_BG1_R89_cuda_stream_core(bnProcBuf, cnProcBuf, llrProcBuf, llrRes, n_segments, Z, ZcIdx, q_streams, q_idx); \
-        } \
-    } \
-    nrLDPC_OutPut_BG1_cuda_stream_core(llrRes, Z, R, outMode, buffer, numLLR, K, q_streams, q_idx); \
-} while (0)
+#define ENQUEUE_LDPC_DECODER_SEQUENCE(q_streams, q_idx)                                                             \
+  do {                                                                                                              \
+    uint8_t ZcIdx = get_lut_col_index_host(Z);                                                                      \
+    nrLDPC_llrPreProc_BG1_cuda_stream_core(buffer, numLLR, llrProcBuf, cnProcBuf, Z, ZcIdx, R, q_streams, q_idx);   \
+    if (R == 13) {                                                                                                  \
+      for (int i = 0; i <= numMaxIter; i++) {                                                                       \
+        nrLDPC_cnProc_BG1_R13_cuda_stream_core(cnProcBuf, bnProcBuf, n_segments, Z, ZcIdx, q_streams, q_idx, NULL); \
+        if (i == numMaxIter)                                                                                        \
+          nrLDPC_bnProc_BG1_R13_cuda_stream_core_last(bnProcBuf,                                                    \
+                                                      cnProcBuf,                                                    \
+                                                      llrProcBuf,                                                   \
+                                                      llrRes,                                                       \
+                                                      n_segments,                                                   \
+                                                      Z,                                                            \
+                                                      ZcIdx,                                                        \
+                                                      q_streams,                                                    \
+                                                      q_idx,                                                        \
+                                                      NULL);                                                        \
+        else                                                                                                        \
+          nrLDPC_bnProc_BG1_R13_cuda_stream_core(bnProcBuf,                                                         \
+                                                 cnProcBuf,                                                         \
+                                                 llrProcBuf,                                                        \
+                                                 llrRes,                                                            \
+                                                 n_segments,                                                        \
+                                                 Z,                                                                 \
+                                                 ZcIdx,                                                             \
+                                                 q_streams,                                                         \
+                                                 q_idx,                                                             \
+                                                 NULL);                                                             \
+      }                                                                                                             \
+    } else if (R == 23) {                                                                                           \
+      for (int i = 0; i <= numMaxIter; i++) {                                                                       \
+        nrLDPC_cnProc_BG1_R23_cuda_stream_core(cnProcBuf, bnProcBuf, n_segments, Z, ZcIdx, q_streams, q_idx, NULL); \
+        if (i == numMaxIter)                                                                                        \
+          nrLDPC_bnProc_BG1_R23_cuda_stream_core_last(bnProcBuf,                                                    \
+                                                      cnProcBuf,                                                    \
+                                                      llrProcBuf,                                                   \
+                                                      llrRes,                                                       \
+                                                      n_segments,                                                   \
+                                                      Z,                                                            \
+                                                      ZcIdx,                                                        \
+                                                      q_streams,                                                    \
+                                                      q_idx,                                                        \
+                                                      NULL);                                                        \
+        else                                                                                                        \
+          nrLDPC_bnProc_BG1_R23_cuda_stream_core(bnProcBuf,                                                         \
+                                                 cnProcBuf,                                                         \
+                                                 llrProcBuf,                                                        \
+                                                 llrRes,                                                            \
+                                                 n_segments,                                                        \
+                                                 Z,                                                                 \
+                                                 ZcIdx,                                                             \
+                                                 q_streams,                                                         \
+                                                 q_idx,                                                             \
+                                                 NULL);                                                             \
+      }                                                                                                             \
+    } else if (R == 89) {                                                                                           \
+      for (int i = 0; i <= numMaxIter; i++) {                                                                       \
+        nrLDPC_cnProc_BG1_R89_cuda_stream_core(cnProcBuf, bnProcBuf, n_segments, Z, ZcIdx, q_streams, q_idx, NULL); \
+        if (i == numMaxIter)                                                                                        \
+          nrLDPC_bnProc_BG1_R89_cuda_stream_core_last(bnProcBuf,                                                    \
+                                                      cnProcBuf,                                                    \
+                                                      llrProcBuf,                                                   \
+                                                      llrRes,                                                       \
+                                                      n_segments,                                                   \
+                                                      Z,                                                            \
+                                                      ZcIdx,                                                        \
+                                                      q_streams,                                                    \
+                                                      q_idx,                                                        \
+                                                      NULL);                                                        \
+        else                                                                                                        \
+          nrLDPC_bnProc_BG1_R89_cuda_stream_core(bnProcBuf,                                                         \
+                                                 cnProcBuf,                                                         \
+                                                 llrProcBuf,                                                        \
+                                                 llrRes,                                                            \
+                                                 n_segments,                                                        \
+                                                 Z,                                                                 \
+                                                 ZcIdx,                                                             \
+                                                 q_streams,                                                         \
+                                                 q_idx,                                                             \
+                                                 NULL);                                                             \
+      }                                                                                                             \
+    }                                                                                                               \
+    nrLDPC_OutPut_BG1_cuda_stream_core(llrRes, Z, R, outMode, buffer, numLLR, K, q_streams, q_idx, NULL);           \
+  } while (0)
 
   extern "C" {
 
