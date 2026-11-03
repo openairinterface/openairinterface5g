@@ -1115,33 +1115,6 @@ f1ap_gnb_du_system_info_t *get_sys_info(NR_BCCH_BCH_Message_t *mib, const NR_BCC
   return sys_info;
 }
 
-static f1ap_setup_req_t *RC_read_F1Setup(uint64_t id,
-                                         const char *name,
-                                         const f1ap_served_cell_info_t *info,
-                                         NR_BCCH_BCH_Message_t *mib,
-                                         const NR_BCCH_DL_SCH_Message_t *sib1,
-                                         seq_arr_t *du_SIBs)
-{
-  f1ap_setup_req_t *req = calloc(1, sizeof(*req));
-  AssertFatal(req != NULL, "out of memory\n");
-  req->gNB_DU_id = id;
-  req->gNB_DU_name = strdup(name);
-  req->num_cells_available = 1;
-  req->cell = calloc_or_fail(req->num_cells_available, sizeof(*req->cell));
-  req->cell[0].info = *info;
-
-  if (IS_SA_MODE(get_softmodem_params())) {
-    // in NSA we don't transmit SIB1, so cannot fill DU system information
-    // so cannot send MIB either
-    req->cell[0].sys_info = get_sys_info(mib, sib1, du_SIBs);
-  }
-
-  int num = read_version(TO_STRING(NR_RRC_VERSION), &req->rrc_ver[0], &req->rrc_ver[1], &req->rrc_ver[2]);
-  AssertFatal(num == 3, "could not read RRC version string %s\n", TO_STRING(NR_RRC_VERSION));
-
-  return req;
-}
-
 static nr_ptrs_config_t *get_ptrs_config(int idx)
 {
   char aprefix[MAX_OPTNAME_SIZE * 2 + 8];
@@ -1914,6 +1887,23 @@ void RCconfig_nr_macrlc(configmodule_interface_t *cfg)
   ngran_node_t node_type = get_node_type();
   gNB_MAC_INST *nrmac = mac_top_init_gNB(node_type, &default_rlc_config, &cell);
 
+  uint64_t gnb_du_id = 0;
+  uint32_t gnb_id = 0;
+  char *name = NULL;
+  // ONLY for first cell index!
+  read_du_ids(GNBParamList.paramarray[0], NODE_IS_DU(node_type), &gnb_id, &gnb_du_id, &name);
+
+  // prepare F1 setup request into which we store all read cells
+  f1ap_setup_req_t *req = calloc(1, sizeof(*req));
+  AssertFatal(req != NULL, "out of memory\n");
+  req->gNB_DU_id = gnb_du_id;
+  req->gNB_DU_name = strdup(name);
+  int num = read_version(TO_STRING(NR_RRC_VERSION), &req->rrc_ver[0], &req->rrc_ver[1], &req->rrc_ver[2]);
+  AssertFatal(num == 3, "could not read RRC version string %s\n", TO_STRING(NR_RRC_VERSION));
+
+  req->num_cells_available = 1;
+  req->cell = calloc_or_fail(req->num_cells_available, sizeof(*req->cell));
+
   int idx = 0;
   AssertFatal(MacRLC_ParamList.numelt == 1, "only one MACRLCs section supported!\n");
   char aprefix[MAX_OPTNAME_SIZE * 2 + 8];
@@ -1929,6 +1919,23 @@ void RCconfig_nr_macrlc(configmodule_interface_t *cfg)
   nrmac->stats_max_ue = *gpd(macrlc_p, macrlc_np, MACRLC_STATS_MAX_UE)->iptr;
   nrmac->print_ue_stats = nrmac->stats_max_ue > 0;
   config_nr_mac_update_cell(cell, &config, scc->uplinkConfigCommon->initialUplinkBWP, idx, macrlc_p, macrlc_np);
+
+  nr_mac_cell_config_scc(cell, scc, &config);
+
+  f1ap_served_cell_info_t info = read_du_cell_info(idx, GNBParamList.paramarray[idx], scc);
+  cell->nr_cellid = info.nr_cellid;
+  cell->plmn = info.plmn;
+  NR_COMMON_channels_t *cc = &cell->common_channels;
+  cc->du_SIBs = fill_du_sibs(GNBParamList.paramarray[idx]);
+  // read F1 Setup information from config and generated MIB/SIB1
+  // and store it at MAC for sending later
+  req->cell[idx].info = info;
+  if (IS_SA_MODE(get_softmodem_params())) {
+    // in NSA we don't transmit SIB1, so cannot fill DU system information
+    // so cannot send MIB either
+    nr_mac_configure_sib1(cell, &info.plmn, info.nr_cellid, *info.tac);
+    req->cell[idx].sys_info = get_sys_info(cc->mib, cc->sib1, cc->du_SIBs);
+  }
 
   /* The weights are applied per TXRU: a native L1 takes that count from the RU
    * section, Aerial from num_tx_ant, which is required just above. */
@@ -1965,7 +1972,6 @@ void RCconfig_nr_macrlc(configmodule_interface_t *cfg)
                 csi_ports);
   }
 
-  nr_mac_cell_config_scc(cell, scc, &config);
   nrmac->positioning_config = RCconfig_nr_positioning();
 
   if (strcmp(*gpd(macrlc_p, macrlc_np, MACRLC_TRANSPORT_N_PREFERENCE)->strptr, "local_RRC") == 0) {
@@ -2019,29 +2025,6 @@ void RCconfig_nr_macrlc(configmodule_interface_t *cfg)
     AssertFatal(1 == 0, "MACRLC %d: %s unknown southbound midhaul\n", 0, *gpd(macrlc_p, macrlc_np, MACRLC_TRANSPORT_S_PREFERENCE)->strptr);
   }
 
-  uint64_t gnb_du_id = 0;
-  uint32_t gnb_id = 0;
-  char *name = NULL;
-  // ONLY for first cell index!
-  read_du_ids(GNBParamList.paramarray[0], NODE_IS_DU(node_type), &gnb_id, &gnb_du_id, &name);
-
-  // for each cell
-  f1ap_served_cell_info_t info = read_du_cell_info(idx, GNBParamList.paramarray[idx], scc);
-
-  cell->nr_cellid = info.nr_cellid;
-  cell->plmn = info.plmn;
-  NR_COMMON_channels_t *cc = &cell->common_channels;
-  cc->du_SIBs = fill_du_sibs(GNBParamList.paramarray[idx]);
-  if (IS_SA_MODE(get_softmodem_params()))
-    nr_mac_configure_sib1(cell, &info.plmn, info.nr_cellid, *info.tac);
-
-  // read F1 Setup information from config and generated MIB/SIB1
-  // and store it at MAC for sending later
-  NR_BCCH_BCH_Message_t *mib = cc->mib;
-  const NR_BCCH_DL_SCH_Message_t *sib1 = cc->sib1;
-  seq_arr_t *du_SIBs = cc->du_SIBs;
-  f1ap_setup_req_t *req = RC_read_F1Setup(gnb_du_id, name, &info, mib, sib1, du_SIBs);
-  AssertFatal(req != NULL, "could not read F1 Setup information\n");
   nrmac->f1_config.setup_req = req;
   nrmac->f1_config.gnb_id = gnb_id;
 
