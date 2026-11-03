@@ -217,7 +217,7 @@ void __attribute__((no_sanitize_address)) multipath_channel_float(channel_desc_t
                                                                   int log_channel)
 {
   int i, ii, j, l;
-  simde__m128 rx_tmp128_re, rx_tmp128_im, tx128_re, tx128_im, ch128_r, ch128_i, path_gain128;
+  simde__m128 rx_tmp128_re, rx_tmp128_im, tx128_re, tx128_im, ch128_r, ch128_i;
   uint64_t dd = desc->channel_offset;
 
   if (keep_channel == 0) {
