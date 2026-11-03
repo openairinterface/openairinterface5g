@@ -289,9 +289,8 @@ int main(int argc, char **argv)
     exit(-1);
   }
 
-
-  RC.gNB = (PHY_VARS_gNB **) malloc(sizeof(PHY_VARS_gNB *));
-  RC.gNB[0] = calloc(1, sizeof(PHY_VARS_gNB));
+  RC.gNB = malloc_or_fail(sizeof(PHY_VARS_gNB *));
+  RC.gNB[0] = calloc_or_fail(1, sizeof(PHY_VARS_gNB));
   PHY_VARS_gNB *gNB = RC.gNB[0];
 
   initTpool("n", &gNB->threadPool, true);
@@ -316,7 +315,7 @@ int main(int argc, char **argv)
   phy_init_nr_gNB(gNB);
 
   //configure UE
-  PHY_VARS_NR_UE *UE = calloc(1, sizeof(*UE));
+  PHY_VARS_NR_UE *UE = calloc_or_fail(1, sizeof(*UE));
   memcpy(&UE->frame_parms, frame_parms, sizeof(NR_DL_FRAME_PARMS));
 
   UE->frame_parms.nb_antennas_tx = n_tx;

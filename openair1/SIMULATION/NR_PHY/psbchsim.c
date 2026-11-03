@@ -448,8 +448,8 @@ int main(int argc, char **argv)
   }
 
   /*****configure UE *************************/
-  UE_TX = calloc(1, sizeof(PHY_VARS_NR_UE));
-  UE_RX = calloc(1, sizeof(PHY_VARS_NR_UE));
+  UE_TX = calloc_or_fail(1, sizeof(PHY_VARS_NR_UE));
+  UE_RX = calloc_or_fail(1, sizeof(PHY_VARS_NR_UE));
   LOG_I(PHY, "Configure UE-TX and sidelink UE-TX.\n");
   configure_NR_UE(UE_TX, mu, N_RB_DL);
   configure_SL_UE(UE_TX, mu, N_RB_DL, ssb_offset, 0xFFFF);
@@ -468,10 +468,10 @@ int main(int argc, char **argv)
   frame_length_complex_samples = frame_parms->samples_per_subframe * NR_NUMBER_OF_SUBFRAMES_PER_FRAME;
 
   double **s_re, **s_im, **r_re, **r_im;
-  s_re = malloc(2 * sizeof(double *));
-  s_im = malloc(2 * sizeof(double *));
-  r_re = malloc(2 * sizeof(double *));
-  r_im = malloc(2 * sizeof(double *));
+  s_re = malloc_or_fail(2 * sizeof(double *));
+  s_im = malloc_or_fail(2 * sizeof(double *));
+  r_re = malloc_or_fail(2 * sizeof(double *));
+  r_im = malloc_or_fail(2 * sizeof(double *));
 
   s_re[0] = malloc16_clear(frame_length_complex_samples * sizeof(double));
   s_im[0] = malloc16_clear(frame_length_complex_samples * sizeof(double));

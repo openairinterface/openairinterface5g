@@ -61,7 +61,7 @@ int main(int argc, char **argv)
   stop = false;
   __attribute__((unused)) struct sigaction oldaction;
   sigaction(SIGINT, &sigint_action, &oldaction);
-  PHY_VARS_NR_UE *uedata_ptr = calloc(1, sizeof(PHY_VARS_NR_UE));
+  PHY_VARS_NR_UE *uedata_ptr = calloc_or_fail(1, sizeof(PHY_VARS_NR_UE));
   PHY_VARS_NR_UE **uedata_ptrr = &uedata_ptr;
   nrPHY_vars_UE_g = &uedata_ptrr;
 
@@ -375,8 +375,8 @@ int main(int argc, char **argv)
 
   printf("Transmitted payload is %lu, do_DTX = %d\n", actual_payload, do_DTX);
 
-  RC.gNB = calloc(1, sizeof(PHY_VARS_gNB *));
-  RC.gNB[0] = calloc(1, sizeof(PHY_VARS_gNB));
+  RC.gNB = calloc_or_fail(1, sizeof(PHY_VARS_gNB *));
+  RC.gNB[0] = calloc_or_fail(1, sizeof(PHY_VARS_gNB));
   PHY_VARS_gNB *gNB = RC.gNB[0];
   gNB->pucch0_thres = pucch_DTX_thres;
   frame_parms = &gNB->frame_parms; // to be initialized I suppose (maybe not necessary for PBCH)
@@ -412,19 +412,19 @@ int main(int argc, char **argv)
 
   frame_length_complex_samples = frame_parms->samples_per_subframe * NR_NUMBER_OF_SUBFRAMES_PER_FRAME;
 
-  s_re = malloc(n_tx * sizeof(double *));
-  s_im = malloc(n_tx * sizeof(double *));
-  r_re = malloc(n_rx * sizeof(double *));
-  r_im = malloc(n_rx * sizeof(double *));
+  s_re = malloc_or_fail(n_tx * sizeof(double *));
+  s_im = malloc_or_fail(n_tx * sizeof(double *));
+  r_re = malloc_or_fail(n_rx * sizeof(double *));
+  r_im = malloc_or_fail(n_rx * sizeof(double *));
   memcpy((void *)&gNB->frame_parms, (void *)frame_parms, sizeof(*frame_parms));
   for (int aatx = 0; aatx < n_tx; aatx++) {
-    s_re[aatx] = calloc(1, frame_length_complex_samples * sizeof(double));
-    s_im[aatx] = calloc(1, frame_length_complex_samples * sizeof(double));
+    s_re[aatx] = calloc_or_fail(1, frame_length_complex_samples * sizeof(double));
+    s_im[aatx] = calloc_or_fail(1, frame_length_complex_samples * sizeof(double));
   }
 
   for (int aarx = 0; aarx < n_rx; aarx++) {
-    r_re[aarx] = calloc(1, frame_length_complex_samples * sizeof(double));
-    r_im[aarx] = calloc(1, frame_length_complex_samples * sizeof(double));
+    r_re[aarx] = calloc_or_fail(1, frame_length_complex_samples * sizeof(double));
+    r_im[aarx] = calloc_or_fail(1, frame_length_complex_samples * sizeof(double));
   }
 
   uint8_t mcs = 0;
@@ -448,7 +448,7 @@ int main(int argc, char **argv)
   uint32_t data_scrambling_id = 0;
 
   // configure UE
-  PHY_VARS_NR_UE *UE = calloc(1, sizeof(PHY_VARS_NR_UE));
+  PHY_VARS_NR_UE *UE = calloc_or_fail(1, sizeof(PHY_VARS_NR_UE));
   memcpy(&UE->frame_parms, frame_parms, sizeof(NR_DL_FRAME_PARMS));
   UE->frame_parms.nb_antennas_rx = 1;
 

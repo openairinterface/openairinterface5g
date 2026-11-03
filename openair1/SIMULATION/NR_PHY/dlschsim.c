@@ -302,8 +302,8 @@ int main(int argc, char **argv)
 		exit(-1);
 	}
 
-	RC.gNB = (PHY_VARS_gNB **) malloc(sizeof(PHY_VARS_gNB *));
-	RC.gNB[0] = calloc(1, sizeof(PHY_VARS_gNB));
+	RC.gNB = malloc_or_fail(sizeof(PHY_VARS_gNB *));
+	RC.gNB[0] = calloc_or_fail(1, sizeof(PHY_VARS_gNB));
 	gNB = RC.gNB[0];
 	initNamedTpool(gNBthreads, &gNB->threadPool, true, "gNB-tpool");
   initFloatingCoresTpool(dlsch_threads, &nrUE_params.Tpool, false, "UE-tpool");
@@ -319,22 +319,22 @@ int main(int argc, char **argv)
     do_tdd_config_sim(gNB, mu);
 	phy_init_nr_gNB(gNB);
 	frame_length_complex_samples = frame_parms->samples_per_subframe;
-	s_re = malloc(2 * sizeof(double *));
-	s_im = malloc(2 * sizeof(double *));
-	r_re = malloc(2 * sizeof(double *));
-	r_im = malloc(2 * sizeof(double *));
-	txdata = malloc(2 * sizeof(int *));
+	s_re = malloc_or_fail(2 * sizeof(double *));
+	s_im = malloc_or_fail(2 * sizeof(double *));
+	r_re = malloc_or_fail(2 * sizeof(double *));
+	r_im = malloc_or_fail(2 * sizeof(double *));
+	txdata = malloc_or_fail(2 * sizeof(int *));
 
 	for (i = 0; i < 2; i++) {
-		s_re[i] = malloc(frame_length_complex_samples * sizeof(double));
+		s_re[i] = malloc_or_fail(frame_length_complex_samples * sizeof(double));
 		bzero(s_re[i], frame_length_complex_samples * sizeof(double));
-		s_im[i] = malloc(frame_length_complex_samples * sizeof(double));
+		s_im[i] = malloc_or_fail(frame_length_complex_samples * sizeof(double));
 		bzero(s_im[i], frame_length_complex_samples * sizeof(double));
-		r_re[i] = malloc(frame_length_complex_samples * sizeof(double));
+		r_re[i] = malloc_or_fail(frame_length_complex_samples * sizeof(double));
 		bzero(r_re[i], frame_length_complex_samples * sizeof(double));
-		r_im[i] = malloc(frame_length_complex_samples * sizeof(double));
+		r_im[i] = malloc_or_fail(frame_length_complex_samples * sizeof(double));
 		bzero(r_im[i], frame_length_complex_samples * sizeof(double));
-		txdata[i] = malloc(frame_length_complex_samples * sizeof(int));
+		txdata[i] = malloc_or_fail(frame_length_complex_samples * sizeof(int));
 		bzero(r_re[i], frame_length_complex_samples * sizeof(int)); // [hna] r_re should be txdata
 	}
 
@@ -343,7 +343,7 @@ int main(int argc, char **argv)
 	}
 
 	//configure UE
-  PHY_VARS_NR_UE *UE = calloc(1, sizeof(*UE));
+  PHY_VARS_NR_UE *UE = calloc_or_fail(1, sizeof(*UE));
   PHY_VARS_NR_UE **uedata_ptrr = &UE;
   nrPHY_vars_UE_g = &uedata_ptrr;
 

@@ -349,10 +349,10 @@ int main(int argc, char **argv){
   SET_LOG_DEBUG(DEBUG_PRACH);
 
   // Configure gNB and RU
-  RC.gNB = malloc(sizeof(PHY_VARS_gNB *));
+  RC.gNB = malloc_or_fail(sizeof(PHY_VARS_gNB *));
   RC.gNB[0] = calloc_or_fail(1, sizeof(PHY_VARS_gNB));
 
-  RC.ru = malloc(sizeof(RU_t *));
+  RC.ru = malloc_or_fail(sizeof(RU_t *));
   RC.ru[0] = calloc_or_fail(1,sizeof(RU_t ));
   RC.nb_RU = 1;
   PHY_VARS_gNB *gNB = RC.gNB[0];
@@ -514,7 +514,8 @@ int main(int argc, char **argv){
   nrPHY_vars_UE_g[0] = calloc_or_fail(1,sizeof(PHY_VARS_NR_UE *));
   nrPHY_vars_UE_g[0][0] = UE;
   memcpy(&UE->frame_parms,frame_parms,sizeof(NR_DL_FRAME_PARMS));
-  UE->nrUE_config.prach_config.num_prach_fd_occasions_list = (fapi_nr_num_prach_fd_occasions_t *) malloc(num_prach_fd_occasions*sizeof(fapi_nr_num_prach_fd_occasions_t));
+  UE->nrUE_config.prach_config.num_prach_fd_occasions_list =
+      malloc_or_fail(num_prach_fd_occasions * sizeof(fapi_nr_num_prach_fd_occasions_t));
 
   if (init_nr_ue_signal(UE, 1) != 0){
     printf("Error at UE NR initialisation\n");
@@ -701,9 +702,9 @@ int main(int argc, char **argv){
         nfapi_nr_prach_config_t *cfg = &gNB->gNB_config.prach_config;
         nfapi_nr_num_prach_fd_occasions_t *occ = &cfg->num_prach_fd_occasions_list[prach_pdu.num_ra];
         prach_pdu.num_prach_ocas=1;
-        prach_item_t *in = malloc(sizeof(prach_item_t)
-                                  + sizeof(c16_t) * gNB->gNB_config.carrier_config.num_rx_ant.value
-                                        * NUMBER_OF_NR_RU_PRACH_OCCASIONS_MAX * NR_PRACH_SEQ_LEN_L);
+        prach_item_t *in = malloc_or_fail(sizeof(prach_item_t)
+                                          + sizeof(c16_t) * gNB->gNB_config.carrier_config.num_rx_ant.value
+                                                * NUMBER_OF_NR_RU_PRACH_OCCASIONS_MAX * NR_PRACH_SEQ_LEN_L);
         *in = (prach_item_t){.frame = frame,
                              .slot = slot,
                              .pdu = prach_pdu,

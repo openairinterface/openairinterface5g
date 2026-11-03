@@ -716,7 +716,7 @@ int main(int argc, char **argv)
   int num_samples_alloc = 153600;
   const int max_padding_alloc = 256 - 1;
   size_t padded_tx_alloc_bytes = n_tx * (num_samples_alloc + max_padding_alloc) * 2 * sizeof(float);
-  h_tx_sig_pinned = malloc(padded_tx_alloc_bytes);
+  h_tx_sig_pinned = malloc_or_fail(padded_tx_alloc_bytes);
   if (h_tx_sig_pinned == NULL) {
     printf("Error: Failed to allocate host buffer for CPU path\n");
     exit(-1);
@@ -730,7 +730,7 @@ int main(int argc, char **argv)
   if (snr1set==0)
     snr1 = snr0+10;
 
-  RC.gNB = malloc(sizeof(PHY_VARS_gNB *));
+  RC.gNB = malloc_or_fail(sizeof(PHY_VARS_gNB *));
   RC.gNB[0] = calloc_or_fail(1, sizeof(PHY_VARS_gNB));
 
   PHY_VARS_gNB *gNB = RC.gNB[0];
@@ -746,7 +746,7 @@ int main(int argc, char **argv)
   AssertFatal((gNB->if_inst = NR_IF_Module_init(0)) != NULL, "Cannot register interface");
   gNB->if_inst->NR_PHY_config_req = nr_phy_config_request;
 
-  NR_ServingCellConfigCommon_t *scc = calloc(1,sizeof(*scc));;
+  NR_ServingCellConfigCommon_t *scc = calloc_or_fail(1, sizeof(*scc));
   prepare_scc(scc);
   uint64_t ssb_bitmap = 1; // Enable only first SSB with index ssb_indx=0
   fill_scc_sim(scc, &ssb_bitmap, N_RB_DL, N_RB_DL, mu, mu);
@@ -897,7 +897,7 @@ int main(int argc, char **argv)
   float *h_channel_coeffs = NULL;
   if (use_cuda) {
     int num_links = n_tx * n_rx;
-    h_channel_coeffs = (float *)malloc(num_links * gNB2UE->channel_length * sizeof(float) * 2);
+    h_channel_coeffs = malloc_or_fail(num_links * gNB2UE->channel_length * sizeof(float) * 2);
   }
 #endif
   if (gNB2UE==NULL) {
@@ -909,20 +909,20 @@ int main(int argc, char **argv)
   int slot_offset = get_samples_slot_timestamp(frame_parms, slot);
   int slot_length = slot_offset - get_samples_slot_timestamp(frame_parms, slot - 1);
 
-  s_interleaved = malloc(n_tx * sizeof(float *));
-  r_re = malloc(n_rx * sizeof(float *));
-  r_im = malloc(n_rx * sizeof(float *));
-  txdata = malloc(n_tx * sizeof(int *));
+  s_interleaved = malloc_or_fail(n_tx * sizeof(float *));
+  r_re = malloc_or_fail(n_rx * sizeof(float *));
+  r_im = malloc_or_fail(n_rx * sizeof(float *));
+  txdata = malloc_or_fail(n_tx * sizeof(int *));
 
   for (i = 0; i < n_tx; i++) {
-    s_interleaved[i] = malloc(slot_length * 2 * sizeof(float));
+    s_interleaved[i] = malloc_or_fail(slot_length * 2 * sizeof(float));
     printf("Allocating %d samples for txdata\n", frame_length_complex_samples);
-    txdata[i] = calloc(1, frame_length_complex_samples * sizeof(int));
+    txdata[i] = calloc_or_fail(1, frame_length_complex_samples * sizeof(int));
   }
 
   for (i = 0; i < n_rx; i++) {
-    r_re[i] = calloc(1, slot_length * sizeof(float));
-    r_im[i] = calloc(1, slot_length * sizeof(float));
+    r_re[i] = calloc_or_fail(1, slot_length * sizeof(float));
+    r_im[i] = calloc_or_fail(1, slot_length * sizeof(float));
   }
 
   if (pbch_file_fd!=NULL) {
@@ -930,9 +930,9 @@ int main(int argc, char **argv)
   }
 
   //configure UE
-  PHY_VARS_NR_UE *UE = calloc(1, sizeof(PHY_VARS_NR_UE));
-  nrPHY_vars_UE_g = malloc(sizeof(PHY_VARS_NR_UE **));
-  nrPHY_vars_UE_g[0] = malloc(sizeof(PHY_VARS_NR_UE *));
+  PHY_VARS_NR_UE *UE = calloc_or_fail(1, sizeof(PHY_VARS_NR_UE));
+  nrPHY_vars_UE_g = malloc_or_fail(sizeof(PHY_VARS_NR_UE **));
+  nrPHY_vars_UE_g[0] = malloc_or_fail(sizeof(PHY_VARS_NR_UE *));
   nrPHY_vars_UE_g[0][0] = UE;
   memcpy(&UE->frame_parms, frame_parms, sizeof(*frame_parms));
   UE->frame_parms.nb_antennas_rx = n_rx;
@@ -998,20 +998,21 @@ int main(int argc, char **argv)
 
   // Buffers to store internal memory of slot process
   int rx_size = (((14 * UE->frame_parms.N_RB_DL * 12 * sizeof(int32_t)) + 15) >> 4) << 4;
-  UE->phy_sim_rxdataF = calloc(sizeof(int32_t *) * UE->frame_parms.nb_antennas_rx * g_nrOfLayers,
-                               UE->frame_parms.samples_per_slot_wCP * sizeof(int32_t));
-  UE->phy_sim_pdsch_llr = calloc(1, (8 * (3 * 8 * 8448)) * sizeof(int16_t)); // Max length
-  UE->phy_sim_pdsch_rxdataF_ext = calloc(sizeof(int32_t *) * UE->frame_parms.nb_antennas_rx * g_nrOfLayers, rx_size);
-  UE->phy_sim_pdsch_rxdataF_comp = calloc(sizeof(int32_t *) * UE->frame_parms.nb_antennas_rx * g_nrOfLayers, rx_size);
-  UE->phy_sim_pdsch_dl_ch_estimates = calloc(sizeof(int32_t *) * UE->frame_parms.nb_antennas_rx * g_nrOfLayers, rx_size);
-  UE->phy_sim_pdsch_dl_ch_estimates_ext = calloc(sizeof(int32_t *) * UE->frame_parms.nb_antennas_rx * g_nrOfLayers, rx_size);
+  UE->phy_sim_rxdataF = calloc_or_fail(sizeof(int32_t *) * UE->frame_parms.nb_antennas_rx * g_nrOfLayers,
+                                       UE->frame_parms.samples_per_slot_wCP * sizeof(int32_t));
+  UE->phy_sim_pdsch_llr = calloc_or_fail(1, (8 * (3 * 8 * 8448)) * sizeof(int16_t)); // Max length
+  UE->phy_sim_pdsch_rxdataF_ext = calloc_or_fail(sizeof(int32_t *) * UE->frame_parms.nb_antennas_rx * g_nrOfLayers, rx_size);
+  UE->phy_sim_pdsch_rxdataF_comp = calloc_or_fail(sizeof(int32_t *) * UE->frame_parms.nb_antennas_rx * g_nrOfLayers, rx_size);
+  UE->phy_sim_pdsch_dl_ch_estimates = calloc_or_fail(sizeof(int32_t *) * UE->frame_parms.nb_antennas_rx * g_nrOfLayers, rx_size);
+  UE->phy_sim_pdsch_dl_ch_estimates_ext =
+      calloc_or_fail(sizeof(int32_t *) * UE->frame_parms.nb_antennas_rx * g_nrOfLayers, rx_size);
   int a_segments = MAX_NUM_NR_DLSCH_SEGMENTS; // number of segments to be allocated
   if (g_rbSize != 273) {
     a_segments = a_segments*g_rbSize;
     a_segments = (a_segments/273)+1;
   }
   uint32_t dlsch_bytes = a_segments*1056;  // allocated bytes per segment
-  UE->phy_sim_dlsch_b = calloc(1, dlsch_bytes);
+  UE->phy_sim_dlsch_b = calloc_or_fail(1, dlsch_bytes);
 
   // csv file
   if (filename_csv != NULL) {
@@ -1264,7 +1265,7 @@ int main(int argc, char **argv)
         } else
 #endif
         {
-          float **tx_sig_for_cpu = malloc(n_tx * sizeof(float *));
+          float **tx_sig_for_cpu = malloc_or_fail(n_tx * sizeof(float *));
           float *h_tx_ptr = (float *)h_tx_sig_pinned;
           const int padding_len = gNB2UE->channel_length - 1;
           const int padded_slot_length = slot_length + padding_len;
@@ -1646,11 +1647,16 @@ void update_dmrs_config(NR_BWP_Downlink_t *bwp, int8_t* dmrs_arg)
   AssertFatal((bwp->bwp_Dedicated->pdsch_Config != NULL && bwp->bwp_Dedicated->pdsch_Config->choice.setup != NULL), "Base RRC reconfig structures are not allocated.\n");
 
   if(mapping_type == typeA) {
-    bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeA = calloc(1,sizeof(*bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeA));
+    bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeA =
+        calloc_or_fail(1, sizeof(*bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeA));
     bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeA->present= NR_SetupRelease_DMRS_DownlinkConfig_PR_setup;
-    bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeA->choice.setup = calloc(1,sizeof(*bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeA->choice.setup));
+    bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeA->choice.setup =
+        calloc_or_fail(1,
+                       sizeof(*bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeA->choice.setup));
     if (dmrs_config_type == NFAPI_NR_DMRS_TYPE2)
-      bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeA->choice.setup->dmrs_Type = calloc(1,sizeof(*bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeA->choice.setup->dmrs_Type));
+      bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeA->choice.setup->dmrs_Type = calloc_or_fail(
+          1,
+          sizeof(*bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeA->choice.setup->dmrs_Type));
     else
       bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeA->choice.setup->dmrs_Type = NULL;
     bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeA->choice.setup->maxLength=NULL;
@@ -1662,11 +1668,16 @@ void update_dmrs_config(NR_BWP_Downlink_t *bwp, int8_t* dmrs_arg)
   }
 
   if(mapping_type == typeB) {
-    bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeB = calloc(1,sizeof(*bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeB));
+    bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeB =
+        calloc_or_fail(1, sizeof(*bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeB));
     bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeB->present= NR_SetupRelease_DMRS_DownlinkConfig_PR_setup;
-    bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeB->choice.setup = calloc(1,sizeof(*bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeB->choice.setup));
+    bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeB->choice.setup =
+        calloc_or_fail(1,
+                       sizeof(*bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeB->choice.setup));
     if (dmrs_config_type == NFAPI_NR_DMRS_TYPE2)
-      bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeB->choice.setup->dmrs_Type = calloc(1,sizeof(*bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeB->choice.setup->dmrs_Type));
+      bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeB->choice.setup->dmrs_Type = calloc_or_fail(
+          1,
+          sizeof(*bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeB->choice.setup->dmrs_Type));
     else
       bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeB->choice.setup->dmrs_Type = NULL;
     bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeB->choice.setup->maxLength=NULL;
@@ -1684,7 +1695,7 @@ void update_dmrs_config(NR_BWP_Downlink_t *bwp, int8_t* dmrs_arg)
 
   if (add_pos != 2) { // pos0,pos1,pos3
     if (dmrs_config->dmrs_AdditionalPosition == NULL) {
-      dmrs_config->dmrs_AdditionalPosition = calloc(1,sizeof(*dmrs_MappingtypeA->choice.setup->dmrs_AdditionalPosition));
+      dmrs_config->dmrs_AdditionalPosition = calloc_or_fail(1, sizeof(*dmrs_MappingtypeA->choice.setup->dmrs_AdditionalPosition));
     }
     switch (add_pos) {
       case 0:

@@ -289,8 +289,7 @@ int main(int argc, char **argv)
 
   printf("Initializing gNodeB for mu %d, N_RB_DL %d\n",mu,N_RB_DL);
 
-
-  RC.gNB = (PHY_VARS_gNB**) malloc(sizeof(PHY_VARS_gNB *));
+  RC.gNB = malloc_or_fail(sizeof(PHY_VARS_gNB *));
   RC.gNB[0] = malloc16_clear(sizeof(*(RC.gNB[0])));
   PHY_VARS_gNB *gNB = RC.gNB[0];
   gNB->ofdm_offset_divisor = UINT_MAX;
@@ -345,11 +344,11 @@ int main(int argc, char **argv)
   frame_length_complex_samples = frame_parms->samples_per_subframe*NR_NUMBER_OF_SUBFRAMES_PER_FRAME;
   frame_length_complex_samples_no_prefix = frame_parms->samples_per_subframe_wCP;
 
-  s_re = malloc(2*sizeof(double*));
-  s_im = malloc(2*sizeof(double*));
-  r_re = malloc(2*sizeof(double*));
-  r_im = malloc(2*sizeof(double*));
-  txdata = calloc(2, sizeof(c16_t*));
+  s_re = malloc_or_fail(2 * sizeof(double *));
+  s_im = malloc_or_fail(2 * sizeof(double *));
+  r_re = malloc_or_fail(2 * sizeof(double *));
+  r_im = malloc_or_fail(2 * sizeof(double *));
+  txdata = calloc_or_fail(2, sizeof(c16_t *));
 
   for (i=0; i<2; i++) {
 
@@ -505,7 +504,7 @@ int main(int argc, char **argv)
 
       c16_t *rxdata[frame_parms->nb_antennas_rx];
       for (aa = 0; aa < frame_parms->nb_antennas_rx; aa++)
-        rxdata[aa] = malloc(frame_length_complex_samples * sizeof(**rxdata));
+        rxdata[aa] = malloc_or_fail(frame_length_complex_samples * sizeof(**rxdata));
       for (i=0; i<frame_length_complex_samples; i++) {
         for (aa=0; aa<frame_parms->nb_antennas_rx; aa++) {
           rxdata[aa][i].r = (short)(r_re[aa][i] + sqrt(sigma2 / 2) * gaussdouble(0.0, 1.0));
