@@ -77,6 +77,16 @@ The AMD equivalents of the NVIDIA tools above are:
 * **`rocm-smi`**: real-time monitoring of VRAM usage, GPU utilization and power (equivalent to `nvidia-smi`).
 * **`rocprofv3` / `rocprof`**: system-wide and kernel-level profiling, including HIP Graph execution timelines (equivalent to `nsys` / `ncu`).
 
+## Library Parameters
+
+The library is selected with `--loader.ldpc.shlibversion _cuda`. The following optional parameters of the
+`nrLDPC_coding_cuda` section can be set on the command line of the PHY simulators, nr-softmodem and
+nr-uesoftmodem, or in a configuration file:
+
+- `nrLDPC_coding_cuda.wait_mode` - how a host thread waits for the GPU: *spin*, *yield* (default) or *block*.
+  Blocking costs a wake-up latency at least once per transport block (about 100 us on a DGX Spark). This setting
+  applies to the whole process, i.e. also to other CUDA code running in it.
+
 ## Unit Test
 
 ### Build
