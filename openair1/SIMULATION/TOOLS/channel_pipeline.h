@@ -10,13 +10,13 @@ extern "C" {
 #endif
 #include "common/platform_types.h"
 
-// CPU pipeline instance: owns its noise device. Calls on one instance must not overlap; use one
-// instance per calling thread.
+// CPU pipeline instance: owns its scratch memory and noise device. Calls on one instance must not
+// overlap; use one instance per calling thread.
 typedef struct channel_pipeline_s channel_pipeline_t;
 
-// Channel of the CPU pipeline: a copy of the taps, taken when they are set. The caller keeps one per
-// link (e.g. per UE) and sets it again only when the taps change. Used by one channel_pipeline()
-// call at a time.
+// Channel of the CPU pipeline: a copy of the taps plus the form the convolution needs, built when
+// the taps are set. The caller keeps one per link (e.g. per UE) and sets it again only when the
+// taps change. Used by one channel_pipeline() call at a time.
 typedef struct channel_pipeline_channel_s channel_pipeline_channel_t;
 
 channel_pipeline_channel_t *channel_pipeline_channel_init(void);

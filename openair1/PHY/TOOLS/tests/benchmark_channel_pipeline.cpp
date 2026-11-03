@@ -243,10 +243,33 @@ BENCHMARK(BM_channel_convolution_tpool)
     ->ArgsProduct({
         {1, 2, 4}, // nb_rx
         {1, 2, 4}, // nb_tx
-        {1024, 2048, 30720}, // num_samples
-        {8, 16, 32, 64}, // channel_length
+        {1024, 2048, 30720, 61440}, // num_samples
+        {8, 16, 32, 64, 128}, // channel_length
     })
-    ->Iterations(10);
+    ->UseRealTime()
+    ->MinTime(0.1);
+
+// 8x2 (rx x tx)
+BENCHMARK(BM_channel_convolution_tpool)
+    ->ArgsProduct({
+        {8}, // nb_rx
+        {2}, // nb_tx
+        {1024, 2048, 30720, 61440}, // num_samples
+        {8, 16, 32, 64, 128}, // channel_length
+    })
+    ->UseRealTime()
+    ->MinTime(0.1);
+
+// 2x8 (rx x tx)
+BENCHMARK(BM_channel_convolution_tpool)
+    ->ArgsProduct({
+        {2}, // nb_rx
+        {8}, // nb_tx
+        {1024, 2048, 30720, 61440}, // num_samples
+        {8, 16, 32, 64, 128}, // channel_length
+    })
+    ->UseRealTime()
+    ->MinTime(0.1);
 
 int main(int argc, char **argv)
 {

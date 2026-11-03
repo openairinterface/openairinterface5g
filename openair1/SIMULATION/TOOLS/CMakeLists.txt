@@ -4,7 +4,12 @@ add_library(noise_device noise_device.c)
 target_link_libraries(noise_device PRIVATE log_headers m)
 target_include_directories(noise_device PUBLIC ./)
 add_subdirectory(batched_fft)
-add_library(channel_pipeline channel_pipeline.c)
+add_library(channel_pipeline channel_pipeline.c channel_pipeline_simd.c)
+if (CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
+  target_sources(channel_pipeline PRIVATE channel_pipeline_neon.c)
+else()
+  target_sources(channel_pipeline PRIVATE channel_pipeline_avx2.c)
+endif()
 if (ENABLE_CHANNEL_SIM_CUDA)
   target_sources(channel_pipeline PRIVATE
     channel_pipeline_gpu.cu
