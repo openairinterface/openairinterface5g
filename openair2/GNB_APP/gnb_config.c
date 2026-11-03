@@ -984,58 +984,26 @@ static NR_ServingCellConfigCommon_t *get_scc_config(int idx)
   return scc;
 }
 
-static int read_du_cell_info(bool separate_du,
-                             uint32_t *gnb_id,
-                             uint64_t *gnb_du_id,
-                             char **name,
-                             f1ap_served_cell_info_t *info,
-                             int max_cell_info)
+static void read_du_ids(paramdef_t *gnb_p, bool separate_du, uint32_t *gnb_id, uint64_t *gnb_du_id, char **name)
 {
-  AssertFatal(max_cell_info == 1, "only one cell supported\n");
-  memset(info, 0, sizeof(*info));
-
-  GET_PARAMS(GNBSParams, GNBSPARAMS_DESC, NULL);
-  int num_gnbs = GNBSParams[GNB_ACTIVE_GNBS_IDX].numelt;
-  AssertFatal(num_gnbs == 1, "cannot configure DU: required config section \"gNBs\" missing\n");
-
-  GET_PARAMS_LIST(GNBParamList, GNBParams, GNBPARAMS_DESC, GNB_CONFIG_STRING_GNB_LIST, NULL);
-
   // read the gNB-ID. The DU itself only needs the gNB-DU ID, but some (e.g.,
   // E2 agent) need the gNB-ID as well if it is running in a separate process
-  AssertFatal(config_isparamset(GNBParamList.paramarray[0], GNB_GNB_ID_IDX), "%s is not defined in configuration file\n", GNB_CONFIG_STRING_GNB_ID);
-  *gnb_id = *GNBParamList.paramarray[0][GNB_GNB_ID_IDX].uptr;
-
-  AssertFatal(strcmp(GNBSParams[GNB_ACTIVE_GNBS_IDX].strlistptr[0], *GNBParamList.paramarray[0][GNB_GNB_NAME_IDX].strptr) == 0,
-              "no active gNB found/mismatch of gNBs: %s vs %s\n",
-              GNBSParams[GNB_ACTIVE_GNBS_IDX].strlistptr[0],
-              *GNBParamList.paramarray[0][GNB_GNB_NAME_IDX].strptr);
+  AssertFatal(config_isparamset(gnb_p, GNB_GNB_ID_IDX), "%s is not defined in configuration file\n", GNB_CONFIG_STRING_GNB_ID);
+  *gnb_id = *gnb_p[GNB_GNB_ID_IDX].uptr;
 
   // if fronthaul is F1, require gNB_DU_ID, else use gNB_ID
   if (separate_du) {
-    AssertFatal(config_isparamset(GNBParamList.paramarray[0], GNB_GNB_DU_ID_IDX), "%s is not defined in configuration file\n", GNB_CONFIG_STRING_GNB_DU_ID);
-    *gnb_du_id = *GNBParamList.paramarray[0][GNB_GNB_DU_ID_IDX].u64ptr;
+    AssertFatal(config_isparamset(gnb_p, GNB_GNB_DU_ID_IDX), "%s is not defined in configuration file\n", GNB_CONFIG_STRING_GNB_DU_ID);
+    *gnb_du_id = *gnb_p[GNB_GNB_DU_ID_IDX].u64ptr;
   } else {
-    AssertFatal(!config_isparamset(GNBParamList.paramarray[0], GNB_GNB_DU_ID_IDX),
+    AssertFatal(!config_isparamset(gnb_p, GNB_GNB_DU_ID_IDX),
                 "%s should not be defined in configuration file for monolithic gNB\n",
                 GNB_CONFIG_STRING_GNB_DU_ID);
     *gnb_du_id = *gnb_id; // the gNB-DU ID is equal to the gNB ID, since the config has no gNB-DU ID
   }
 
-  *name = strdup(*(GNBParamList.paramarray[0][GNB_GNB_NAME_IDX].strptr));
-  info->tac = malloc(sizeof(*info->tac));
-  AssertFatal(info->tac != NULL, "out of memory\n");
-  *info->tac = *GNBParamList.paramarray[0][GNB_TRACKING_AREA_CODE_IDX].uptr;
-
-  // PLMN
-  plmn_id_t p[PLMN_LIST_MAX_SIZE] = {0};
-  set_plmn_config(p, 0);
-  info->plmn = p[0];
-  info->nr_cellid = (uint64_t) * (GNBParamList.paramarray[0][GNB_NRCELLID_IDX].u64ptr);
-
-  // SNSSAI
-  info->num_ssi = set_snssai_config(info->nssai, MAX_NUM_SLICES, 0, 0);
-
-  return 1;
+  *name = strdup(*gnb_p[GNB_GNB_NAME_IDX].strptr);
+  LOG_I(GNB_APP, "F1AP: gNB_id %d gNB_DU_id %ld, gNB_DU_name %s\n", *gnb_id, *gnb_du_id, *name);
 }
 
 f1ap_tdd_info_t read_tdd_config(const NR_ServingCellConfigCommon_t *scc)
@@ -1065,6 +1033,58 @@ static f1ap_fdd_info_t read_fdd_config(const NR_ServingCellConfigCommon_t *scc)
       .ul_freqinfo.band = *ul->frequencyBandList->list.array[0],
   };
   return fdd;
+}
+
+static f1ap_served_cell_info_t read_du_cell_info(int idx, const paramdef_t *gnb_p, const NR_ServingCellConfigCommon_t *scc)
+{
+  f1ap_served_cell_info_t info = {0};
+
+  info.tac = malloc(sizeof(*info.tac));
+  AssertFatal(info.tac != NULL, "out of memory\n");
+  *info.tac = *gnb_p[GNB_TRACKING_AREA_CODE_IDX].uptr;
+
+  // PLMN
+  plmn_id_t p[PLMN_LIST_MAX_SIZE] = {0};
+  set_plmn_config(p, 0);
+  info.plmn = p[0];
+  info.nr_cellid = (uint64_t) *gnb_p[GNB_NRCELLID_IDX].u64ptr;
+
+  // SNSSAI
+  info.num_ssi = set_snssai_config(info.nssai, MAX_NUM_SLICES, 0, 0);
+
+  info.nr_pci = *scc->physCellId;
+  if (scc->tdd_UL_DL_ConfigurationCommon) {
+    LOG_I(GNB_APP, "ngran_DU: Configuring Cell %d for TDD\n", 0);
+    info.mode = F1AP_MODE_TDD;
+    info.tdd = read_tdd_config(scc);
+  } else {
+    LOG_I(GNB_APP, "ngran_DU: Configuring Cell %d for FDD\n", 0);
+    info.mode = F1AP_MODE_FDD;
+    info.fdd = read_fdd_config(scc);
+  }
+
+  NR_MeasurementTimingConfiguration_t *mtc = get_new_MeasurementTimingConfiguration(scc);
+  uint8_t buf[1024];
+  int len = encode_MeasurementTimingConfiguration(mtc, buf, sizeof(buf));
+  DevAssert(len <= sizeof(buf));
+  free_MeasurementTimingConfiguration(mtc);
+  uint8_t *mtc_buf = calloc(len, sizeof(*mtc_buf));
+  AssertFatal(mtc_buf != NULL, "out of memory\n");
+  memcpy(mtc_buf, buf, len);
+  info.measurement_timing_config = mtc_buf;
+  info.measurement_timing_config_len = len;
+
+  LOG_I(GNB_APP,
+        "F1AP: cell idx %d TAC %d MCC/MNC/length %d/%d/%d cellID %ld PCI %d\n",
+        idx,
+        *info.tac,
+        info.plmn.mcc,
+        info.plmn.mnc,
+        info.plmn.mnc_digit_length,
+        info.nr_cellid,
+        info.nr_pci);
+
+  return info;
 }
 
 f1ap_gnb_du_system_info_t *get_sys_info(NR_BCCH_BCH_Message_t *mib, const NR_BCCH_DL_SCH_Message_t *sib1, seq_arr_t *du_SIBs)
@@ -1098,7 +1118,6 @@ f1ap_gnb_du_system_info_t *get_sys_info(NR_BCCH_BCH_Message_t *mib, const NR_BCC
 static f1ap_setup_req_t *RC_read_F1Setup(uint64_t id,
                                          const char *name,
                                          const f1ap_served_cell_info_t *info,
-                                         const NR_ServingCellConfigCommon_t *scc,
                                          NR_BCCH_BCH_Message_t *mib,
                                          const NR_BCCH_DL_SCH_Message_t *sib1,
                                          seq_arr_t *du_SIBs)
@@ -1110,38 +1129,6 @@ static f1ap_setup_req_t *RC_read_F1Setup(uint64_t id,
   req->num_cells_available = 1;
   req->cell = calloc_or_fail(req->num_cells_available, sizeof(*req->cell));
   req->cell[0].info = *info;
-  LOG_I(GNB_APP,
-        "F1AP: gNB idx %d gNB_DU_id %ld, gNB_DU_name %s, TAC %d MCC/MNC/length %d/%d/%d cellID %ld\n",
-        0,
-        req->gNB_DU_id,
-        req->gNB_DU_name,
-        *req->cell[0].info.tac,
-        req->cell[0].info.plmn.mcc,
-        req->cell[0].info.plmn.mnc,
-        req->cell[0].info.plmn.mnc_digit_length,
-        req->cell[0].info.nr_cellid);
-
-  req->cell[0].info.nr_pci = *scc->physCellId;
-  if (scc->tdd_UL_DL_ConfigurationCommon) {
-    LOG_I(GNB_APP, "ngran_DU: Configuring Cell %d for TDD\n", 0);
-    req->cell[0].info.mode = F1AP_MODE_TDD;
-    req->cell[0].info.tdd = read_tdd_config(scc);
-  } else {
-    LOG_I(GNB_APP, "ngran_DU: Configuring Cell %d for FDD\n", 0);
-    req->cell[0].info.mode = F1AP_MODE_FDD;
-    req->cell[0].info.fdd = read_fdd_config(scc);
-  }
-
-  NR_MeasurementTimingConfiguration_t *mtc = get_new_MeasurementTimingConfiguration(scc);
-  uint8_t buf[1024];
-  int len = encode_MeasurementTimingConfiguration(mtc, buf, sizeof(buf));
-  DevAssert(len <= sizeof(buf));
-  free_MeasurementTimingConfiguration(mtc);
-  uint8_t *mtc_buf = calloc(len, sizeof(*mtc_buf));
-  AssertFatal(mtc_buf != NULL, "out of memory\n");
-  memcpy(mtc_buf, buf, len);
-  req->cell[0].info.measurement_timing_config = mtc_buf;
-  req->cell[0].info.measurement_timing_config_len = len;
 
   if (IS_SA_MODE(get_softmodem_params())) {
     // in NSA we don't transmit SIB1, so cannot fill DU system information
@@ -2035,13 +2022,16 @@ void RCconfig_nr_macrlc(configmodule_interface_t *cfg)
   uint64_t gnb_du_id = 0;
   uint32_t gnb_id = 0;
   char *name = NULL;
-  f1ap_served_cell_info_t info;
-  read_du_cell_info(NODE_IS_DU(node_type), &gnb_id, &gnb_du_id, &name, &info, 1);
+  // ONLY for first cell index!
+  read_du_ids(GNBParamList.paramarray[0], NODE_IS_DU(node_type), &gnb_id, &gnb_du_id, &name);
+
+  // for each cell
+  f1ap_served_cell_info_t info = read_du_cell_info(idx, GNBParamList.paramarray[idx], scc);
+
   cell->nr_cellid = info.nr_cellid;
   cell->plmn = info.plmn;
   NR_COMMON_channels_t *cc = &cell->common_channels;
-  cc->du_SIBs = fill_du_sibs(GNBParamList.paramarray[0]);
-
+  cc->du_SIBs = fill_du_sibs(GNBParamList.paramarray[idx]);
   if (IS_SA_MODE(get_softmodem_params()))
     nr_mac_configure_sib1(cell, &info.plmn, info.nr_cellid, *info.tac);
 
@@ -2050,9 +2040,8 @@ void RCconfig_nr_macrlc(configmodule_interface_t *cfg)
   NR_BCCH_BCH_Message_t *mib = cc->mib;
   const NR_BCCH_DL_SCH_Message_t *sib1 = cc->sib1;
   seq_arr_t *du_SIBs = cc->du_SIBs;
-  f1ap_setup_req_t *req = RC_read_F1Setup(gnb_du_id, name, &info, scc, mib, sib1, du_SIBs);
+  f1ap_setup_req_t *req = RC_read_F1Setup(gnb_du_id, name, &info, mib, sib1, du_SIBs);
   AssertFatal(req != NULL, "could not read F1 Setup information\n");
-  LOG_I(GNB_APP, "Configured DU: cell ID %ld, PCI %d\n", req->cell[0].info.nr_cellid, req->cell[0].info.nr_pci);
   nrmac->f1_config.setup_req = req;
   nrmac->f1_config.gnb_id = gnb_id;
 
