@@ -518,8 +518,19 @@ int nrue_ru_read(PHY_VARS_NR_UE *UE, openair0_timestamp_t *ptimestamp, void **bu
     AssertFatal(!ret, "errno: %s\n", strerror(ret));
     return nsamps;
   } else {
+    // rfsim: as above, the gNB sends the samples we read only after receiving our TX up to about the same time, and the
+    // write reorder keeps the end of a burst until it fills a grain: send our TX up to the end of this read first
+    if (IS_SOFTMODEM_RFSIM && rd->last_ts)
+      openair0_write_reorder_flush_common(nrue_ru_write,
+                                          UE,
+                                          dev,
+                                          max(ru->nb_clients, 1),
+                                          UE->frame_parms.nb_antennas_tx,
+                                          rd->last_ts + nsamps - dev->firstTS,
+                                          100);
     openair0_timestamp_t tmp_timestamp;
     ret = dev->trx_read_func(dev, &tmp_timestamp, buff, nsamps, num_antennas);
+    rd->last_ts = tmp_timestamp + ret;
     nrue_ru_count_time(UE->rf_map.card, ret);
     if (!dev->firstTS_initialized) {
       dev->firstTS = tmp_timestamp;
@@ -553,6 +564,8 @@ int nrue_ru_write(PHY_VARS_NR_UE *UE, openair0_timestamp_t timestamp, void **buf
     if (!nrue_rus.cfg[ru_id].nb_cells || !nrue_rus.cfg[ru_id].cell[0].active) // skip RUs that have no cell definition
       continue;
     if (nrue_rus.cfg[ru_id].cell[0].used_by_ue >= 0) // skip cells that are already used by an UE
+      continue;
+    if (nrue_rus.cfg[ru_id].nb_clients) // written by its own UEs, even before they set used_by_ue
       continue;
     dev = &nrue_rus.openair0_dev[ru_id];
     dev->trx_write_func(dev, timestamp + dev->firstTS, tmp_buf, nsamps, num_antennas, flags);
