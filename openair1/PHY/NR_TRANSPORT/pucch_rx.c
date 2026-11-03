@@ -367,7 +367,9 @@ void nr_decode_pucch0(PHY_VARS_gNB *gNB,
   uci_pdu->rnti = pucch_pdu->rnti;
   uci_pdu->ul_cqi = cqi;
   uci_pdu->timing_advance = 0xffff; // currently not valid
-  uci_pdu->rssi = 1280 - (10 * dB_fixed(32767 * 32767) - dB_fixed_times10(signal_energy));
+  // dB_fixed_times10() gives -900 for zero energy and saturates at 900. rssi value is never > 1280
+  int16_t rssi_raw = 1280 - (10 * dB_fixed(INT16_MAX * INT16_MAX) - dB_fixed_times10(signal_energy));
+  uci_pdu->rssi = (uint16_t)max(0, rssi_raw);
 
   if (pucch_pdu->bit_len_harq == 0) {
     uci_pdu->sr.sr_confidence_level = SNRtimes10 < gNB->pucch0_thres;
@@ -927,7 +929,9 @@ void nr_decode_pucch1(PHY_VARS_gNB *gNB,
   uci_pdu->rnti = pucch_pdu->rnti;
   uci_pdu->ul_cqi = cqi;
   uci_pdu->timing_advance = 0xffff; // currently not valid
-  uci_pdu->rssi = 1280 - (10 * dB_fixed(32767 * 32767) - dB_fixed_times10(signal_energy_ant0));
+  // dB_fixed_times10() gives -900 for zero energy and saturates at 900. rssi value is never > 1280
+  int16_t rssi_raw = 1280 - (10 * dB_fixed(INT16_MAX * INT16_MAX) - dB_fixed_times10(signal_energy_ant0));
+  uci_pdu->rssi = (uint16_t)max(0, rssi_raw);
 
   if (pucch_pdu->bit_len_harq == 0) {
     uci_pdu->sr.sr_confidence_level = SNRtimes10 < gNB->pucch0_thres;
@@ -1513,7 +1517,9 @@ void nr_decode_pucch2(PHY_VARS_gNB *gNB,
   uci_pdu->ul_cqi = cqi;
   uci_pdu->timing_advance = 0xffff; // currently not valid
   uint e = signal_energy_nodc(rp[0][0], nb_re_pucch);
-  uci_pdu->rssi = 1280 - (10 * dB_fixed(INT16_MAX * INT16_MAX) - dB_fixed_times10(e));
+  // dB_fixed_times10() gives -900 for zero energy and saturates at 900. rssi value is never > 1280
+  int16_t rssi_raw = 1280 - (10 * dB_fixed(INT16_MAX * INT16_MAX) - dB_fixed_times10(e));
+  uci_pdu->rssi = (uint16_t)max(0, rssi_raw);
   if (pucch_pdu->bit_len_harq > 0) {
     uci_pdu->pduBitmap |= 2;
     uci_pdu->harq.harq_crc = decoderState;

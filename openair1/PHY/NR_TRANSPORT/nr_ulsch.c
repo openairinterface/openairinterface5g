@@ -188,7 +188,9 @@ int get_pusch_ta(const PHY_VARS_gNB *gNB, NR_gNB_PHY_STATS_t *stats, const NR_gN
 
 int get_pusch_rssi(const NR_gNB_PUSCH *pusch, int n_rx)
 {
-  return 1280 - (10 * dB_fixed(32767 * 32767) - dB_fixed_times10(pusch->ulsch_power_tot / n_rx));
+  // dB_fixed_times10() gives -900 for zero energy and saturates at 900. rssi value is never > 1280
+  int16_t rssi_raw = 1280 - (10 * dB_fixed(INT16_MAX * INT16_MAX) - dB_fixed_times10(pusch->ulsch_power_tot / n_rx));
+  return max(0, rssi_raw);
 }
 
 int get_pusch_cqi(const NR_gNB_PUSCH *pusch, int frame, int slot)
