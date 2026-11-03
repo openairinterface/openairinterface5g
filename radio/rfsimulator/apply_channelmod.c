@@ -226,13 +226,14 @@ void rxAddInput(c16_t **input_sig, cf_t *after_channel_sig, int rxAnt, channel_d
   const int nbTx = channelDesc->nb_tx;
   double Doppler_phase_cur = channelDesc->Doppler_phase_cur[rxAnt];
   Doppler_phase_cur -= 2 * M_PI * round(Doppler_phase_cur / (2 * M_PI));
+  allocCast3D(ch, struct complexd, channelDesc->ch, channelDesc->nb_tx, channelDesc->nb_rx, channelDesc->channel_length, false);
 
   for (int i = 0; i < nbSamples; i++) {
     cf_t *out_ptr = after_channel_sig + i;
     struct complexd rx_tmp = {0};
 
     for (int txAnt = 0; txAnt < nbTx; txAnt++) {
-      const struct complexd *channelModel = channelDesc->ch[rxAnt + (txAnt * channelDesc->nb_rx)];
+      const struct complexd *channelModel = ch[txAnt][rxAnt];
 
       // const struct complex *channelModelEnd=channelModel+channelDesc->channel_length;
       for (int l = 0; l < (int)channelDesc->channel_length; l++) {

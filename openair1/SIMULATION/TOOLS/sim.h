@@ -30,10 +30,6 @@ typedef enum {
 } channelmod_moduleid_t;
 #define MODULEID_STR_INIT {"","rfsimulator"}
 
-#define CHANMODEL_FREE_DELAY       1<<0
-#define CHANMODEL_FREE_RSQRT_6     1<<1
-#define CHANMODEL_FREE_RSQRT_NTAPS 1<<2
-#define CHANMODEL_FREE_AMPS        1<<3
 #define SHR3 (jz = jsr, jsr ^= (jsr << 13), jsr ^= (jsr >> 17), jsr ^= (jsr << 5), jz + jsr)
 
 typedef enum {
@@ -44,29 +40,28 @@ typedef enum {
 
 typedef struct {
   ///Number of tx antennas
-  uint8_t nb_tx;
+  uint nb_tx;
   ///Number of rx antennas
-  uint8_t nb_rx;
+  uint nb_rx;
   ///number of taps
-  uint8_t nb_taps;
+  uint nb_taps;
   ///linear amplitudes of taps
   double *amps;
   ///normalization channel factor
   double normalization_ch_factor;
-  ///Delays of the taps in mus. length(delays)=nb_taps. Has to be between 0 and Td.
+  /// Delays of the taps in mus. length(delays)=nb_taps, ordered by increasing delays
   double *delays;
-  ///length of impulse response. should be set to 11+2*bw*t_max
-  uint8_t channel_length;
+  /// length of impulse response in samples: 1 + ceil(sampling_rate * last tap delay) + CHANNEL_SINC_TAIL
+  uint channel_length;
   ///channel state vector. size(state) = nb_taps * (n_tx * n_rx);
-  struct complexd **a;
+  fourDimArray_t *a;
   ///interpolated (sample-spaced) channel impulse response. size(ch) = (n_tx * n_rx) * channel_length. ATTENTION: the dimensions of ch are the transposed ones of a. This is to allow the use of BLAS when applying the correlation matrices to the state.
-  struct complexd **ch;
+  fourDimArray_t *ch;
   ///Same as above but single precision
   struct complexf **ch_ps;
   ///Sampled frequency response (90 kHz resolution)
-  struct complexd **chF;
-  ///Maximum path delay in mus.
-  double Td;
+  int channelF_len;
+  fourDimArray_t *chF;
   ///Carrier center frequency
   uint64_t center_freq;
   ///Channel bandwidth in MHz.
@@ -80,11 +75,12 @@ typedef struct {
   ///Angle of arrival of wavefront (in radians). For Ricean channel only. This assumes that both RX and TX have linear antenna arrays with lambda/2 antenna spacing. Furhter it is assumed that the arrays are parallel to each other and that they are far enough apart so that we can safely assume plane wave propagation.
   double aoa;
   ///If set to 1, aoa is randomized according to a uniform random distribution
-  int8_t random_aoa;
+  int random_aoa;
   ///in Hz. if >0 generate a channel with a Clarke's Doppler profile with a maximum Doppler bandwidth max_Doppler. CURRENTLY NOT IMPLEMENTED!
   double max_Doppler;
-  ///Square root of the full correlation matrix size(R_tx) = nb_taps * (n_tx * n_rx) * (n_tx * n_rx).
-  struct complexd **R_sqrt;
+  /// Square root of the spatial correlation matrix per tap: struct complexd [nb_taps][n_links][n_links],
+  /// n_links = nb_tx * nb_rx, link index tx * nb_rx + rx
+  fourDimArray_t *R_sqrt;
   ///path loss including shadow fading in dB (positive = attenuation)
   double path_loss_dB;
   ///additional delay of channel in samples.
@@ -97,7 +93,7 @@ typedef struct {
   /// initial phase for frequency offset simulation
   double ip;
   /// number of paths taken by transmit signal
-  uint16_t nb_paths;
+  uint nb_paths;
   /// timing measurements
   time_stats_t random_channel;
   time_stats_t interp_time;
@@ -609,7 +605,6 @@ void do_DL_sig(sim_t *sim,
                uint8_t UE_id,
                int CC_id);
 
-void do_UL_sig(sim_t *sim, uint16_t subframe, uint8_t abstraction_flag, LTE_DL_FRAME_PARMS *frame_parms, uint32_t frame, int ru_id, uint8_t CC_id, int NB_UEs);
 int get_noise_power_dBFS(void);
 
 #endif

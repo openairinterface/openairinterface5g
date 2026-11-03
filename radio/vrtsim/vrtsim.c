@@ -216,12 +216,13 @@ static void load_channel_model(vrtsim_state_t *vrtsim_state, int nb_rx)
         channel_desc->channel_length);
   random_channel(channel_desc, 0);
   channel_desc->ch_ps = malloc(sizeof(*channel_desc->ch_ps) * channel_desc->nb_tx * channel_desc->nb_rx);
+  allocCast3D(ch, struct complexd, channel_desc->ch, channel_desc->nb_tx, channel_desc->nb_rx, channel_desc->channel_length, false);
   for (int aarx = 0; aarx < channel_desc->nb_rx; aarx++) {
     for (int aatx = 0; aatx < channel_desc->nb_tx; aatx++) {
       cf_t *channel_ps = (cf_t *)malloc(sizeof(cf_t) * channel_desc->channel_length);
       channel_desc->ch_ps[aarx + (aatx * channel_desc->nb_rx)] = channel_ps;
       for (int i = 0; i < channel_desc->channel_length; i++) {
-        struct complexd src = channel_desc->ch[aarx + (aatx * channel_desc->nb_rx)][i];
+        struct complexd src = ch[aatx][aarx][i];
         channel_ps[i] = (cf_t){src.r, src.i};
       }
     }
