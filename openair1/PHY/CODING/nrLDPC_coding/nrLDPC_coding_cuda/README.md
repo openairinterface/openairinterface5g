@@ -281,6 +281,18 @@ Using MCS 27 with 273 PRBs and 2x2 MIMO (`-W2 -y2 -z2`).
 ./nr_ulsim -n100 -s40 -m27 -R273 -r273 -W2 -y2 -z2 -P --loader.ldpc.shlibversion _cuda
 ```
 
+### Several Transport Blocks per Call (ulschsim)
+
+`nr_ulschsim` decodes several transport blocks (`-T`) in one call to the library, as the gNB does with several UEs in a
+slot. The thread pool (`-C` threads) dispatches them to the decoder contexts (`nrLDPC_coding_cuda.num_contexts`), which
+decode them concurrently. Each transport block is then decoded again alone, one per call: the simulator reports the
+decoding time per call in both cases, and checks that the results are the same (exit status 1 otherwise). See
+[the physical simulators documentation](../../../../../doc/physical-simulators.md).
+
+```bash
+./nr_ulschsim -R 273 -m19 -s0 -S1.5 -n50 -T4 -C4 --loader.ldpc.shlibversion _cuda
+```
+
 ## E2E Test
 
 For instructions on running an end-to-end test, please refer to [the

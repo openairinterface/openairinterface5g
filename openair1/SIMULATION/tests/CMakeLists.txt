@@ -155,6 +155,8 @@ add_physim_test(physim.5g.nr_ulschsim.test1 "106 PRBs" nr_ulschsim -R 106 -m9 -s
 add_physim_test(physim.5g.nr_ulschsim.test2 "217 PRBs" nr_ulschsim -R 217 -m15 -s15 -n300)
 add_physim_test(physim.5g.nr_ulschsim.test3 "273 PRBs" nr_ulschsim -R 273 -m19 -s20 -n300)
 add_physim_test(physim.5g.nr_ulschsim.test4 "106 PRBs 4-layer MIMO" nr_ulschsim -R 106 -m9 -s13 -n300 -y4 -z4 -W4)
+# 4 TBs per decoder call, 4 threads, through the BLER waterfall: same results as one TB per call
+add_physim_test(physim.5g.nr_ulschsim.test5 "106 PRBs, 4 TBs per decoder call" nr_ulschsim -R 106 -m9 -s2 -S3.5 -n100 -T4 -C4)
 
 ####################################################################################
 ######                           nr_pucchsim unit test                        ######
