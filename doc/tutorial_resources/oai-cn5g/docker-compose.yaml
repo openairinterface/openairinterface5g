@@ -36,7 +36,7 @@ services:
                 ipv4_address: 192.168.70.139
     oai-udr:
         container_name: "oai-udr"
-        image: oaisoftwarealliance/oai-udr:v2.2.1
+        image: oaisoftwarealliance/oai-udr:v2.2.2
         expose:
             - 80/tcp
             - 8080/tcp
@@ -52,7 +52,7 @@ services:
                 ipv4_address: 192.168.70.136
     oai-udm:
         container_name: "oai-udm"
-        image: oaisoftwarealliance/oai-udm:v2.2.1
+        image: oaisoftwarealliance/oai-udm:v2.2.2
         expose:
             - 80/tcp
             - 8080/tcp
@@ -67,7 +67,7 @@ services:
                 ipv4_address: 192.168.70.137
     oai-ausf:
         container_name: "oai-ausf"
-        image: oaisoftwarealliance/oai-ausf:v2.2.1
+        image: oaisoftwarealliance/oai-ausf:v2.2.2
         expose:
             - 80/tcp
             - 8080/tcp
@@ -82,7 +82,7 @@ services:
                 ipv4_address: 192.168.70.138
     oai-nrf:
         container_name: "oai-nrf"
-        image: oaisoftwarealliance/oai-nrf:v2.2.1
+        image: oaisoftwarealliance/oai-nrf:v2.2.2
         expose:
             - 80/tcp
             - 8080/tcp
@@ -95,7 +95,7 @@ services:
                 ipv4_address: 192.168.70.130
     oai-amf:
         container_name: "oai-amf"
-        image: oaisoftwarealliance/oai-amf:v2.2.1
+        image: oaisoftwarealliance/oai-amf:v2.2.2
         expose:
             - 80/tcp
             - 8080/tcp
@@ -113,7 +113,7 @@ services:
                 ipv4_address: 192.168.70.132
     oai-smf:
         container_name: "oai-smf"
-        image: oaisoftwarealliance/oai-smf:v2.2.1
+        image: oaisoftwarealliance/oai-smf:v2.2.2
         expose:
             - 80/tcp
             - 8080/tcp
@@ -130,7 +130,7 @@ services:
                 ipv4_address: 192.168.70.133
     oai-upf:
         container_name: "oai-upf"
-        image: oaisoftwarealliance/oai-upf:v2.2.1
+        image: oaisoftwarealliance/oai-upf:v2.2.2
         expose:
             - 2152/udp
             - 8805/udp
@@ -175,3 +175,5 @@ networks:
                 - subnet: 192.168.70.128/26
         driver_opts:
             com.docker.network.bridge.name: "oai-cn5g"
+            # Only needed when the core network and the RAN are deployed on different machines
+            # com.docker.network.bridge.gateway_mode_ipv4: "nat-unprotected"
