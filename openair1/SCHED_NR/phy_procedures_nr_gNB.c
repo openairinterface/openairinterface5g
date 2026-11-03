@@ -805,6 +805,9 @@ nr_srs_info_t nr_srs_rx_procedures(PHY_VARS_gNB *gNB,
       }
     }
 
+    // Only the beam management report carries per PRG SNR, the other usages take the I0 noise
+    const bool use_srs_noise = srs_pdu->srs_parameters_v4.usage & (1 << NFAPI_NR_SRS_BEAMMANAGEMENT);
+
     // Noise from the delay domain of the LS estimates, no empty comb subcarriers needed
     nr_srs_noise_acc_t noise_acc = {0};
     noise_acc.ls_peak = ls_peak;
@@ -830,7 +833,13 @@ nr_srs_info_t nr_srs_rx_procedures(PHY_VARS_gNB *gNB,
 
         signal_power_avg += signal_power;
 
-        nr_srs_noise_accumulate(p_ind, srs_pdu, &nr_srs_info, srs_ls_estimated_channel[ant_rx_ind][p_ind], &noise_acc, pow_per_prg);
+        if (use_srs_noise)
+          nr_srs_noise_accumulate(p_ind,
+                                  srs_pdu,
+                                  &nr_srs_info,
+                                  srs_ls_estimated_channel[ant_rx_ind][p_ind],
+                                  &noise_acc,
+                                  pow_per_prg);
 
         T(T_GNB_PHY_UL_FREQ_CHANNEL_ESTIMATE,
           T_INT(gNB->Mod_id),
@@ -865,7 +874,21 @@ nr_srs_info_t nr_srs_rx_procedures(PHY_VARS_gNB *gNB,
     // Summed over up to 64 pairs of values that can reach 2^30, so the total needs 64 bits
     signal_power_avg /= (nb_antennas_rx * N_ap);
     signal_power_avg = max(signal_power_avg, 1);
-    *snr = nr_srs_snr_per_prg(srs_pdu, (uint32_t)min(signal_power_avg, (uint64_t)UINT32_MAX), &noise_acc, pow_per_prg, snr_per_prg);
+    const uint32_t signal_power = min(signal_power_avg, (uint64_t)UINT32_MAX);
+    if (use_srs_noise) {
+      *snr = nr_srs_snr_per_prg(srs_pdu, signal_power, &noise_acc, pow_per_prg, snr_per_prg);
+
+      T(T_GNB_PHY_UL_SNR_ESTIMATE,
+        T_INT(0),
+        T_INT(srs_pdu->rnti),
+        T_INT(frame_rx),
+        T_INT(0),
+        T_INT(0),
+        T_BUFFER(snr_per_prg, max((int)srs_pdu->beamforming.num_prgs, 1) * sizeof(int16_t)));
+    } else {
+      const int noise_power_avg_dB = max(gNB->measurements.n0_subband_power_avg_dB, 0) - dB_fixed(nb_antennas_rx);
+      *snr = dB_fixed(signal_power) - noise_power_avg_dB;
+    }
 
     LOG_D(NR_PHY, "SRS-WIDEBAND-SNR: rnti %04x, snr %d dB\n", srs_pdu->rnti, *snr);
 
@@ -882,14 +905,6 @@ nr_srs_info_t nr_srs_rx_procedures(PHY_VARS_gNB *gNB,
                                        &timing_advance_offset_nsec[ant_rx_ind]);
     }
     stop_meas(&gNB->srs_timing_advance_stats);
-
-    T(T_GNB_PHY_UL_SNR_ESTIMATE,
-      T_INT(0),
-      T_INT(srs_pdu->rnti),
-      T_INT(frame_rx),
-      T_INT(0),
-      T_INT(0),
-      T_BUFFER(snr_per_prg, max((int)srs_pdu->beamforming.num_prgs, 1) * sizeof(int16_t)));
 
     T(T_GNB_PHY_UL_SRS_TOA_NS,
       T_INT(gNB->Mod_id),

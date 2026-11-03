@@ -444,7 +444,7 @@ int main(int argc, char *argv[])
                                 .t_srs = 1,
                                 .t_offset = 0,
                                 .srs_parameters_v4.srs_bandwidth_size = m_SRS[srs_pdu.config_index],
-                                .srs_parameters_v4.usage = 1 << NR_SRS_ResourceSet__usage_codebook,
+                                .srs_parameters_v4.usage = 1 << NFAPI_NR_SRS_BEAMMANAGEMENT,
                                 .srs_parameters_v4.report_type[0] = 1,
                                 .srs_parameters_v4.iq_representation = 1,
                                 .srs_parameters_v4.prg_size = 1,
