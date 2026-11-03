@@ -141,6 +141,7 @@ void ngap_gNB_remove_amf_desc(ngap_gNB_instance_t * instance)
         STAILQ_REMOVE_HEAD(&amf->served_guami, next);
         free(guamInfo);
       }
+      free(amf->amf_name);
       free(amf);
     }
 }
