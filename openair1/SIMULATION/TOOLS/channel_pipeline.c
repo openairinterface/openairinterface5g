@@ -72,6 +72,14 @@ typedef struct {
   int job_index;
 } job_args_t;
 
+// Round to nearest (ties to even) and saturate to int16.
+static int16_t round_s16(float v)
+{
+  v = v > 32767.0f ? 32767.0f : v;
+  v = v < -32768.0f ? -32768.0f : v;
+  return (int16_t)lrintf(v);
+}
+
 void do_convolution_and_noise(int nb_tx,
                               int channel_length,
                               const cf_t *channel,
@@ -123,12 +131,11 @@ void do_convolution_and_noise(int nb_tx,
       }
     }
     for (int i = batch_start; i < batch_end; i++) {
+      c16_t out = {round_s16(work_buffer[i - batch_start].r), round_s16(work_buffer[i - batch_start].i)};
       if (i < num_samples_rx_sig0) {
-        rx_sig0[i].r = work_buffer[i - batch_start].r;
-        rx_sig0[i].i = work_buffer[i - batch_start].i;
+        rx_sig0[i] = out;
       } else {
-        rx_sig1[i - num_samples_rx_sig0].r = work_buffer[i - batch_start].r;
-        rx_sig1[i - num_samples_rx_sig0].i = work_buffer[i - batch_start].i;
+        rx_sig1[i - num_samples_rx_sig0] = out;
       }
     }
   }

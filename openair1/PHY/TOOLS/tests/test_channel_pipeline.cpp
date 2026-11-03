@@ -27,6 +27,18 @@ extern "C" void exit_function(const char *file, const char *function, const int 
   exit(EXIT_FAILURE);
 }
 
+// Taps scaled as K/sqrt(nb_tx * channel_length) so the output std stays ~2800 regardless of the
+// antenna/tap count (see accuracy_test_gpu_optimized_pipeline.cpp): far from int16 saturation, so
+// the comparison checks the convolution rather than clipping.
+static void generate_scaled_taps(cf_t *sig, int channel_length, int nb_tx)
+{
+  const float max_tap_mag = 6.0f / std::sqrt((float)nb_tx * (float)channel_length);
+  for (int i = 0; i < channel_length; i++) {
+    sig[i].r = (((rand() % 2000) - 1000) / 1000.0f) * max_tap_mag;
+    sig[i].i = (((rand() % 2000) - 1000) / 1000.0f) * max_tap_mag;
+  }
+}
+
 #ifdef CHANNEL_SIM_CUDA
 class ChannelConvolutionTest : public ::testing::TestWithParam<std::tuple<int, int, int>> {
  protected:
@@ -72,31 +84,16 @@ TEST_P(ChannelConvolutionTest, CompareCpuGpu)
   // The input buffer must be padded at the beginning to handle the convolution history.
   size_t num_input_samples = num_samples + channel_length - 1;
 
-  // generate_random_signal() draws samples uniformly from [-1000, 1000]. Summed over
-  // nb_tx * channel_length taps per output sample, that can overflow the int16 range both
-  // implementations truncate their output into; near a wrap boundary, a fraction-of-a-unit
-  // rounding difference between the CPU (direct time-domain) and GPU (FFT-based) convolution
-  // produces a huge integer delta despite the underlying math being nearly identical. Right-shift
-  // the input by 2 bits to cap it below 2^8 so the convolution sum stays well within int16 range.
-  constexpr int kInputScaleShift = 2;
   std::vector<c16_t *> input(nb_tx);
   for (int i = 0; i < nb_tx; ++i) {
     input[i] = new c16_t[num_input_samples];
     generate_random_signal(input[i], num_input_samples);
-    for (size_t j = 0; j < num_input_samples; ++j) {
-      input[i][j].r >>= kInputScaleShift;
-      input[i][j].i >>= kInputScaleShift;
-    }
   }
 
   std::vector<cf_t *> channel(nb_rx * nb_tx);
   for (int i = 0; i < nb_rx * nb_tx; ++i) {
     channel[i] = new cf_t[channel_length];
-    generate_random_signal_float(channel[i], channel_length);
-    for (size_t j = 0; j < channel_length; ++j) {
-      channel[i][j].r *= 0.25;
-      channel[i][j].i *= 0.25;
-    }
+    generate_scaled_taps(channel[i], channel_length, nb_tx);
   }
 
   std::vector<c16_t *> output_cpu(nb_rx);
@@ -169,18 +166,6 @@ INSTANTIATE_TEST_SUITE_P(ChannelConvolutionTests,
                            return name.str();
                          });
 #endif // CHANNEL_SIM_CUDA
-
-// Taps scaled as K/sqrt(nb_tx * channel_length) so the output std stays ~2800 regardless of the
-// antenna/tap count (see accuracy_test_gpu_optimized_pipeline.cpp): far from int16 saturation, so
-// the comparison checks the convolution rather than clipping.
-static void generate_scaled_taps(cf_t *sig, int channel_length, int nb_tx)
-{
-  const float max_tap_mag = 6.0f / std::sqrt((float)nb_tx * (float)channel_length);
-  for (int i = 0; i < channel_length; i++) {
-    sig[i].r = (((rand() % 2000) - 1000) / 1000.0f) * max_tap_mag;
-    sig[i].i = (((rand() % 2000) - 1000) / 1000.0f) * max_tap_mag;
-  }
-}
 
 // Input/output of one pipeline call, with the input split into sig0|sig1 at in_split and the
 // output split into sig0|sig1 at out_split (the same way vrtsim passes history + new samples).
