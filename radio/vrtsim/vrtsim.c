@@ -170,6 +170,10 @@ typedef struct {
 
   tpool_t tpool;
   void *channel_pipeline_context;
+#ifndef CHANNEL_SIM_CUDA
+  // Channel of each chan_desc, set again when its taps change.
+  channel_pipeline_channel_t *pipeline_channel[MAX_NUM_UES];
+#endif
   char *thread_pool_cores;
   char *shm_channel_name;
   int disable_timing_thread;
@@ -771,6 +775,27 @@ static int vrtsim_write_internal(vrtsim_state_t *vrtsim_state, openair0_timestam
   return nsamps;
 }
 
+// Taps of chan_desc in pipeline order, ptrs[aarx * nb_tx + aatx], each of channel_length taps in
+// buf; the path loss of a channel model is applied.
+static void get_taps(vrtsim_state_t *vrtsim_state, channel_desc_t *chan_desc, int nb_tx, cf_t *buf, cf_t **ptrs)
+{
+  const int nb_rx = chan_desc->nb_rx;
+  const int L = chan_desc->channel_length;
+  const bool model = !vrtsim_state->taps_socket && !vrtsim_state->use_cirdb;
+  const float path_gain_linear = model ? powf(10, -chan_desc->path_loss_dB / 20.0) : 1.0f;
+  for (int aarx = 0; aarx < nb_rx; aarx++) {
+    for (int aatx = 0; aatx < nb_tx; aatx++) {
+      const cf_t *taps = chan_desc->ch_ps[aarx + (aatx * nb_rx)];
+      cf_t *out = buf + (size_t)(aarx * nb_tx + aatx) * L;
+      for (int k = 0; k < L; k++) {
+        out[k].r = taps[k].r * path_gain_linear;
+        out[k].i = taps[k].i * path_gain_linear;
+      }
+      ptrs[aarx * nb_tx + aatx] = out;
+    }
+  }
+}
+
 static int vrtsim_write_with_chanmod(vrtsim_state_t *vrtsim_state,
                                      openair0_timestamp_t timestamp,
                                      void **samplesVoid,
@@ -779,13 +804,14 @@ static int vrtsim_write_with_chanmod(vrtsim_state_t *vrtsim_state,
 {
   // Sample history for channel impulse response
   static c16_t saved_samples[OPENAIR0_MAX_ANTENNAS][SAVED_SAMPLES_LEN] __attribute__((aligned(32))) = {0};
+  bool taps_changed[MAX_NUM_UES] = {0};
   if (vrtsim_state->use_cirdb) {
     double seconds = (double)timestamp / vrtsim_state->sample_rate;
     uint64_t elapsed_ns = (uint64_t)(seconds * 1e9 + 0.5);
     int num_providers = (vrtsim_state->role == ROLE_SERVER && vrtsim_state->num_ues > 1) ? vrtsim_state->num_ues : 1;
     for (int p = 0; p < num_providers; p++) {
       if (vrtsim_state->cirdb_providers[p]) {
-        cirdb_update(vrtsim_state->cirdb_providers[p], elapsed_ns);
+        taps_changed[p] = cirdb_update(vrtsim_state->cirdb_providers[p], elapsed_ns);
       }
     }
   }
@@ -806,7 +832,7 @@ static int vrtsim_write_with_chanmod(vrtsim_state_t *vrtsim_state,
     channel_desc_t *chan_desc = NULL;
 #ifdef OAI_VRTSIM_TAPS_CLIENT
     if (vrtsim_state->taps_client) {
-      chan_desc = taps_client_get_model(vrtsim_state->taps_client, i);
+      chan_desc = taps_client_get_model(vrtsim_state->taps_client, i, &taps_changed[i]);
     } else {
       chan_desc = vrtsim_state->channel_desc[i];
     }
@@ -822,30 +848,21 @@ static int vrtsim_write_with_chanmod(vrtsim_state_t *vrtsim_state,
                 "Need to ensure at least %ld samples are saved between calls\n",
                 channel_length - 1);
 
-    cf_t channel_impulse_response[nb_rx * nb_tx][channel_length] __attribute__((aligned(32)));
-    cf_t *channel_impulse_response_p[nb_rx * nb_tx] __attribute__((aligned(32)));
-    int channel_index = 0;
-    if (!vrtsim_state->taps_socket && !vrtsim_state->use_cirdb) {
-      const float path_gain_linear = powf(10, -chan_desc->path_loss_dB / 20.0);
-      for (int aarx = 0; aarx < nb_rx; aarx++) {
-        for (int aatx = 0; aatx < nb_tx; aatx++) {
-          const cf_t *channelModel = chan_desc->ch_ps[aarx + (aatx * chan_desc->nb_rx)];
-          for (int i = 0; i < channel_length; i++) {
-            channel_impulse_response[channel_index][i].r = channelModel[i].r * path_gain_linear;
-            channel_impulse_response[channel_index][i].i = channelModel[i].i * path_gain_linear;
-          }
-          channel_impulse_response_p[channel_index] = channel_impulse_response[channel_index];
-          channel_index++;
-        }
-      }
-    } else {
-      for (int aarx = 0; aarx < nb_rx; aarx++) {
-        for (int aatx = 0; aatx < nb_tx; aatx++) {
-          struct complexf *channelModel = chan_desc->ch_ps[aarx + (aatx * chan_desc->nb_rx)];
-          channel_impulse_response_p[channel_index++] = channelModel;
-        }
-      }
+#ifdef CHANNEL_SIM_CUDA
+    cf_t channel_impulse_response[nb_rx * nb_tx * channel_length] __attribute__((aligned(32)));
+    cf_t *channel_impulse_response_p[nb_rx * nb_tx];
+    get_taps(vrtsim_state, chan_desc, nb_tx, channel_impulse_response, channel_impulse_response_p);
+#else
+    channel_pipeline_channel_t **pipeline_channel = &vrtsim_state->pipeline_channel[i];
+    if (!*pipeline_channel || taps_changed[i]) {
+      if (!*pipeline_channel)
+        *pipeline_channel = channel_pipeline_channel_init();
+      cf_t channel_impulse_response[nb_rx * nb_tx * channel_length];
+      cf_t *channel_impulse_response_p[nb_rx * nb_tx];
+      get_taps(vrtsim_state, chan_desc, nb_tx, channel_impulse_response, channel_impulse_response_p);
+      channel_pipeline_channel_set(*pipeline_channel, (const cf_t **)channel_impulse_response_p, nb_tx, nb_rx, channel_length);
     }
+#endif
     c16_t output[nb_rx][nsamps] __attribute__((aligned(32)));
     c16_t *output_ptr[nb_rx] __attribute__((aligned(32)));
     for (int aarx = 0; aarx < nb_rx; aarx++) {
@@ -876,8 +893,9 @@ static int vrtsim_write_with_chanmod(vrtsim_state_t *vrtsim_state,
                           nb_rx,
                           noise_power);
 #else
-    channel_pipeline(&vrtsim_state->tpool,
-                     (const cf_t **)channel_impulse_response_p,
+    channel_pipeline(vrtsim_state->channel_pipeline_context,
+                     &vrtsim_state->tpool,
+                     *pipeline_channel,
                      (const c16_t **)saved_samples_ptr,
                      (const c16_t **)input_ptr,
                      saved_samples_input_len,
@@ -885,9 +903,6 @@ static int vrtsim_write_with_chanmod(vrtsim_state_t *vrtsim_state,
                      NULL,
                      nsamps,
                      nsamps,
-                     channel_length,
-                     nb_tx,
-                     nb_rx,
                      noise_power);
 #endif
 
@@ -1058,6 +1073,9 @@ static void vrtsim_end(openair0_device_t *device)
     cuda_channel_pipeline_shutdown(vrtsim_state->channel_pipeline_context);
 #else
     abortTpool(&vrtsim_state->tpool);
+    channel_pipeline_shutdown(vrtsim_state->channel_pipeline_context);
+    for (int u = 0; u < MAX_NUM_UES; u++)
+      channel_pipeline_channel_free(vrtsim_state->pipeline_channel[u]);
 #endif
     if (vrtsim_state->use_cirdb) {
       for (int p = 0; p < MAX_NUM_UES; p++) {
@@ -1182,7 +1200,7 @@ __attribute__((__visibility__("default"))) int device_init(openair0_device_t *de
     int16_t noise_power = noise_power_dBFS == INVALID_DBFS_VALUE ? 0 : (int16_t)(32767.0 / powf(10.0, .05 * -noise_power_dBFS));
     LOG_A(HW, "VRTSIM: Noise power %d sample value\n", noise_power);
 #ifndef CHANNEL_SIM_CUDA
-    channel_pipeline_init(noise_power);
+    vrtsim_state->channel_pipeline_context = channel_pipeline_init(noise_power);
     initNamedTpool(vrtsim_state->thread_pool_cores, &vrtsim_state->tpool, false, "vrtsim_chanmod");
 #endif
   }

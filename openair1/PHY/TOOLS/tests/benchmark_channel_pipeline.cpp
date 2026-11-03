@@ -184,12 +184,15 @@ static void BM_channel_convolution_tpool(benchmark::State &state)
   }
 
   void *tpool = init_tpool(16);
-  channel_pipeline_init(0.0f);
+  channel_pipeline_t *pipeline = channel_pipeline_init(0.0f);
+  channel_pipeline_channel_t *pc = channel_pipeline_channel_init();
+  channel_pipeline_channel_set(pc, (const cf_t **)channel.data(), nb_tx, nb_rx, channel_length);
 
   size_t total_samples = 0;
   for (auto _ : state) {
-    channel_pipeline(tpool,
-                     (const cf_t **)channel.data(),
+    channel_pipeline(pipeline,
+                     tpool,
+                     pc,
                      (const c16_t **)input.data(),
                      nullptr,
                      num_input_samples,
@@ -197,15 +200,13 @@ static void BM_channel_convolution_tpool(benchmark::State &state)
                      nullptr,
                      num_samples,
                      num_samples,
-                     channel_length,
-                     nb_tx,
-                     nb_rx,
                      0.0f);
     total_samples += num_samples;
   }
   state.counters["MSPS"] = benchmark::Counter(total_samples / 1000000.f, benchmark::Counter::kIsRate);
 
-  channel_pipeline_shutdown();
+  channel_pipeline_channel_free(pc);
+  channel_pipeline_shutdown(pipeline);
 
   destroy_tpool(tpool);
 
