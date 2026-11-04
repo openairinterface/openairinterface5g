@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include "noise_device.h"
+#include <simde/x86/avx.h>
 
 // Use block size equal to cache size
 #define BLOCK_SIZE (64 / sizeof(float)) // 4 bytes per float
@@ -132,5 +133,34 @@ void get_noise_vector(noise_device_t *dev, float *noise_vector, int length)
     start_block = 0;
     length -= copy_size;
     noise_vector += copy_size;
+  }
+}
+
+// vector[0 .. n) += noise[0 .. n): load, add, store in one pass (8 floats per simde vector; native
+// AVX on x86, NEON pairs on aarch64).
+static void add_noise_block(float *restrict vector, const float *restrict noise, int n)
+{
+  int i = 0;
+  for (; i + 16 <= n; i += 16) {
+    simde__m256 a = simde_mm256_add_ps(simde_mm256_loadu_ps(vector + i), simde_mm256_loadu_ps(noise + i));
+    simde__m256 b = simde_mm256_add_ps(simde_mm256_loadu_ps(vector + i + 8), simde_mm256_loadu_ps(noise + i + 8));
+    simde_mm256_storeu_ps(vector + i, a);
+    simde_mm256_storeu_ps(vector + i + 8, b);
+  }
+  for (; i + 8 <= n; i += 8)
+    simde_mm256_storeu_ps(vector + i, simde_mm256_add_ps(simde_mm256_loadu_ps(vector + i), simde_mm256_loadu_ps(noise + i)));
+  for (; i < n; i++)
+    vector[i] += noise[i];
+}
+
+void add_noise_vector(noise_device_t *dev, float *vector, int length)
+{
+  int start_block = random_block(dev);
+  while (length > 0) {
+    int add_size = min(length, (NUM_BLOCKS - start_block) * BLOCK_SIZE);
+    add_noise_block(vector, &dev->noise[start_block * BLOCK_SIZE], add_size);
+    start_block = 0;
+    length -= add_size;
+    vector += add_size;
   }
 }

@@ -7,6 +7,9 @@
 #include <tuple>
 #include <cmath>
 #include <cstdlib>
+#include <algorithm>
+#include <sstream>
+#include <utility>
 #include "oai_cuda.h"
 #include "test_channel_pipeline_tools.h"
 #include "channel_pipeline.h"
@@ -24,34 +27,43 @@ extern "C" void exit_function(const char *file, const char *function, const int 
   exit(EXIT_FAILURE);
 }
 
+// Taps scaled as K/sqrt(nb_tx * channel_length) so the output std stays ~2800 regardless of the
+// antenna/tap count (see accuracy_test_gpu_optimized_pipeline.cpp): far from int16 saturation, so
+// the comparison checks the convolution rather than clipping.
+static void generate_scaled_taps(cf_t *sig, int channel_length, int nb_tx)
+{
+  const float max_tap_mag = 6.0f / std::sqrt((float)nb_tx * (float)channel_length);
+  for (int i = 0; i < channel_length; i++) {
+    sig[i].r = (((rand() % 2000) - 1000) / 1000.0f) * max_tap_mag;
+    sig[i].i = (((rand() % 2000) - 1000) / 1000.0f) * max_tap_mag;
+  }
+}
+
+#ifdef CHANNEL_SIM_CUDA
 class ChannelConvolutionTest : public ::testing::TestWithParam<std::tuple<int, int, int>> {
  protected:
   void SetUp() override
   {
-#ifdef CHANNEL_SIM_CUDA
     const int nb_rx = std::get<0>(GetParam());
     const int nb_tx = std::get<1>(GetParam());
     const int channel_length = 16;
     gpu_context = cuda_channel_pipeline_init(MAX_SAMPLE_LENGTH, nb_tx, nb_rx, channel_length);
-#endif
     tpool = init_tpool(8);
-    channel_pipeline_init(0.0f);
+    pipeline = channel_pipeline_init(0.0f);
   }
 
   void TearDown() override
   {
-#ifdef CHANNEL_SIM_CUDA
     cuda_channel_pipeline_shutdown(gpu_context);
-#endif
     destroy_tpool(tpool);
-    channel_pipeline_shutdown();
+    channel_pipeline_shutdown(pipeline);
   }
 
   void *gpu_context = nullptr;
   void *tpool = nullptr;
+  channel_pipeline_t *pipeline = nullptr;
 };
 
-#ifdef CHANNEL_SIM_CUDA
 TEST_P(ChannelConvolutionTest, CompareCpuGpu)
 {
   int nb_rx = std::get<0>(GetParam());
@@ -72,31 +84,16 @@ TEST_P(ChannelConvolutionTest, CompareCpuGpu)
   // The input buffer must be padded at the beginning to handle the convolution history.
   size_t num_input_samples = num_samples + channel_length - 1;
 
-  // generate_random_signal() draws samples uniformly from [-1000, 1000]. Summed over
-  // nb_tx * channel_length taps per output sample, that can overflow the int16 range both
-  // implementations truncate their output into; near a wrap boundary, a fraction-of-a-unit
-  // rounding difference between the CPU (direct time-domain) and GPU (FFT-based) convolution
-  // produces a huge integer delta despite the underlying math being nearly identical. Right-shift
-  // the input by 2 bits to cap it below 2^8 so the convolution sum stays well within int16 range.
-  constexpr int kInputScaleShift = 2;
   std::vector<c16_t *> input(nb_tx);
   for (int i = 0; i < nb_tx; ++i) {
     input[i] = new c16_t[num_input_samples];
     generate_random_signal(input[i], num_input_samples);
-    for (size_t j = 0; j < num_input_samples; ++j) {
-      input[i][j].r >>= kInputScaleShift;
-      input[i][j].i >>= kInputScaleShift;
-    }
   }
 
   std::vector<cf_t *> channel(nb_rx * nb_tx);
   for (int i = 0; i < nb_rx * nb_tx; ++i) {
     channel[i] = new cf_t[channel_length];
-    generate_random_signal_float(channel[i], channel_length);
-    for (size_t j = 0; j < channel_length; ++j) {
-      channel[i][j].r *= 0.25;
-      channel[i][j].i *= 0.25;
-    }
+    generate_scaled_taps(channel[i], channel_length, nb_tx);
   }
 
   std::vector<c16_t *> output_cpu(nb_rx);
@@ -154,135 +151,6 @@ TEST_P(ChannelConvolutionTest, CompareCpuGpu)
     delete[] output_gpu[i];
   }
 }
-#endif
-
-TEST_P(ChannelConvolutionTest, CompareCpuTpool)
-{
-  int nb_rx = std::get<0>(GetParam());
-  int nb_tx = std::get<1>(GetParam());
-  int num_samples = std::get<2>(GetParam());
-  int channel_length = 16;
-
-  // The input buffer must be padded at the beginning to handle the convolution history.
-  size_t num_input_samples = num_samples + channel_length - 1;
-
-  size_t num_input_samples_input0 = num_input_samples;
-  size_t num_input_samples_input1 = 0;
-  if (num_samples > 5000) {
-    num_input_samples_input1 = 5000;
-    num_input_samples_input0 = num_input_samples - num_input_samples_input1;
-  }
-  std::vector<c16_t *> input(nb_tx);
-  for (int i = 0; i < nb_tx; ++i) {
-    input[i] = new c16_t[num_input_samples_input0];
-    generate_random_signal(input[i], num_input_samples_input0);
-  }
-  std::vector<c16_t *> input2(nb_tx);
-  if (num_input_samples_input1 > 0) {
-    for (int i = 0; i < nb_tx; i++) {
-      input2[i] = new c16_t[num_input_samples_input1];
-      generate_random_signal(input2[i], num_input_samples_input1);
-    }
-  }
-
-  std::vector<cf_t *> channel(nb_rx * nb_tx);
-  for (int i = 0; i < nb_rx * nb_tx; ++i) {
-    channel[i] = new cf_t[channel_length];
-    generate_random_signal_float(channel[i], channel_length);
-  }
-
-  std::vector<c16_t *> output_cpu(nb_rx);
-  std::vector<c16_t *> output_cpu2(nb_rx);
-  std::vector<c16_t *> output_tpool(nb_rx);
-  std::vector<c16_t *> output_tpool2(nb_rx);
-
-  size_t num_output_samples_output_0 = num_samples;
-  size_t num_output_samples_output_1 = 0;
-  if (num_samples > 10000) {
-    num_output_samples_output_1 = 10000;
-    num_output_samples_output_0 = num_samples - num_output_samples_output_1;
-  }
-
-  for (int i = 0; i < nb_rx; ++i) {
-    output_cpu[i] = new c16_t[num_output_samples_output_0];
-    output_tpool[i] = new c16_t[num_output_samples_output_0];
-    memset(output_cpu[i], 0, num_output_samples_output_0 * sizeof(c16_t));
-    memset(output_tpool[i], 0, num_output_samples_output_0 * sizeof(c16_t));
-  }
-
-  if (num_output_samples_output_1 > 0) {
-    for (int i = 0; i < nb_rx; ++i) {
-      output_cpu2[i] = new c16_t[num_output_samples_output_1];
-      output_tpool2[i] = new c16_t[num_output_samples_output_1];
-      memset(output_cpu2[i], 0, num_output_samples_output_1 * sizeof(c16_t));
-      memset(output_tpool2[i], 0, num_output_samples_output_1 * sizeof(c16_t));
-    }
-  }
-
-  // Run CPU implementation
-  channel_convolution_cpu((const cf_t **)channel.data(),
-                          (const c16_t **)input.data(),
-                          num_input_samples_input1 > 0 ? (const c16_t **)input2.data() : nullptr,
-                          num_input_samples_input0,
-                          output_cpu.data(),
-                          num_output_samples_output_1 > 0 ? output_cpu2.data() : nullptr,
-                          num_output_samples_output_0,
-                          num_samples,
-                          channel_length,
-                          nb_tx,
-                          nb_rx);
-
-  // Run tpool implementation
-  channel_pipeline(tpool,
-                   (const cf_t **)channel.data(),
-                   (const c16_t **)input.data(),
-                   num_input_samples_input1 > 0 ? (const c16_t **)input2.data() : nullptr,
-                   num_input_samples_input0,
-                   output_tpool.data(),
-                   num_output_samples_output_1 > 0 ? output_tpool2.data() : nullptr,
-                   num_output_samples_output_0,
-                   num_samples,
-                   channel_length,
-                   nb_tx,
-                   nb_rx,
-                   0.0f);
-
-  // Compare results
-  for (int r = 0; r < nb_rx; ++r) {
-    for (uint i = 0; i < num_output_samples_output_0; ++i) {
-      EXPECT_LE(std::abs(output_cpu[r][i].r - output_tpool[r][i].r), 1) << "Real part mismatch at rx=" << r << " sample=" << i;
-      EXPECT_LE(std::abs(output_cpu[r][i].i - output_tpool[r][i].i), 1) << "Imag part mismatch at rx=" << r << " sample=" << i;
-    }
-  }
-
-  if (num_output_samples_output_1 > 0) {
-    for (int r = 0; r < nb_rx; ++r) {
-      for (uint i = 0; i < num_output_samples_output_1; ++i) {
-        EXPECT_LE(std::abs(output_cpu2[r][i].r - output_tpool2[r][i].r), 1) << "Real part mismatch at rx=" << r << " sample=" << i;
-        EXPECT_LE(std::abs(output_cpu2[r][i].i - output_tpool2[r][i].i), 1) << "Imag part mismatch at rx=" << r << " sample=" << i;
-      }
-    }
-  }
-
-  // Cleanup
-  for (int i = 0; i < nb_tx; ++i)
-    delete[] input[i];
-  if (num_input_samples_input1 > 0)
-    for (int i = 0; i < nb_tx; i++)
-      delete[] input2[i];
-  for (int i = 0; i < nb_rx * nb_tx; ++i)
-    delete[] channel[i];
-  for (int i = 0; i < nb_rx; ++i) {
-    delete[] output_cpu[i];
-    delete[] output_tpool[i];
-  }
-  if (num_output_samples_output_1 > 0) {
-    for (int i = 0; i < nb_rx; ++i) {
-      delete[] output_cpu2[i];
-      delete[] output_tpool2[i];
-    }
-  }
-}
 
 INSTANTIATE_TEST_SUITE_P(ChannelConvolutionTests,
                          ChannelConvolutionTest,
@@ -297,6 +165,233 @@ INSTANTIATE_TEST_SUITE_P(ChannelConvolutionTests,
                            name << "Rx" << rx << "_Tx" << tx << "_Samples" << samples;
                            return name.str();
                          });
+#endif // CHANNEL_SIM_CUDA
+
+// Input/output of one pipeline call, with the input split into sig0|sig1 at in_split and the
+// output split into sig0|sig1 at out_split (the same way vrtsim passes history + new samples).
+struct PipelineIo {
+  int nb_tx, nb_rx, num_samples, L, in_split, out_split;
+  std::vector<std::vector<c16_t>> in0, in1, out0, out1, ref0, ref1;
+  std::vector<std::vector<cf_t>> channel;
+
+  PipelineIo(int nb_tx_, int nb_rx_, int num_samples_, int L_, int in_split_, int out_split_)
+      : nb_tx(nb_tx_), nb_rx(nb_rx_), num_samples(num_samples_), L(L_), in_split(in_split_), out_split(out_split_)
+  {
+    const int total = num_samples + L - 1;
+    in0.resize(nb_tx);
+    in1.resize(nb_tx);
+    for (int t = 0; t < nb_tx; t++) {
+      in0[t].resize(in_split);
+      in1[t].resize(std::max(1, total - in_split));
+      generate_random_signal(in0[t].data(), in_split);
+      generate_random_signal(in1[t].data(), total - in_split);
+    }
+    for (auto *v : {&out0, &out1, &ref0, &ref1})
+      v->resize(nb_rx);
+    for (int r = 0; r < nb_rx; r++) {
+      out0[r].assign(out_split, {0, 0});
+      ref0[r].assign(out_split, {0, 0});
+      out1[r].assign(std::max(1, num_samples - out_split), {0, 0});
+      ref1[r].assign(std::max(1, num_samples - out_split), {0, 0});
+    }
+    channel.resize(nb_rx * nb_tx);
+    for (auto &c : channel) {
+      c.resize(L);
+      generate_scaled_taps(c.data(), L, nb_tx);
+    }
+  }
+
+  template <typename T>
+  static std::vector<T *> ptrs(std::vector<std::vector<T>> &v)
+  {
+    std::vector<T *> p;
+    for (auto &x : v)
+      p.push_back(x.data());
+    return p;
+  }
+
+  // Set the taps on pc and run on it.
+  void run(channel_pipeline_t *pipeline, void *tpool, channel_pipeline_channel_t *pc, float noise_power = 0.0f)
+  {
+    auto ch = ptrs(channel);
+    channel_pipeline_channel_set(pc, (const cf_t **)ch.data(), nb_tx, nb_rx, L);
+    auto i0 = ptrs(in0), i1 = ptrs(in1);
+    auto o0 = ptrs(out0), o1 = ptrs(out1);
+    channel_pipeline(pipeline,
+                     tpool,
+                     pc,
+                     (const c16_t **)i0.data(),
+                     (const c16_t **)i1.data(),
+                     in_split,
+                     o0.data(),
+                     o1.data(),
+                     out_split,
+                     num_samples,
+                     noise_power);
+  }
+
+  void run(channel_pipeline_t *pipeline, void *tpool, float noise_power = 0.0f)
+  {
+    channel_pipeline_channel_t *pc = channel_pipeline_channel_init();
+    run(pipeline, tpool, pc, noise_power);
+    channel_pipeline_channel_free(pc);
+  }
+
+  void reference()
+  {
+    auto ch = ptrs(channel);
+    auto i0 = ptrs(in0), i1 = ptrs(in1);
+    auto r0 = ptrs(ref0), r1 = ptrs(ref1);
+    channel_convolution_cpu((const cf_t **)ch.data(),
+                            (const c16_t **)i0.data(),
+                            (const c16_t **)i1.data(),
+                            in_split,
+                            r0.data(),
+                            r1.data(),
+                            out_split,
+                            num_samples,
+                            L,
+                            nb_tx,
+                            nb_rx);
+  }
+
+  // Max absolute per-component difference to the reference, and error power.
+  std::pair<int, double> compare() const
+  {
+    int max_err = 0;
+    double err_pow = 0;
+    for (int r = 0; r < nb_rx; r++) {
+      for (int i = 0; i < num_samples; i++) {
+        const c16_t a = i < out_split ? out0[r][i] : out1[r][i - out_split];
+        const c16_t b = i < out_split ? ref0[r][i] : ref1[r][i - out_split];
+        int dr = std::abs(a.r - b.r), di = std::abs(a.i - b.i);
+        max_err = std::max(max_err, std::max(dr, di));
+        err_pow += (double)dr * dr + (double)di * di;
+      }
+    }
+    return {max_err, err_pow / (2.0 * nb_rx * num_samples)};
+  }
+};
+
+using CpuParam = std::tuple<channel_pipeline_method_t, int, int, int, int>;
+
+class ChannelPipelineCpuTest : public ::testing::TestWithParam<CpuParam> {
+ protected:
+  void SetUp() override
+  {
+    pipeline = channel_pipeline_init(0.0f);
+    channel_pipeline_set_method(pipeline, std::get<0>(GetParam()));
+    tpool = init_tpool(8);
+  }
+
+  void TearDown() override
+  {
+    if (tpool)
+      destroy_tpool(tpool);
+    channel_pipeline_shutdown(pipeline);
+  }
+
+  void *tpool = nullptr;
+  channel_pipeline_t *pipeline = nullptr;
+};
+
+TEST_P(ChannelPipelineCpuTest, MatchesReference)
+{
+  const int nb_rx = std::get<1>(GetParam());
+  const int nb_tx = std::get<2>(GetParam());
+  const int num_samples = std::get<3>(GetParam());
+  const int L = std::get<4>(GetParam());
+  const int total = num_samples + L - 1;
+  // Input split: all in sig0; vrtsim layout (only the L - 1 history in sig0); an odd split.
+  // Output split: all in sig0, or an odd split.
+  const int in_splits[] = {total, L - 1, total / 2 + 3};
+  const int out_splits[] = {num_samples, num_samples / 2 + 1};
+  for (int in_split : in_splits) {
+    for (int out_split : out_splits) {
+      PipelineIo io(nb_tx, nb_rx, num_samples, L, in_split, out_split);
+      io.reference();
+      io.run(pipeline, tpool);
+      auto [max_err, err_pow] = io.compare();
+      EXPECT_LE(max_err, 1) << "in_split=" << in_split << " out_split=" << out_split;
+    }
+  }
+}
+
+// Setting new taps on a channel replaces everything built from the old ones, including the
+// frequency response of an FFT size already used.
+TEST_P(ChannelPipelineCpuTest, ChannelSetReplacesTaps)
+{
+  const int nb_rx = std::get<1>(GetParam());
+  const int nb_tx = std::get<2>(GetParam());
+  const int num_samples = std::get<3>(GetParam());
+  const int L = std::get<4>(GetParam());
+  PipelineIo a(nb_tx, nb_rx, num_samples, L, L - 1, num_samples);
+  PipelineIo b(nb_tx, nb_rx, num_samples, L, L - 1, num_samples);
+  // A different shape, so set also has to resize.
+  PipelineIo c(nb_rx, nb_tx, num_samples, L + 3, L + 2, num_samples);
+  channel_pipeline_channel_t *pc = channel_pipeline_channel_init();
+  for (int round = 0; round < 3; round++) {
+    for (PipelineIo *io : {&a, &b, &c}) {
+      io->reference();
+      io->run(pipeline, tpool, pc);
+      EXPECT_LE(io->compare().first, 1) << "round " << round;
+    }
+    a.channel[0][L / 2].r += 0.5f;
+    a.channel[nb_rx * nb_tx - 1][0].i -= 0.25f;
+  }
+  channel_pipeline_channel_free(pc);
+}
+
+static std::string cpu_param_name(const ::testing::TestParamInfo<CpuParam> &info)
+{
+  std::ostringstream name;
+  name << (std::get<0>(info.param) == CHANNEL_PIPELINE_METHOD_FFT ? "fft" : "direct") << "_Rx" << std::get<1>(info.param) << "_Tx"
+       << std::get<2>(info.param) << "_Samples" << std::get<3>(info.param) << "_ChanLen" << std::get<4>(info.param);
+  return name.str();
+}
+
+static const auto cpu_methods = ::testing::Values(CHANNEL_PIPELINE_METHOD_DIRECT, CHANNEL_PIPELINE_METHOD_FFT);
+static const auto cpu_samples = ::testing::Values(1, 100, 1031, 30720);
+static const auto cpu_lengths = ::testing::Values(1, 7, 16, 64, 255);
+
+INSTANTIATE_TEST_SUITE_P(ChannelPipelineCpu,
+                         ChannelPipelineCpuTest,
+                         ::testing::Combine(cpu_methods,
+                                            ::testing::Values(1, 2, 4), // nb_rx
+                                            ::testing::Values(1, 3, 4), // nb_tx
+                                            cpu_samples,
+                                            cpu_lengths),
+                         cpu_param_name);
+
+// Asymmetric antenna configurations: 8 gNB antennas against a 2-antenna UE, in both directions.
+INSTANTIATE_TEST_SUITE_P(ChannelPipelineCpu8x2,
+                         ChannelPipelineCpuTest,
+                         ::testing::Combine(cpu_methods, ::testing::Values(8), ::testing::Values(2), cpu_samples, cpu_lengths),
+                         cpu_param_name);
+
+INSTANTIATE_TEST_SUITE_P(ChannelPipelineCpu2x8,
+                         ChannelPipelineCpuTest,
+                         ::testing::Combine(cpu_methods, ::testing::Values(2), ::testing::Values(8), cpu_samples, cpu_lengths),
+                         cpu_param_name);
+
+// Noise is added on top of the convolution with the configured standard deviation.
+TEST(ChannelPipelineCpuNoise, AddsNoiseOfConfiguredPower)
+{
+  const float sigma = 10.0f;
+  void *tpool = init_tpool(8);
+  channel_pipeline_t *pipeline = channel_pipeline_init(sigma);
+  for (auto method : {CHANNEL_PIPELINE_METHOD_DIRECT, CHANNEL_PIPELINE_METHOD_FFT}) {
+    channel_pipeline_set_method(pipeline, method);
+    PipelineIo io(2, 2, 30720, 16, 15, 30720);
+    io.reference();
+    io.run(pipeline, tpool, sigma);
+    double rms = std::sqrt(io.compare().second);
+    EXPECT_GT(rms, 0.8 * sigma);
+    EXPECT_LT(rms, 1.2 * sigma);
+  }
+  destroy_tpool(tpool);
+  channel_pipeline_shutdown(pipeline);
+}
 
 int main(int argc, char **argv)
 {

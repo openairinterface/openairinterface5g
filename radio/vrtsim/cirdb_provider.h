@@ -5,6 +5,7 @@
 #ifndef OAI_VRTSIM_CIRDB_PROVIDER_H
 #define OAI_VRTSIM_CIRDB_PROVIDER_H
 
+#include <stdbool.h>
 #include <stdint.h>
 #include "SIMULATION/TOOLS/sim.h"
 
@@ -37,8 +38,9 @@ cirdb_provider_t *cirdb_connect(int num_tx_antennas,
                                 const cirdb_select_opts_t *sel,
                                 channel_desc_t **channel_desc_out);
 
-/* Advance snapshot selection based on elapsed nanoseconds since the start. */
-void cirdb_update(cirdb_provider_t *provider, uint64_t ns_since_start);
+/* Advance snapshot selection based on elapsed nanoseconds since the start. Returns true if a new
+ * snapshot was published. */
+bool cirdb_update(cirdb_provider_t *provider, uint64_t ns_since_start);
 
 /* Tear down and free resources. */
 void cirdb_stop(cirdb_provider_t *provider);

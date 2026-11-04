@@ -148,8 +148,9 @@ struct taps_client_t {
     }
   }
 
-  channel_desc_t *get_model(int id)
+  channel_desc_t *get_model(int id, bool *updated)
   {
+    *updated = false;
     if (id < 0 || id >= MAX_NUM_IDS)
       return nullptr;
 
@@ -210,6 +211,7 @@ struct taps_client_t {
       LOG_D(HW, "New taps for id %d: channel_length %u, %ux%u antennas\n", id, taps_len, num_rx, num_tx);
     }
 
+    *updated = true;
     return desc;
   }
 };
@@ -219,9 +221,9 @@ extern "C" void *taps_client_connect(const char *socket_path, int num_tx_ant, in
   return new taps_client_t(socket_path, num_tx_ant, num_rx_ant);
 }
 
-extern "C" channel_desc_t *taps_client_get_model(void *handle, int id)
+extern "C" channel_desc_t *taps_client_get_model(void *handle, int id, bool *updated)
 {
-  return static_cast<taps_client_t *>(handle)->get_model(id);
+  return static_cast<taps_client_t *>(handle)->get_model(id, updated);
 }
 
 extern "C" void taps_client_stop(void *handle)
