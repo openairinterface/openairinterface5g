@@ -17,13 +17,11 @@
 #include "common/utils/assertions.h"
 #include "executables/softmodem-common.h"
 #include "NR_BCCH-BCH-Message.h"
-#include "NR_ReconfigurationWithSync.h"
 #include "NR_ServingCellConfig.h"
 #include "NR_UE-NR-Capability.h"
 #include "PHY/CODING/nrLDPC_coding/nrLDPC_coding_interface.h"
 #include "PHY/INIT/nr_phy_init.h"
 #include "PHY/MODULATION/nr_modulation.h"
-#include "PHY/NR_REFSIG/dmrs_nr.h"
 #include "PHY/NR_REFSIG/ptrs_nr.h"
 #include "PHY/NR_REFSIG/ul_ref_seq_nr.h"
 #include "PHY/NR_TRANSPORT/nr_transport_common_proto.h"
@@ -78,18 +76,14 @@ const char *__asan_default_options()
   /* don't do leak checking in nr_ulsim, not finished yet */
   return "detect_leaks=0";
 }
-PHY_VARS_gNB *gNB;
+
 RAN_CONTEXT_t RC;
 char *uecap_file;
 int64_t uplink_frequency_offset[MAX_NUM_CCs][4];
-
-//uint8_t nfapi_mode = 0;
 uint64_t downlink_frequency[MAX_NUM_CCs][4];
 THREAD_STRUCT thread_struct;
-nfapi_ue_release_request_body_t release_rntis;
 
 // NTN cellSpecificKoffset-r17, but in slots for DL SCS
-unsigned int NTN_UE_Koffset = 0;
 
 void nr_derive_key_ng_ran_star(uint16_t pci, uint64_t nr_arfcn_dl, const uint8_t key[32], uint8_t *key_ng_ran_star)
 {
@@ -100,25 +94,16 @@ void nr_derive_key_ng_ran_star(uint16_t pci, uint64_t nr_arfcn_dl, const uint8_t
  * however, if E2 agent is defined, the following functions are used in
  * rrc_gNB.c, but defined in RAN functions. In order to avoid pulling this in
  * here as well, only provide a prototype (and abort if they are ever called). */
-void signal_rrc_msg(void /*const nr_rrc_class_e nr_channel, const uint32_t rrc_msg_id, const byte_array_t rrc_ba*/ ) { abort(); }
-void signal_rrc_state_changed_to(void /* const gNB_RRC_UE_t *rrc_ue_context, const rrc_state_e2sm_rc_e rrc_state */) { abort(); }
-void signal_ue_id(void /* const gNB_RRC_UE_t *rrc_ue_context, const uint16_t class, const uint32_t msg_id */) { abort(); }
 
 void e1_bearer_context_setup(const e1ap_bearer_setup_req_t *req) { abort(); }
 void e1_bearer_context_modif(const e1ap_bearer_mod_req_t *req) { abort(); }
 void e1_bearer_context_mod_confirm(const e1ap_bearer_mod_confirm_t *conf) { abort(); }
 void e1_bearer_release_cmd(const e1ap_bearer_release_cmd_t *cmd) { abort(); }
 
-int8_t nr_rrc_RA_succeeded(const module_id_t mod_id, const uint8_t gNB_index) {
-  return 0;
-}
-
 void nr_derive_key(int alg_type, uint8_t alg_id, const uint8_t key[32], uint8_t out[16])
 {
   (void)alg_type;
 }
-
-void processSlotTX(void *arg) {}
 
 nrUE_params_t nrUE_params;
 
@@ -128,8 +113,6 @@ nrUE_params_t *get_nrUE_params(void) {
 // needed for some functions
 uint16_t n_rnti = 0x1234;
 openair0_config_t openair0_cfg_g[MAX_CARDS] = {};
-
-channel_desc_t *UE2gNB[MAX_MOBILES_PER_GNB][NUMBER_OF_gNB_MAX];
 
 configmodule_interface_t *uniqCfg = NULL;
 int main(int argc, char *argv[])
@@ -148,20 +131,17 @@ int main(int argc, char *argv[])
   int do_SRS = 0;
   FILE *output_fd = NULL;
   float **s_interleaved, **r_re, **r_im;
-  //uint8_t write_output_file = 0;
   int trial, n_trials = 1, n_false_positive = 0, delay = 0;
   double maxDoppler = 0.0;
   uint8_t n_tx = 1, n_rx = 1;
   channel_desc_t *UE2gNB;
   uint8_t extended_prefix_flag = 0;
-  //int8_t interf1 = -21, interf2 = -21;
   FILE *input_fd = NULL;
   SCM_t channel_model = AWGN;  //Rayleigh1_anticorr;
   corr_level_t corr_level = CORR_LEVEL_LOW;
   uint16_t N_RB_DL = 106, N_RB_UL = 106, mu = 1;
   uint8_t length_dmrs = pusch_len1;
 
-  // unsigned char frame_type = 0;
   int loglvl = OAILOG_WARNING;
   uint16_t nb_symb_sch = 12;
   int start_symbol = 0;
@@ -185,7 +165,6 @@ int main(int argc, char *argv[])
   int chest_type[2] = {0};
   int enable_ptrs = 0;
   int modify_dmrs = 0;
-  /* L_PTRS = ptrs_arg[0], K_PTRS = ptrs_arg[1] */
   int ptrs_arg[2] = {-1,-1};// Invalid values
   int dmrs_arg[4] = {-1,-1,-1,-1};// Invalid values
   uint16_t ptrsSymPos = 0;
@@ -194,15 +173,12 @@ int main(int argc, char *argv[])
   int ack_bits = 0;
   int csi1_bits = 0;
   int csi2_bits = 0;
-
   uint8_t transform_precoding = transformPrecoder_disabled; // 0 - ENABLE, 1 - DISABLE
   uint8_t num_dmrs_cdm_grps_no_data = 1;
   uint8_t mcs_table = 0;
   int ilbrm = 0;
-
   UE_nr_rxtx_proc_t UE_proc;
   int file_offset = 0;
-
   double DS_TDL = .03;
   int ibwps=24;
   int ibwp_rboffset=41;
@@ -217,7 +193,6 @@ int main(int argc, char *argv[])
     exit_fun("[NR_ULSIM] Error, configuration module init failed\n");
   }
   int ul_proc_error = 0; // uplink processing checking status flag
-  //logInit();
   randominit();
 
   /* initialize the sin-cos table */
@@ -245,7 +220,6 @@ int main(int argc, char *argv[])
     if (c == 1 || c == '-' || c == 'O')
       continue;
 
-    printf("handling optarg %c\n",c);
     switch (c) {
     case 'a':
       start_symbol = atoi(optarg);
@@ -305,7 +279,7 @@ int main(int argc, char *argv[])
           exit(-1);
       }
 
-      if (optarg[1] == ',') {
+      if (strlen(optarg) > 2 && optarg[1] == ',') {
         switch (optarg[2]) {
           case 'l':
             corr_level = CORR_LEVEL_LOW;
@@ -318,10 +292,11 @@ int main(int argc, char *argv[])
             break;
           default:
             printf("Invalid correlation level!\n");
+            exit(-1);
         }
       }
 
-      if (optarg[3] == ',') {
+      if (strlen(optarg) > 3 && optarg[3] == ',') {
         maxDoppler = atoi(&optarg[4]);
         printf("Maximum Doppler Frequency: %.0f Hz\n", maxDoppler);
       }
@@ -528,56 +503,60 @@ int main(int argc, char *argv[])
       }
       break;
 
-    default:
+    case '?':
+      printf("Unknown option or missing argument: -%c\n", optopt);
     case 'h':
+    default:
       printf("%s -h(elp)\n", argv[0]);
       printf("-a ULSCH starting symbol\n");
+      printf("-A Number of antennas per thread for PUSCH channel estimation\n");
       printf("-b ULSCH number of symbols\n");
       printf("-c RNTI\n");
+      printf("-C Specify the number of threads for the simulation\n");
       printf("-d Introduce delay in terms of number of samples\n");
       printf("-e To simulate MSG3 configuration\n");
+      printf("-E {SRS: [0] Disabled, [1] Enabled} e.g. -E 1\n");
       printf("-f <flag> Enable optional feature flag. Available flags:\n");
 #ifdef CHANNEL_SIM_CUDA
       printf("          cuda    Enable CUDA channel simulation\n");
 #else
       printf("          (none)  No optional features were compiled into this executable\n");
 #endif
+      printf("-F Input filename (.txt format) for RX conformance testing\n");
       printf("-g Channel model configuration. Arguments list: Number of arguments = 3, {Channel model: [A] TDLA30, [B] TDLB100, [C] TDLC300}, {Correlation: [l] Low, [m] Medium, [h] High}, {Maximum Doppler shift} e.g. -g A,l,10\n");
+      printf("-G Offset of samples to read from file (0 default)\n");
       printf("-h This message\n");
+      printf("-H Slot number\n");
       printf("-i Change channel estimation technique. Arguments list: Number of arguments=2, Frequency domain {0:Linear interpolation, 1:PRB based averaging}, Time domain {0:Estimates of last DMRS symbol, 1:Average of DMRS symbols}. e.g. -i 1,0\n");
+      printf("-I Maximum LDPC decoder iterations\n");
       printf("-j Save signal buffers in binary format\n");
       printf("-k 3/4 sampling\n");
       printf("-l PUSCH DMRS length: 1 or 2\n");
+      printf("-L <log level, 0(errors), 1(warning), 2(info) 3(debug) 4 (trace)>\n");
       printf("-m MCS value\n");
+      printf("-M Use limited buffer rate-matching\n");
       printf("-n Number of trials to simulate\n");
       printf("-o UCI on PUSCH, 1st value number of ACK bits, 2nd value CSI part1 bits, 3rd value CSI part2 bits\n");
       printf("-p Use extended prefix mode\n");
+      printf("-P Print ULSCH performances\n");
       printf("-q MCS table\n");
+      printf("-Q If -F used, read parameters from file\n");
       printf("-r Number of allocated resource blocks for PUSCH\n");
+      printf("-R Maximum number of available resorce blocks (N_RB_DL)\n");
       printf("-s Starting SNR, runs from SNR0 to SNR0 + 10 dB if ending SNR isn't given\n");
       printf("-S Ending SNR, runs from SNR0 to SNR1\n");
       printf("-t Acceptable effective throughput (in percentage)\n");
+      printf("-T Enable PTRS, arguments list: Number of arguments=2 L_PTRS{0,1,2} K_PTRS{2,4}, e.g. -T 0,2 \n");
       printf("-u Set the numerology\n");
+      printf(
+          "-U Change DMRS Config, arguments list: Number of arguments=4, DMRS Mapping Type{0=A,1=B}, DMRS AddPos{0:3}, DMRS Config "
+          "Type{1,2}, Number of CDM groups without data{1,2,3} e.g. -U 0,2,0,1 \n");
       printf("-v Set the max rounds\n");
       printf("-w Start PRB for PUSCH\n");
-      printf("-y Number of TX antennas used at UE\n");
-      printf("-z Number of RX antennas used at gNB\n");
-      printf("-A Number of antennas per thread for PUSCH channel estimation\n");
-      printf("-C Specify the number of threads for the simulation\n");
-      printf("-E {SRS: [0] Disabled, [1] Enabled} e.g. -E 1\n");
-      printf("-F Input filename (.txt format) for RX conformance testing\n");
-      printf("-G Offset of samples to read from file (0 default)\n");
-      printf("-H Slot number\n");
-      printf("-I Maximum LDPC decoder iterations\n");
-      printf("-L <log level, 0(errors), 1(warning), 2(info) 3(debug) 4 (trace)>\n");
-      printf("-M Use limited buffer rate-matching\n");
-      printf("-P Print ULSCH performances\n");
-      printf("-Q If -F used, read parameters from file\n");
-      printf("-R Maximum number of available resorce blocks (N_RB_DL)\n");
-      printf("-T Enable PTRS, arguments list: Number of arguments=2 L_PTRS{0,1,2} K_PTRS{2,4}, e.g. -T 0,2 \n");
-      printf("-U Change DMRS Config, arguments list: Number of arguments=4, DMRS Mapping Type{0=A,1=B}, DMRS AddPos{0:3}, DMRS Config Type{1,2}, Number of CDM groups without data{1,2,3} e.g. -U 0,2,0,1 \n");
       printf("-W Num of layer for PUSCH\n");
       printf("-X Output filename (.csv format) for stats\n");
+      printf("-y Number of TX antennas used at UE\n");
+      printf("-z Number of RX antennas used at gNB\n");
       printf("-Z If -Z is used, SC-FDMA or transform precoding is enabled in Uplink \n");
       exit(-1);
       break;
@@ -610,7 +589,7 @@ int main(int argc, char *argv[])
 
   RC.gNB = (PHY_VARS_gNB **)malloc_or_fail(sizeof(PHY_VARS_gNB *));
   RC.gNB[0] = calloc_or_fail(1, sizeof(PHY_VARS_gNB));
-  gNB = RC.gNB[0];
+  PHY_VARS_gNB *gNB = RC.gNB[0];
   gNB->ofdm_offset_divisor = UINT_MAX;
   gNB->num_pusch_symbols_per_thread = 1;
   gNB->dmrs_num_antennas_per_thread = num_antennas_per_thread;
@@ -727,7 +706,6 @@ int main(int argc, char *argv[])
   cfg->carrier_config.num_tx_ant.value = 1;
   cfg->carrier_config.num_rx_ant.value = n_rx;
 
-//  nr_phy_config_request_sim(gNB,N_RB_DL,N_RB_DL,mu,0,0x01);
   gNB->chest_freq = chest_type[0];
   gNB->chest_time = chest_type[1];
 
@@ -976,7 +954,6 @@ int main(int argc, char *argv[])
     r_im[aarx] = calloc_or_fail(1, frame_length_complex_samples * sizeof(float));
   }
 
-  //for (int i=0;i<16;i++) printf("%f\n",gaussdouble(0.0,1.0));
   int read_errors=0;
 
   int slot_offset = get_samples_slot_timestamp(&gNB->frame_parms, slot);
@@ -996,10 +973,8 @@ int main(int argc, char *argv[])
       printf("nb_rb %d\n",nb_rb);
       int16_t dummy;
       read_errors+=fread((void*)&start_rb,sizeof(int16_t),1,input_fd);
-      //fread((void*)&dummy,sizeof(int16_t),1,input_fd);
       printf("rb_start %d\n",start_rb);
       read_errors+=fread((void*)&nb_symb_sch,sizeof(int16_t),1,input_fd);
-      //fread((void*)&dummy,sizeof(int16_t),1,input_fd);
       printf("nb_symb_sch %d\n",nb_symb_sch);
       read_errors+=fread((void*)&start_symbol,sizeof(int16_t),1,input_fd);
       printf("start_symbol %d\n",start_symbol);
@@ -1007,7 +982,6 @@ int main(int argc, char *argv[])
       printf("mcs %d\n",Imcs);
       read_errors+=fread((void*)&rv_index,sizeof(int16_t),1,input_fd);
       printf("rv_index %d\n",rv_index);
-      //    fread((void*)&harq_pid,sizeof(int16_t),1,input_fd);
       read_errors+=fread((void*)&dummy,sizeof(int16_t),1,input_fd);
       printf("harq_pid %d\n",harq_pid);
     }
@@ -1298,7 +1272,6 @@ int main(int argc, char *argv[])
         if (transform_precoding == transformPrecoder_enabled) {
           pusch_config_pdu->dfts_ofdm.low_papr_group_number = *scc->physCellId % 30; // U as defined in 38.211 section 6.4.1.1.1.2
           pusch_config_pdu->dfts_ofdm.low_papr_sequence_number = 0; // V as defined in 38.211 section 6.4.1.1.1.2
-          // pusch_config_pdu->pdu_bit_map |= PUSCH_PDU_BITMAP_DFTS_OFDM;
           pusch_config_pdu->num_dmrs_cdm_grps_no_data = num_dmrs_cdm_grps_no_data;
         }
         if (do_SRS == 1) {
@@ -1615,7 +1588,6 @@ int main(int argc, char *argv[])
           }
         }
 
-
         if ((ulsch_gNB->last_iteration_cnt >= ulsch_gNB->max_ldpc_iterations) || ul_proc_error == 1) {
           error_flag = 1;
           n_errors[round]++;
@@ -1652,8 +1624,6 @@ int main(int argc, char *argv[])
         uint8_t test_input_bit = (UE->ul_harq_processes[harq_pid].payload_AB[i / 8] & (1 << (i & 7))) >> (i & 7);
 
         if (estimated_output_bit != test_input_bit) {
-          /*if(errors_decoding == 0)
-              printf("\x1B[34m""[frame %d][trial %d]\t1st bit in error in decoding     = %d\n" "\x1B[0m", frame, trial, i);*/
           errors_decoding++;
         }
       }
@@ -1687,7 +1657,6 @@ int main(int argc, char *argv[])
     roundStats/=((float)n_trials);
     effRate /= (double)n_trials;
     
-
     // -------csv file-------
 
     // adding values into file
@@ -1704,7 +1673,6 @@ int main(int argc, char *argv[])
     else
       printf(")\n");
     printf("\n");
-
 
     for (int r = 0; r < max_rounds; r++) {
       blerStats[r] = (double)n_errors[r] / round_trials[r];

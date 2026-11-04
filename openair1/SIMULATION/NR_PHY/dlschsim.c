@@ -12,37 +12,27 @@
 #include "common/config/config_userapi.h"
 #include "common/utils/LOG/log.h"
 #include "common/utils/load_module_shlib.h"
-#include "T.h"
 #include "PHY/defs_gNB.h"
 #include "PHY/defs_nr_common.h"
 #include "PHY/defs_nr_UE.h"
-#include "PHY/types.h"
 #include "PHY/CODING/nrLDPC_coding/nrLDPC_coding_interface.h"
 #include "PHY/INIT/nr_phy_init.h"
-#include "PHY/MODULATION/modulation_eNB.h"
-#include "PHY/MODULATION/modulation_UE.h"
 #include "PHY/NR_TRANSPORT/nr_dlsch.h"
-#include "PHY/NR_TRANSPORT/nr_transport_proto.h"
 #include "PHY/NR_UE_TRANSPORT/nr_transport_proto_ue.h"
 #include "SCHED_NR/sched_nr.h"
 #include "openair1/SIMULATION/TOOLS/sim.h"
-#include "openair1/SIMULATION/RF/rf.h"
 #include "openair1/SIMULATION/NR_PHY/nr_unitary_defs.h"
 #include "openair2/LAYER2/NR_MAC_COMMON/nr_mac_common.h"
 #include "executables/nr-uesoftmodem.h"
 #include "nfapi/oai_integration/vendor_ext.h"
 #include "openair1/PHY/phy_extern_nr_ue.h"
+#include "nfapi/open-nFAPI/fapi/inc/nr_fapi_p5_utils.h"
 
 //#define DEBUG_NR_DLSCHSIM
 
-THREAD_STRUCT thread_struct;
-PHY_VARS_gNB *gNB;
 RAN_CONTEXT_t RC;
 UE_nr_rxtx_proc_t proc;
-int64_t uplink_frequency_offset[MAX_NUM_CCs][4];
-uint64_t downlink_frequency[MAX_NUM_CCs][4];
 
-uint8_t const nr_rv_round_map[4] = {0, 2, 3, 1};
 // needed for some functions
 PHY_VARS_NR_UE ***nrPHY_vars_UE_g;
 uint16_t n_rnti = 0x1234;
@@ -51,18 +41,9 @@ softmodem_params_t *get_softmodem_params(void) {
   return &softmodem_params;
 }
 void init_downlink_harq_status(NR_DL_UE_HARQ_t *dl_harq) {}
-NR_IF_Module_t *NR_IF_Module_init(int Mod_id) { return (NULL); }
-nfapi_mode_t nfapi_getmode(void) { return NFAPI_MODE_UNKNOWN; }
-
-void inc_ref_sched_response(int _)
+NR_IF_Module_t *NR_IF_Module_init(int Mod_id)
 {
-  LOG_E(PHY, "fatal\n");
-  exit(1);
-}
-void deref_sched_response(int _)
-{
-  LOG_E(PHY, "fatal\n");
-  exit(1);
+  return (NULL);
 }
 
 nrUE_params_t nrUE_params={0};
@@ -74,6 +55,7 @@ configmodule_interface_t *uniqCfg = NULL;
 
 int main(int argc, char **argv)
 {
+  PHY_VARS_gNB *gNB;
   stop = false;
   __attribute__((unused)) struct sigaction oldaction;
   sigaction(SIGINT, &sigint_action, &oldaction);
@@ -85,7 +67,6 @@ int main(int argc, char **argv)
   int **txdata;
   double **s_re, **s_im, **r_re, **r_im;
   FILE *output_fd = NULL;
-  //uint8_t write_output_file = 0;
   int trial, n_trials = 1, n_errors = 0, n_false_positive = 0;
   uint8_t n_tx = 1, n_rx = 1;
   uint16_t Nid_cell = 0;
@@ -97,7 +78,6 @@ int main(int argc, char **argv)
   unsigned char pbch_phase = 0;
   int frame = 0, slot = 0;
   int frame_length_complex_samples;
-  //int frame_length_complex_samples_no_prefix;
   NR_DL_FRAME_PARMS *frame_parms;
   double sigma;
   unsigned char qbits = 8;
@@ -117,7 +97,6 @@ int main(int argc, char **argv)
     exit_fun("[NR_DLSCHSIM] Error, configuration module init failed\n");
   }
 
-  // logInit();
   randominit();
 
   int c;
@@ -128,18 +107,7 @@ int main(int argc, char **argv)
     if (c == 1 || c == '-' || c == 'O')
       continue;
 
-    printf("handling optarg %c\n",c);
     switch (c) {
-		/*case 'f':
-			write_output_file = 1;
-			output_fd = fopen(optarg, "w");
-
-			if (output_fd == NULL) {
-				printf("Error opening %s\n", optarg);
-				exit(-1);
-			}
-
-			break;*/
 
 		case 'd':
 			dlsch_threads = atoi(optarg);
@@ -205,16 +173,6 @@ int main(int argc, char **argv)
 		case 'p':
 			extended_prefix_flag = 1;
 			break;
-
-			/*
-			 case 'r':
-			 ricean_factor = pow(10,-.1*atof(optarg));
-			 if (ricean_factor>1) {
-			 printf("Ricean factor must be between 0 and 1\n");
-			 exit(-1);
-			 }
-			 break;
-			 */
 
 		case 'y':
 			n_tx = atoi(optarg);
@@ -287,35 +245,36 @@ int main(int argc, char **argv)
 		  gNBthreads[sizeof(gNBthreads)-1]=0;
 		  break;
 
-
-		default:
-		case 'h':
-			printf("%s -h(elp) -p(extended_prefix) -N cell_id -f output_filename -F input_filename -g channel_model -n n_frames -t Delayspread -s snr0 -S snr1  -y TXant -z RXant -i Intefrence0 -j Interference1 -A interpolation_file -C(alibration offset dB) -N CellId\n", argv[0]);
-			printf("-h This message\n");
-			printf("-p Use extended prefix mode\n");
-			//printf("-d Use TDD\n");
-			printf("-n Number of frames to simulate\n");
-			printf("-s Starting SNR, runs from SNR0 to SNR0 + 5 dB.  If n_frames is 1 then just SNR is simulated\n");
-			printf("-S Ending SNR, runs from SNR0 to SNR1\n");
-			printf("-t Delay spread for multipath channel\n");
-			printf("-g [A,B,C,D,E,F,G] Use 3GPP SCM (A,B,C,D) or 36-101 (E-EPA,F-EVA,G-ETU) models (ignores delay spread and Ricean factor)\n");
-			//printf("-x Transmission mode (1,2,6 for the moment)\n");
-			printf("-y Number of TX antennas used in eNB\n");
-			printf("-z Number of RX antennas used in UE\n");
-			//printf("-i Relative strength of first intefering eNB (in dB) - cell_id mod 3 = 1\n");
-			//printf("-j Relative strength of second intefering eNB (in dB) - cell_id mod 3 = 2\n");
-                        printf("-M Multiple SSB positions in burst\n");
-			printf("-N Nid_cell\n");
-			printf("-R N_RB_DL\n");
-			printf("-O oversampling factor (1,2,4,8,16)\n");
-			printf("-A Interpolation_filname Run with Abstraction to generate Scatter plot using interpolation polynomial in file\n");
-			//printf("-C Generate Calibration information for Abstraction (effective SNR adjustment to remove Pe bias w.r.t. AWGN)\n");
-			//printf("-f Output filename (.txt format) for Pe/SNR results\n");
-			printf("-F Input filename (.txt format) for RX conformance testing\n");
-			printf("-d number of dlsch threads, 0: no dlsch parallelization\n");
-			exit(-1);
-			break;
-		}
+    case '?':
+      printf("Unknown option or missing argument: -%c\n", optopt);
+    case 'h':
+    default:
+      printf(
+          "%s -h(elp) -p(extended_prefix) -N cell_id -f output_filename -F input_filename -g channel_model -n n_frames -t "
+          "Delayspread -s snr0 -S snr1  -y TXant -z RXant -i Intefrence0 -j Interference1 -A interpolation_file -C(alibration "
+          "offset dB) -N CellId\n",
+          argv[0]);
+      printf("-A Interpolation_filname Run with Abstraction to generate Scatter plot using interpolation polynomial in file\n");
+      printf("-d number of dlsch threads, 0: no dlsch parallelization\n");
+      printf("-F Input filename (.txt format) for RX conformance testing\n");
+      printf(
+          "-g [A,B,C,D,E,F,G] Use 3GPP SCM (A,B,C,D) or 36-101 (E-EPA,F-EVA,G-ETU) models (ignores delay spread and Ricean "
+          "factor)\n");
+      printf("-h This message\n");
+      printf("-M Multiple SSB positions in burst\n");
+      printf("-n Number of frames to simulate\n");
+      printf("-N Nid_cell\n");
+      printf("-O oversampling factor (1,2,4,8,16)\n");
+      printf("-p Use extended prefix mode\n");
+      printf("-R N_RB_DL\n");
+      printf("-s Starting SNR, runs from SNR0 to SNR0 + 5 dB.  If n_frames is 1 then just SNR is simulated\n");
+      printf("-S Ending SNR, runs from SNR0 to SNR1\n");
+      printf("-t Delay spread for multipath channel\n");
+      printf("-y Number of TX antennas used in eNB\n");
+      printf("-z Number of RX antennas used in UE\n");
+      exit(-1);
+      break;
+    }
   }
 
   logInit();
@@ -343,12 +302,11 @@ int main(int argc, char **argv)
 		exit(-1);
 	}
 
-	RC.gNB = (PHY_VARS_gNB **) malloc(sizeof(PHY_VARS_gNB *));
-	RC.gNB[0] = calloc(1, sizeof(PHY_VARS_gNB));
+	RC.gNB = malloc_or_fail(sizeof(PHY_VARS_gNB *));
+	RC.gNB[0] = calloc_or_fail(1, sizeof(PHY_VARS_gNB));
 	gNB = RC.gNB[0];
 	initNamedTpool(gNBthreads, &gNB->threadPool, true, "gNB-tpool");
   initFloatingCoresTpool(dlsch_threads, &nrUE_params.Tpool, false, "UE-tpool");
-	//gNB_config = &gNB->gNB_config;
 	frame_parms = &gNB->frame_parms; //to be initialized I suppose (maybe not necessary for PBCH)
 	frame_parms->nb_antennas_tx = n_tx;
 	frame_parms->nb_antennas_rx = n_rx;
@@ -360,25 +318,23 @@ int main(int argc, char **argv)
     gNB->gNB_config.tdd_table.tdd_period.value = 6;
     do_tdd_config_sim(gNB, mu);
 	phy_init_nr_gNB(gNB);
-	//init_eNB_afterRU();
 	frame_length_complex_samples = frame_parms->samples_per_subframe;
-	//frame_length_complex_samples_no_prefix = frame_parms->samples_per_subframe_wCP;
-	s_re = malloc(2 * sizeof(double *));
-	s_im = malloc(2 * sizeof(double *));
-	r_re = malloc(2 * sizeof(double *));
-	r_im = malloc(2 * sizeof(double *));
-	txdata = malloc(2 * sizeof(int *));
+	s_re = malloc_or_fail(2 * sizeof(double *));
+	s_im = malloc_or_fail(2 * sizeof(double *));
+	r_re = malloc_or_fail(2 * sizeof(double *));
+	r_im = malloc_or_fail(2 * sizeof(double *));
+	txdata = malloc_or_fail(2 * sizeof(int *));
 
 	for (i = 0; i < 2; i++) {
-		s_re[i] = malloc(frame_length_complex_samples * sizeof(double));
+		s_re[i] = malloc_or_fail(frame_length_complex_samples * sizeof(double));
 		bzero(s_re[i], frame_length_complex_samples * sizeof(double));
-		s_im[i] = malloc(frame_length_complex_samples * sizeof(double));
+		s_im[i] = malloc_or_fail(frame_length_complex_samples * sizeof(double));
 		bzero(s_im[i], frame_length_complex_samples * sizeof(double));
-		r_re[i] = malloc(frame_length_complex_samples * sizeof(double));
+		r_re[i] = malloc_or_fail(frame_length_complex_samples * sizeof(double));
 		bzero(r_re[i], frame_length_complex_samples * sizeof(double));
-		r_im[i] = malloc(frame_length_complex_samples * sizeof(double));
+		r_im[i] = malloc_or_fail(frame_length_complex_samples * sizeof(double));
 		bzero(r_im[i], frame_length_complex_samples * sizeof(double));
-		txdata[i] = malloc(frame_length_complex_samples * sizeof(int));
+		txdata[i] = malloc_or_fail(frame_length_complex_samples * sizeof(int));
 		bzero(r_re[i], frame_length_complex_samples * sizeof(int)); // [hna] r_re should be txdata
 	}
 
@@ -387,20 +343,17 @@ int main(int argc, char **argv)
 	}
 
 	//configure UE
-  PHY_VARS_NR_UE *UE = calloc(1, sizeof(*UE));
+  PHY_VARS_NR_UE *UE = calloc_or_fail(1, sizeof(*UE));
   PHY_VARS_NR_UE **uedata_ptrr = &UE;
   nrPHY_vars_UE_g = &uedata_ptrr;
 
   memcpy(&UE->frame_parms, frame_parms, sizeof(NR_DL_FRAME_PARMS));
 
-  //phy_init_nr_top(frame_parms);
 	if (init_nr_ue_signal(UE, 1) != 0) {
 		printf("Error at UE NR initialisation\n");
 		exit(-1);
 	}
 
-	//nr_init_frame_parms_ue(&UE->frame_parms);
-	//init_nr_ue_transport(UE, 0);
   UE->nrLDPC_coding_interface = gNB->nrLDPC_coding_interface;
 
   NR_UE_DLSCH_t dlsch_ue[NR_MAX_NB_LAYERS > 4 ? 2 : 1] = {0};
@@ -413,22 +366,16 @@ int main(int argc, char **argv)
   unsigned char harq_pid = 0; //dlsch->harq_ids[subframe];
   NR_gNB_DLSCH_t *dlsch = &gNB->dlsch[0];
   dlsch->freq_alloc = set_bitmap_from_start_size(0, nb_rb);
-	//time_stats_t *rm_stats, *te_stats, *i_stats;
 	unsigned int TBS = 8424;
 	uint8_t nb_re_dmrs = 6;  // No data in dmrs symbol
 	uint16_t length_dmrs = 1;
 	uint8_t Nl = 1;
 	uint8_t rvidx = 0;
-	/*dlsch->harq_processes[0]->mcs = Imcs;
-	 dlsch->harq_processes[0]->rvidx = rvidx;*/
-	//printf("dlschsim harqid %d nb_rb %d, mscs %d\n",dlsch->harq_ids[subframe],
-	//    dlsch->harq_processes[0]->nb_rb,dlsch->harq_processes[0]->mcs,dlsch->harq_processes[0]->Nl);
 	unsigned char mod_order = nr_get_Qm_dl(Imcs, mcs_table);
   uint16_t rate = nr_get_code_rate_dl(Imcs, mcs_table);
 	unsigned int available_bits = nr_get_G(nb_rb, nb_symb_sch, nb_re_dmrs, length_dmrs, 0, mod_order, Nl);
 	TBS = nr_compute_tbs(mod_order,rate, nb_rb, nb_symb_sch, nb_re_dmrs*length_dmrs, 0, 0, Nl);
 	printf("available bits %u TBS %u mod_order %d\n", available_bits, TBS, mod_order);
-	//dlsch->harq_ids[subframe]= 0;
   nfapi_nr_dl_tti_pdsch_pdu pdsch_pdu = {
       .pdsch_pdu_rel15 = {
         .rbSize = nb_rb,
@@ -449,10 +396,8 @@ int main(int argc, char **argv)
   dlsch->pdsch_pdu = &pdsch_pdu;
 	double modulated_input[16 * 68 * 384]; // [hna] 16 segments, 68*Zc
 	short channel_output_fixed[16 * 68 * 384];
-	//unsigned char *estimated_output;
 	unsigned int errors_bit = 0;
 	unsigned char test_input_bit[16 * 68 * 384];
-	//estimated_output = (unsigned char *) malloc16(sizeof(unsigned char) * 16 * 68 * 384);
 	unsigned char estimated_output_bit[16 * 68 * 384];
 	NR_UE_DLSCH_t *dlsch0_ue = &dlsch_ue[0];
   NR_DL_UE_HARQ_t *harq_process = &UE->dl_harq_processes[0][harq_pid];
@@ -478,7 +423,6 @@ int main(int argc, char **argv)
 
   uint8_t test_input[TBS / 8 + 4]; // + 3 for CRC + 1 additional byte, see nr_dlsch_encoding()
   dlsch->pdu = test_input;
-	//unsigned char test_input[TBS / 8]  __attribute__ ((aligned(16)));
 	for (i = 0; i < TBS / 8; i++)
 		test_input[i] = (unsigned char) rand();
 
@@ -486,10 +430,6 @@ int main(int argc, char **argv)
 	for (i = 0; i < TBS / 8; i++) printf("test_input[i]=%hhu \n",test_input[i]);
 #endif
 
-	/*for (int i=0; i<TBS/8; i++)
-	 printf("test input[%d]=%d \n",i,test_input[i]);*/
-
-	//printf("crc32: [0]->0x%08x\n",crc24c(test_input, 32));
 	// generate signal
   unsigned char output[nb_rb * NR_SYMBOLS_PER_SLOT * NR_NB_SC_PER_RB * NR_MAX_NB_LAYERS] __attribute__((aligned(64)));
   bzero(output, sizeof(output));
@@ -508,31 +448,17 @@ int main(int argc, char **argv)
 				printf("\ne %d..%d:    ",i,i+15);
 #endif
 
-				//if (i<16)
-				//   printf("encoder output f[%d] = %d\n",i,dlsch->harq_processes[0]->f[i]);
-
 				if ((output[i >> 3] & (1 << (i & 7))) == 0)
 					modulated_input[i] = 1.0;        ///sqrt(2);  //QPSK
 				else
 					modulated_input[i] = -1.0;        ///sqrt(2);
 
-				//if (i<16) printf("modulated_input[%d] = %f (%d)\n",i,modulated_input[i],output[i]);
-				//SNR =10;
 				SNR_lin = pow(10, SNR / 10.0);
 				sigma = 1.0 / sqrt(2 * SNR_lin);
 				channel_output_fixed[i] = (short) quantize(sigma / 4.0 / 4.0,
 						modulated_input[i] + sigma * gaussdouble(0.0, 1.0),
 						qbits);
-				//channel_output_fixed[i] = (char)quantize8bit(sigma/4.0,(2.0*modulated_input[i]) - 1.0 + sigma*gaussdouble(0.0,1.0));
-				//printf("llr[%d]=%d\n",i,channel_output_fixed[i]);
-				//printf("channel_output_fixed[%d]: %d\n",i,channel_output_fixed[i]);
 
-				//channel_output_fixed[i] = (char)quantize(1,channel_output_fixed[i],qbits);
-/*
-				if (i<16)   printf("input[%d] %f => channel_output_fixed[%d] = %d\n",
-						   i,modulated_input[i],
-						   i,channel_output_fixed[i]);
-*/
 			}
 
 #ifdef DEBUG_CODER
@@ -570,7 +496,6 @@ int main(int argc, char **argv)
 
 				if (estimated_output_bit[i] != test_input_bit[i]) {
 					errors_bit++;
-					//printf("estimated bits error occurs @%d ",i);
 				}
 			}
 
@@ -593,10 +518,7 @@ int main(int argc, char **argv)
 
   free_channel_desc_scm(gNB2UE);
 
-  int nb_slots_to_set = (1 << mu) * NR_NUMBER_OF_SUBFRAMES_PER_FRAME;
-  for (int i = 0; i < nb_slots_to_set; ++i)
-    free(gNB->gNB_config.tdd_table.max_tdd_periodicity_list[i].max_num_of_symbol_per_slot_list);
-  free(gNB->gNB_config.tdd_table.max_tdd_periodicity_list);
+  free_config_request(&gNB->gNB_config);
 
   abortTpool(&gNB->threadPool);
 
@@ -634,4 +556,3 @@ int main(int argc, char **argv)
 
   return (n_errors);
 }
-
