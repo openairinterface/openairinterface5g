@@ -148,6 +148,28 @@ static bool eq_dl_tti_request_ssb_pdu(const nfapi_nr_dl_tti_ssb_pdu_rel15_t *a, 
   return true;
 }
 
+static bool eq_dl_tti_request_prs_pdu(const nfapi_nr_dl_tti_prs_pdu_rel16_t *a, const nfapi_nr_dl_tti_prs_pdu_rel16_t *b)
+{
+  EQ(a->subcarrierSpacing, b->subcarrierSpacing);
+  EQ(a->cyclicPrefix, b->cyclicPrefix);
+  EQ(a->nIdPrs, b->nIdPrs);
+  EQ(a->pduIndex, b->pduIndex);
+  EQ(a->combSize, b->combSize);
+  EQ(a->combOffset, b->combOffset);
+  EQ(a->numSymbols, b->numSymbols);
+  EQ(a->firstSymbol, b->firstSymbol);
+  EQ(a->numRbs, b->numRbs);
+  EQ(a->startRb, b->startRb);
+  EQ(a->symbolPuncturingBitmap, b->symbolPuncturingBitmap);
+#ifndef ENABLE_AERIAL
+  EQ(a->spatialStreamIndexPresent, b->spatialStreamIndexPresent);
+  EQ(a->spatialStreamIndex, b->spatialStreamIndex);
+#endif
+  EQ(eq_dl_tti_beamforming(&a->precodingAndBeamforming, &b->precodingAndBeamforming), true);
+  EQ(a->prsPowerOffset, b->prsPowerOffset);
+  return true;
+}
+
 bool eq_dl_tti_request(const nfapi_nr_dl_tti_request_t *a, const nfapi_nr_dl_tti_request_t *b)
 {
   EQ(a->header.message_id, b->header.message_id);
@@ -178,6 +200,9 @@ bool eq_dl_tti_request(const nfapi_nr_dl_tti_request_t *a, const nfapi_nr_dl_tti
         break;
       case NFAPI_NR_DL_TTI_SSB_PDU_TYPE:
         EQ(eq_dl_tti_request_ssb_pdu(&a_dl_pdu->ssb_pdu.ssb_pdu_rel15, &b_dl_pdu->ssb_pdu.ssb_pdu_rel15), true);
+        break;
+      case NFAPI_NR_DL_TTI_PRS_PDU_TYPE:
+        EQ(eq_dl_tti_request_prs_pdu(&a_dl_pdu->prs_pdu.prs_pdu_rel16, &b_dl_pdu->prs_pdu.prs_pdu_rel16), true);
         break;
       default:
         // PDU Type is not any known value
@@ -1066,6 +1091,13 @@ static void copy_dl_tti_request_ssb_pdu(const nfapi_nr_dl_tti_ssb_pdu_rel15_t *s
   dst->param_v4 = src->param_v4;
 }
 
+static void copy_dl_tti_request_prs_pdu(const nfapi_nr_dl_tti_prs_pdu_rel16_t *src, nfapi_nr_dl_tti_prs_pdu_rel16_t *dst)
+{
+  PARTIAL_COPY(dst, src, nfapi_nr_dl_tti_prs_pdu_rel16_t, spatialStreamIndex);
+  copy_dl_tti_beamforming(&src->precodingAndBeamforming, &dst->precodingAndBeamforming);
+  dst->prsPowerOffset = src->prsPowerOffset;
+}
+
 static void copy_dl_tti_request_pdu(const nfapi_nr_dl_tti_request_pdu_t *src, nfapi_nr_dl_tti_request_pdu_t *dst)
 {
   dst->PDUType = src->PDUType;
@@ -1084,9 +1116,12 @@ static void copy_dl_tti_request_pdu(const nfapi_nr_dl_tti_request_pdu_t *src, nf
     case NFAPI_NR_DL_TTI_SSB_PDU_TYPE:
       copy_dl_tti_request_ssb_pdu(&src->ssb_pdu.ssb_pdu_rel15, &dst->ssb_pdu.ssb_pdu_rel15);
       break;
+    case NFAPI_NR_DL_TTI_PRS_PDU_TYPE:
+      copy_dl_tti_request_prs_pdu(&src->prs_pdu.prs_pdu_rel16, &dst->prs_pdu.prs_pdu_rel16);
+      break;
     default:
       // PDU Type is not any known value
-      AssertFatal(1 == 0, "PDU Type value unknown, allowed values range from 0 to 3\n");
+      AssertFatal(1 == 0, "PDU Type value unknown, allowed values are 0 to 3 and 5\n");
   }
 }
 
@@ -2003,6 +2038,25 @@ static void dump_dl_tti_request_SSB_PDU(const nfapi_nr_dl_tti_ssb_pdu_rel15_t *p
   dump_dl_beamforming_pdu(&pdu->precoding_and_beamforming, depth + 1);
 }
 
+static void dump_dl_tti_request_PRS_PDU(const nfapi_nr_dl_tti_prs_pdu_rel16_t *pdu, int depth)
+{
+  INDENTED_PRINTF("SubcarrierSpacing = %d\n", pdu->subcarrierSpacing);
+  INDENTED_PRINTF("CyclicPrefix = %d\n", pdu->cyclicPrefix);
+  INDENTED_PRINTF("nIdPrs = %d\n", pdu->nIdPrs);
+  INDENTED_PRINTF("pduIndex = %d\n", pdu->pduIndex);
+  INDENTED_PRINTF("combSize = %d\n", pdu->combSize);
+  INDENTED_PRINTF("combOffset = %d\n", pdu->combOffset);
+  INDENTED_PRINTF("numSymbols = %d\n", pdu->numSymbols);
+  INDENTED_PRINTF("firstSymbol = %d\n", pdu->firstSymbol);
+  INDENTED_PRINTF("numRbs = %d\n", pdu->numRbs);
+  INDENTED_PRINTF("startRb = %d\n", pdu->startRb);
+  INDENTED_PRINTF("symbolPuncturingBitmap = 0x%04x\n", pdu->symbolPuncturingBitmap);
+  INDENTED_PRINTF("spatialStreamIndexPresent = %d\n", pdu->spatialStreamIndexPresent);
+  INDENTED_PRINTF("spatialStreamIndex = %d\n", pdu->spatialStreamIndex);
+  INDENTED_PRINTF("prsPowerOffset = %d\n", pdu->prsPowerOffset);
+  dump_dl_beamforming_pdu(&pdu->precodingAndBeamforming, depth + 1);
+}
+
 static char *dl_tti_pdu_type_to_str(uint16_t pdu_type)
 {
   switch (pdu_type) {
@@ -2014,6 +2068,8 @@ static char *dl_tti_pdu_type_to_str(uint16_t pdu_type)
       return "NFAPI_NR_DL_TTI_CSI_RS_PDU_TYPE";
     case NFAPI_NR_DL_TTI_SSB_PDU_TYPE:
       return "NFAPI_NR_DL_TTI_SSB_PDU_TYPE";
+    case NFAPI_NR_DL_TTI_PRS_PDU_TYPE:
+      return "NFAPI_NR_DL_TTI_PRS_PDU_TYPE";
     default:
       return "Unknown";
       break;
@@ -2048,6 +2104,9 @@ void dump_dl_tti_request(const nfapi_nr_dl_tti_request_t *msg)
         break;
       case NFAPI_NR_DL_TTI_SSB_PDU_TYPE:
         dump_dl_tti_request_SSB_PDU(&pdu->ssb_pdu.ssb_pdu_rel15, depth + 1);
+        break;
+      case NFAPI_NR_DL_TTI_PRS_PDU_TYPE:
+        dump_dl_tti_request_PRS_PDU(&pdu->prs_pdu.prs_pdu_rel16, depth + 1);
         break;
       default:
         INDENTED_PRINTF("Unknown PDU type 0x%02x\n", pdu->PDUType);

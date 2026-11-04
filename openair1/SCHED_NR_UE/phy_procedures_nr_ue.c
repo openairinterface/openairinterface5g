@@ -1155,7 +1155,15 @@ int pbch_processing(PHY_VARS_NR_UE *ue, const UE_nr_rxtx_proc_t *proc, nr_phy_da
           {
             nr_slot_fep(ue, fp, proc->nr_slot_rx, (j % fp->symbols_per_slot), rxdataF, link_type_dl, 0, ue->common_vars.rxdata);
           }
-          nr_prs_channel_estimation(gNB_id, rsc_id, i, ue, proc, rxdataF);
+          const int slot_prs = (nr_slot_rx - i * prs_config->PRSResourceTimeGap + fp->slots_per_frame) % fp->slots_per_frame;
+          const fapi_nr_dl_config_prs_pdu_rel16_t prs_pdu = {.comb_size = prs_config->CombSize,
+                                                             .comb_offset = prs_config->REOffset,
+                                                             .nid_prs = prs_config->NPRSID,
+                                                             .num_symbols = prs_config->NumPRSSymbols,
+                                                             .first_symbol = prs_config->SymbolStart,
+                                                             .num_rbs = prs_config->NumRB,
+                                                             .start_rb = prs_config->RBOffset};
+          nr_prs_channel_estimation(gNB_id, rsc_id, slot_prs, &prs_pdu, ue, proc, rxdataF);
         }
       } // for i
     } // for rsc_id

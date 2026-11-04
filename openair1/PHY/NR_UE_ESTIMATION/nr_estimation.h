@@ -15,7 +15,8 @@
 /* A function to perform the channel estimation of DL PRS signal */
 int nr_prs_channel_estimation(uint8_t gNB_id,
                               uint8_t rsc_id,
-                              uint8_t rep_num,
+                              int slot_prs,
+                              const fapi_nr_dl_config_prs_pdu_rel16_t *prs_pdu,
                               PHY_VARS_NR_UE *ue,
                               const UE_nr_rxtx_proc_t *proc,
                               c16_t rxdataF[][ue->frame_parms.samples_per_slot_wCP]);

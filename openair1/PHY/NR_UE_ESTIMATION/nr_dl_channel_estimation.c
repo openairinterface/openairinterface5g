@@ -80,88 +80,83 @@ float get_prs_max_dl_toa(prs_meas_t *prs_meas)
 
 int nr_prs_channel_estimation(uint8_t gNB_id,
                               uint8_t rsc_id,
-                              uint8_t rep_num,
+                              int slot_prs,
+                              const fapi_nr_dl_config_prs_pdu_rel16_t *prs_pdu,
                               PHY_VARS_NR_UE *ue,
                               const UE_nr_rxtx_proc_t *proc,
                               c16_t rxdataF[][ue->frame_parms.samples_per_slot_wCP])
 {
   const NR_DL_FRAME_PARMS *frame_parms = &ue->frame_parms;
   const int symb_sz = frame_parms->ofdm_symbol_size;
-  prs_config_t *prs_cfg  = &ue->prs_vars[gNB_id]->prs_resource[rsc_id].prs_cfg;
-  const int CombSize = prs_cfg->CombSize;
-  prs_meas_t **prs_meas  = ue->prs_vars[gNB_id]->prs_resource[rsc_id].prs_meas;
-  c16_t ch_tmp_buf[symb_sz] __attribute__((aligned(32)));
-  memset(ch_tmp_buf, 0, sizeof(ch_tmp_buf));
-
-  int slot_prs =
-      (proc->nr_slot_rx - rep_num * prs_cfg->PRSResourceTimeGap + frame_parms->slots_per_frame) % frame_parms->slots_per_frame;
+  const int CombSize = prs_pdu->comb_size;
+  prs_meas_t **prs_meas = ue->prs_vars[gNB_id]->prs_resource[rsc_id].prs_meas;
 
   const int16_t *fl, *fm, *fmm, *fml, *fmr, *fr;
 #ifdef DEBUG_PRS_CHEST
   char filename[64] = {0}, varname[64] = {0};
 #endif
-  const int scale_factor = (1.0f / (float)(prs_cfg->NumPRSSymbols)) * (1 << 15);
-  const int num_pilots = (NR_NB_SC_PER_RB / CombSize) * prs_cfg->NumRB;
+  const int scale_factor = (1.0f / (float)(prs_pdu->num_symbols)) * (1 << 15);
+  const int num_pilots = (NR_NB_SC_PER_RB / CombSize) * prs_pdu->num_rbs;
 
-  for (int l = prs_cfg->SymbolStart; l < prs_cfg->SymbolStart + prs_cfg->NumPRSSymbols; l++) {
-    c16_t *ch_tmp = ch_tmp_buf;
-    uint32_t *gold_prs = nr_gold_prs(ue->prs_vars[gNB_id]->prs_resource[rsc_id].prs_cfg.NPRSID, slot_prs, l);
-    int symInd = l - prs_cfg->SymbolStart;
-    int16_t k_prime = 0;
-    switch (prs_cfg->CombSize) {
-      case 2:
-        k_prime = k_prime_table[0][symInd];
-        break;
-      case 4:
-        k_prime = k_prime_table[1][symInd];
-        break;
-      case 6:
-        k_prime = k_prime_table[2][symInd];
-        break;
-      case 12:
-        k_prime = k_prime_table[3][symInd];
-        break;
-      default:
-        AssertFatal(false, "prs_cfg->CombSize = %d\n", CombSize);
-    }
+  for (int rxAnt = 0; rxAnt < frame_parms->nb_antennas_rx; rxAnt++) {
+    c16_t ch_tmp_buf[symb_sz] __attribute__((aligned(32)));
+    memset(ch_tmp_buf, 0, sizeof(ch_tmp_buf));
+    double rsrp = 0;
+
+    for (int l = prs_pdu->first_symbol; l < prs_pdu->first_symbol + prs_pdu->num_symbols; l++) {
+      c16_t *ch_tmp = ch_tmp_buf;
+      uint32_t *gold_prs = nr_gold_prs(prs_pdu->nid_prs, frame_parms->symbols_per_slot, slot_prs, l);
+      int symInd = l - prs_pdu->first_symbol;
+      int16_t k_prime = 0;
+      switch (prs_pdu->comb_size) {
+        case 2:
+          k_prime = k_prime_table[0][symInd];
+          break;
+        case 4:
+          k_prime = k_prime_table[1][symInd];
+          break;
+        case 6:
+          k_prime = k_prime_table[2][symInd];
+          break;
+        case 12:
+          k_prime = k_prime_table[3][symInd];
+          break;
+        default:
+          AssertFatal(false, "prs_pdu->comb_size = %d\n", CombSize);
+      }
 
 #ifdef DEBUG_PRS_PRINTS
-    printf(
-        "[gNB %d][rsc %d] PRS config l %d k_prime %d:\nprs_cfg->SymbolStart %d\nprs_cfg->NumPRSSymbols %d\nprs_cfg->NumRB "
-        "%d\nprs_cfg->CombSize %d\n",
-        gNB_id,
-        rsc_id,
-        l,
-        k_prime,
-        prs_cfg->SymbolStart,
-        prs_cfg->NumPRSSymbols,
-        prs_cfg->NumRB,
-        CombSize);
+      printf(
+          "[gNB %d][rsc %d] PRS config l %d k_prime %d:\nprs_pdu->first_symbol %d\nprs_pdu->num_symbols %d\nprs_pdu->num_rbs "
+          "%d\nprs_pdu->comb_size %d\n",
+          gNB_id,
+          rsc_id,
+          l,
+          k_prime,
+          prs_pdu->first_symbol,
+          prs_pdu->num_symbols,
+          prs_pdu->num_rbs,
+          CombSize);
 #endif
-    // Pilots generation and modulation
+      // Pilots generation and modulation
 
-    AssertFatal(num_pilots > 0, "num_pilots needs to be gt 0 or mod_prs[0] UB");
-    c16_t mod_prs[NR_MAX_PRS_LENGTH];
-    for (int m = 0; m < num_pilots; m++) {
-      int idx = (((gold_prs[(m << 1) >> 5]) >> ((m << 1) & 0x1f)) & 3);
-      mod_prs[m] = nr_qpsk_mod_table[idx];
-    }
+      AssertFatal(num_pilots > 0, "num_pilots needs to be gt 0 or mod_prs[0] UB");
+      c16_t mod_prs[NR_MAX_PRS_LENGTH];
+      for (int m = 0; m < num_pilots; m++) {
+        int idx = (((gold_prs[(m << 1) >> 5]) >> ((m << 1) & 0x1f)) & 3);
+        mod_prs[m] = nr_qpsk_mod_table[idx];
+      }
 
-    for (int rxAnt = 0; rxAnt < frame_parms->nb_antennas_rx; rxAnt++) {
-      // we sum all antennas
-      ch_tmp = (c16_t *)ch_tmp_buf;
       int snr = 0;
-      int rsrp = 0;
 
       // calculate RE offset
-      int k = (prs_cfg->REOffset + k_prime) % CombSize + prs_cfg->RBOffset * NR_NB_SC_PER_RB;
+      int k = (prs_pdu->comb_offset + k_prime) % CombSize + prs_pdu->start_rb * NR_NB_SC_PER_RB;
 
       // Channel estimation and interpolation
       c16_t *pil = (c16_t *)mod_prs;
       c16_t *rxF = rxdataF[rxAnt] + l * symb_sz;
 
-      if(prs_cfg->CombSize == 2)
-      {
+      if (prs_pdu->comb_size == 2) {
         // Choose the interpolation filters
         switch (k_prime) {
           case 0:
@@ -232,9 +227,7 @@ int nr_prs_channel_estimation(uint8_t gNB_id,
         rsrp += squaredMod(rxF[k]);
         noiseFig = c16sub(rxF[k], c16mulShift(ch, *pil, 15));
         snr += 10 * log10(squaredMod(rxF[k]) - squaredMod(noiseFig)) - 10 * log10(squaredMod(noiseFig));
-      }
-      else if(prs_cfg->CombSize == 4)
-      {
+      } else if (prs_pdu->comb_size == 4) {
         // Choose the interpolation filters
         switch (k_prime) {
           case 0:
@@ -331,25 +324,24 @@ int nr_prs_channel_estimation(uint8_t gNB_id,
         rsrp += squaredMod(rxF[k]);
         noiseFig = c16sub(rxF[k], c16mulShift(ch, *pil, 15));
         snr += 10 * log10(squaredMod(rxF[k]) - squaredMod(noiseFig)) - 10 * log10(squaredMod(noiseFig));
-      }
-      else
-      {
-        AssertFatal((prs_cfg->CombSize == 2)||(prs_cfg->CombSize == 4), "[%s] DL PRS CombSize other than 2 and 4 are NOT supported currently. Exiting!!!", __FUNCTION__);
+      } else {
+        AssertFatal((prs_pdu->comb_size == 2) || (prs_pdu->comb_size == 4),
+                    "[%s] DL PRS CombSize other than 2 and 4 are NOT supported currently. Exiting!!!",
+                    __FUNCTION__);
       }
 
-      // average out the SNR and RSRP computed
+      // average out the SNR computed
       prs_meas[rxAnt]->snr = snr / (float)num_pilots;
-      prs_meas[rxAnt]->rsrp = rsrp / (float)num_pilots;
-    } // for rxAnt
-  } // for l
+    } // for l
 
-  for (int rxAnt = 0; rxAnt < frame_parms->nb_antennas_rx; rxAnt++) {
+    // averaged over all pilots and symbols
+    prs_meas[rxAnt]->rsrp = rsrp / ((double)num_pilots * prs_pdu->num_symbols);
+
     // scale by averaging factor 1/NumPrsSymbols
     mult_complex_vector_real_scalar(ch_tmp_buf, scale_factor, ch_tmp_buf, symb_sz);
 
 #ifdef DEBUG_PRS_PRINTS
-    for (int rb = 0; rb < prs_cfg->NumRB; rb++)
-    {
+    for (int rb = 0; rb < prs_pdu->num_rbs; rb++) {
       printf("================================================================\n");
       printf("\t\t\t[gNB %d][Rx %d][RB %d]\n", gNB_id, rxAnt, rb);
       printf("================================================================\n");
@@ -362,12 +354,12 @@ int nr_prs_channel_estimation(uint8_t gNB_id,
 
     const int dft_sz = NR_PRS_IDFT_OVERSAMP_FACTOR * symb_sz;
     c16_t chT_interpol[dft_sz] __attribute__((aligned(32)));
+    c16_t chF_interpol[dft_sz] __attribute__((aligned(32)));
     {
-      c16_t chF_interpol[dft_sz] __attribute__((aligned(32)));
       memset(chF_interpol, 0, sizeof(chF_interpol));
       // Place PRS channel estimates in FFT shifted format
       const int first_half = symb_sz - frame_parms->first_carrier_offset;
-      const int second_half = prs_cfg->NumRB * NR_NB_SC_PER_RB - first_half;
+      const int second_half = prs_pdu->num_rbs * NR_NB_SC_PER_RB - first_half;
       const int start_offset = NR_PRS_IDFT_OVERSAMP_FACTOR * symb_sz - first_half;
       LOG_D(PHY, "start_offset %d, first_half %d, second_half %d\n", start_offset, first_half, second_half);
       if (first_half > 0)
@@ -379,7 +371,7 @@ int nr_prs_channel_estimation(uint8_t gNB_id,
       freq2time(NR_PRS_IDFT_OVERSAMP_FACTOR * symb_sz, (int16_t *)chF_interpol, (int16_t *)chT_interpol);
     }
     // peak estimator
-    int mean_val = squaredMod(ch_tmp_buf[(prs_cfg->NumRB * NR_NB_SC_PER_RB) >> 1]);
+    int mean_val = squaredMod(ch_tmp_buf[(prs_pdu->num_rbs * NR_NB_SC_PER_RB) >> 1]);
     int prs_toa, ch_pwr;
     peak_estimator(chT_interpol, NR_PRS_IDFT_OVERSAMP_FACTOR * symb_sz, &prs_toa, &ch_pwr, mean_val);
     openair0_config_t *cfg = &openair0_cfg_g[ue->rf_map.card];
@@ -420,7 +412,7 @@ int nr_prs_channel_estimation(uint8_t gNB_id,
     LOG_M(filename, "prs_loc", mod_prs, num_pilots, 1, 1);
     sprintf(filename, "%s%i%s", "rxSigF_", rxAnt, ".m");
     sprintf(varname, "%s%i", "rxF_", rxAnt);
-    LOG_M(filename, varname, &rxdataF[rxAnt][0], prs_cfg->NumPRSSymbols * symb_sz, 1, 1);
+    LOG_M(filename, varname, &rxdataF[rxAnt][0], prs_pdu->num_symbols * symb_sz, 1, 1);
     sprintf(filename, "%s%i%s", "prsChestF_", rxAnt, ".m");
     sprintf(varname, "%s%i", "prsChF_", rxAnt);
     LOG_M(filename, varname, chF_interpol, symb_sz, 1, 1);
@@ -437,12 +429,13 @@ int nr_prs_channel_estimation(uint8_t gNB_id,
       T_INT(rxAnt),
       T_BUFFER(rxdataF[rxAnt], frame_parms->samples_per_slot_wCP * sizeof(c16_t)));
 
-    T(T_UE_PHY_DL_CHANNEL_ESTIMATE,
+    T(T_UE_PHY_PRS_CHANNEL_ESTIMATE,
       T_INT(gNB_id),
       T_INT(rsc_id),
       T_INT(proc->frame_rx),
       T_INT(proc->nr_slot_rx),
       T_INT(rxAnt),
+      T_BUFFER(chF_interpol, dft_sz * sizeof(c16_t)),
       T_BUFFER(chT_interpol, dft_sz * sizeof(c16_t)));
   }
 

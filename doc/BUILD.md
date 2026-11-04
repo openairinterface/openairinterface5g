@@ -26,7 +26,7 @@ The main oai binaries, which are tested by the Continuous Integration process ar
 -  The 5G gNodeB: `nr-softmodem`
 -  The 5G CU-UP: `nr-cuup`
 -  The LTE PHY simulators: `dlsim` and `ulsim`
--  The 5G PHY simulators: `nr_dlschsim`, `nr_dlsim`, `nr_pbchsim`, `nr_pucchsim`, `nr_ulschsim`, `nr_ulsim`, `polartest`, `smallblocktest`, `nr _ulsim`, `ldpctest`, `nr_srssim`
+-  The 5G PHY simulators: `nr_dlschsim`, `nr_dlsim`, `nr_pbchsim`, `nr_pucchsim`, `nr_ulschsim`, `nr_ulsim`, `polartest`, `smallblocktest`, `nr _ulsim`, `ldpctest`, `nr_srssim`, `nr_prssim`
 
 Running the  [build_oai](../cmake_targets/build_oai) script also generates some utilities required to build and/or run the oai softmodem binaries:
 

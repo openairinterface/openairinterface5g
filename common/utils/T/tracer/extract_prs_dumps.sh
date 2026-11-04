@@ -43,10 +43,10 @@ do
    do
       name=chF_gnb${i}_${j}.raw
       echo "Extracting $name"
-      ./extract -d ../T_messages.txt $file UE_PHY_DL_CHANNEL_ESTIMATE_FREQ chestF_t -f eNB_ID $i -f rsc_id $j -o $name -count $count
+      ./extract -d ../T_messages.txt $file UE_PHY_PRS_CHANNEL_ESTIMATE chestF_t -f gNB_ID $i -f rsc_id $j -o $name -count $count
       name=chT_gnb${i}_${j}.raw
       echo "Extracting $name"
-      ./extract -d ../T_messages.txt $file UE_PHY_DL_CHANNEL_ESTIMATE chest_t -f eNB_ID $i -f rsc_id $j -o $name -count $count
+      ./extract -d ../T_messages.txt $file UE_PHY_PRS_CHANNEL_ESTIMATE chest_t -f gNB_ID $i -f rsc_id $j -o $name -count $count
    done
 done
 

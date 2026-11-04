@@ -17,7 +17,11 @@
 
 NR_gNB_PHY_STATS_t *get_phy_stats(PHY_VARS_gNB *gNB, uint16_t rnti);
 
-int nr_generate_prs(int slot, c16_t *txdataF, int16_t amp, prs_config_t *prs_cfg, const NR_DL_FRAME_PARMS *frame_parms);
+bool nr_generate_prs(int slot,
+                     c16_t *txdataF,
+                     int16_t amp,
+                     const nfapi_nr_dl_tti_prs_pdu_rel16_t *prs_pdu,
+                     const NR_DL_FRAME_PARMS *frame_parms);
 
 /*!
 \fn int nr_generate_pss

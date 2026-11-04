@@ -331,6 +331,24 @@ add_physim_test(physim.5g.nr_srssim.test15 "SRS: 30KHz SCS, 217 PRBs, ToA 8, Com
 add_physim_test(physim.5g.nr_srssim.test16 "SRS: 30KHz SCS, 106 PRBs, SNR 2 dB to 30 dB in steps of 5 dB, ToA 24, Combsize 2" nr_srssim -n300 -R106 -s2 -S30 -y2 -z2 -d 24)
 
 ####################################################################################
+######                           nr_prssim unit test                          ######
+####################################################################################
+
+add_physim_test(physim.5g.nr_prssim.test1 "PRS: 30KHz SCS, 106 PRBs, Combsize 4, 4 symbols" nr_prssim -n300 -R106 -s0 -S5 -z2)
+add_physim_test(physim.5g.nr_prssim.test2 "PRS: 30KHz SCS, 106 PRBs, Combsize 2, 2 symbols" nr_prssim -n300 -R106 -s0 -S5 -z2 -e 2 -b 2)
+add_physim_test(physim.5g.nr_prssim.test3 "PRS: 30KHz SCS, 106 PRBs, Combsize 4, Threequarter sampling" nr_prssim -n300 -R106 -s0 -S5 -z2 -k)
+add_physim_test(physim.5g.nr_prssim.test4 "PRS: 30KHz SCS, 273 PRBs, Combsize 4" nr_prssim -n300 -R273 -s0 -S5 -z2)
+add_physim_test(physim.5g.nr_prssim.test5 "PRS: 15KHz SCS, 52 PRBs, Combsize 4" nr_prssim -n300 -u0 -R52 -s0 -S5 -z2)
+add_physim_test(physim.5g.nr_prssim.test6 "PRS: 120KHz SCS, 32 PRBs, Combsize 4" nr_prssim -n300 -u3 -R32 -s0 -S5 -z2)
+add_physim_test(physim.5g.nr_prssim.test7 "PRS: 30KHz SCS, 106 PRBs, Combsize 4, RE offset 3, PRS id 123, start symbol 2" nr_prssim -n300 -R106 -s0 -S5 -z2 -f 3 -N 123 -a 2)
+add_physim_test(physim.5g.nr_prssim.test8 "PRS: 30KHz SCS, 106 PRBs, Combsize 4, 12 symbols, start symbol 1" nr_prssim -n300 -R106 -s0 -S5 -z2 -b 12 -a 1)
+add_physim_test(physim.5g.nr_prssim.test9 "PRS: 30KHz SCS, 106 PRBs, Combsize 2, 12 symbols, start symbol 1" nr_prssim -n300 -R106 -s0 -S5 -z2 -e 2 -b 12 -a 1)
+add_physim_test(physim.5g.nr_prssim.test10 "PRS: 30KHz SCS, 106 PRBs (PRS on 48 PRBs from PRB 20), Combsize 4" nr_prssim -n300 -R106 -s0 -S5 -z2 -r 48 -o 20)
+add_physim_test(physim.5g.nr_prssim.test11 "PRS: 30KHz SCS, 106 PRBs, 2 gNBs with random delays" nr_prssim -n300 -R106 -s0 -S5 -z2 -G 2)
+add_physim_test(physim.5g.nr_prssim.test12 "PRS: 120KHz SCS, 66 PRBs, 8 PRS resources in 8 slots, 6 symbols from symbol 8 (FR2)" nr_prssim -n300 -u3 -R66 -s0 -S5 -z2 -H 0 -a 8 -b 6 -M 8)
+add_physim_test(physim.5g.nr_prssim.test13 "PRS: 30KHz SCS, 106 PRBs, 4 gNBs with the same RE offset, random delays" nr_prssim -n300 -R106 -s0 -S5 -z2 -G 4 -c)
+
+####################################################################################
 ######                           offload-specific tests                       ######
 ####################################################################################
 

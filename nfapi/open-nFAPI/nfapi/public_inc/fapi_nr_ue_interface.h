@@ -554,6 +554,22 @@ typedef struct {
 } fapi_nr_dl_config_csiim_pdu;
 
 typedef struct {
+  uint8_t subcarrier_spacing; // subcarrierSpacing, Value:0->4
+  uint8_t cyclic_prefix;      // Cyclic prefix type, 0: Normal; 1: Extended
+  uint16_t nid_prs;           // n_ID,seq^PRS, Value: 0->4095
+  uint8_t comb_size;          // Transmission comb size, Value: 2, 4, 6, 12
+  uint8_t comb_offset;        // Transmission comb offset, Value: 0->(comb_size - 1)
+  uint8_t num_symbols;        // Number of symbols, Value: 2, 4, 6, 12
+  uint8_t first_symbol;       // Symbol offset, Value: 0->12
+  uint16_t num_rbs;           // PRS bandwidth in RBs, Value: 24->272, multiples of 4
+  uint16_t start_rb; // PRB offset with respect to subcarrier 0 (dl-PRS-StartPRB), Value: 0->2176
+} fapi_nr_dl_config_prs_pdu_rel16_t;
+
+typedef struct {
+  fapi_nr_dl_config_prs_pdu_rel16_t prs_config_rel16;
+} fapi_nr_dl_config_prs_pdu;
+
+typedef struct {
  int ta_frame;
  int ta_slot;
  int ta_command;
@@ -597,6 +613,7 @@ typedef struct {
     fapi_nr_dl_config_dlsch_pdu dlsch_config_pdu;
     fapi_nr_dl_config_csirs_pdu csirs_config_pdu;
     fapi_nr_dl_config_csiim_pdu csiim_config_pdu;
+    fapi_nr_dl_config_prs_pdu prs_config_pdu;
     fapi_nr_ta_command_pdu ta_command_pdu;
   };
 } fapi_nr_dl_config_request_pdu_t;

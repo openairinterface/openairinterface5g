@@ -40,6 +40,7 @@ pipelines:
 |            | `nr_prachsim`                             | PRACH simulation                 |
 |            | `nr_psbchsim`                             | Sidelink simulation              |
 |            | `nr_srssim`                               | SRS simulation                   |
+|            | `nr_prssim`                               | PRS simulation                   |
 | Coding     | `ldpctest`, `polartest`, `smallblocktest` | LDPC, Polar, and other FEC tests |
 
 ### Source Locations
