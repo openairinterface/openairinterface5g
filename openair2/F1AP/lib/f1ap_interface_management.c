@@ -786,22 +786,24 @@ F1AP_F1AP_PDU_t *encode_f1ap_setup_request(const f1ap_setup_req_t *msg)
   return pdu;
 }
 
-static void decode_latest_rrc_version_enhanced(const F1AP_RRC_Version_t *rrc_version, uint8_t out[3])
+static bool decode_latest_rrc_version_enhanced(const F1AP_RRC_Version_t *rrc_version, uint8_t out[3])
 {
   const F1AP_ProtocolExtensionContainer_11023P233_t *ext =
       (F1AP_ProtocolExtensionContainer_11023P233_t *)rrc_version->iE_Extensions;
   if (ext == NULL)
-    return;
+    return true;
   for (int i = 0; i < ext->list.count; ++i) {
     const F1AP_RRC_Version_ExtIEs_t *rrcext = ext->list.array[i];
-    if (rrcext->id != F1AP_ProtocolIE_ID_id_latest_RRC_Version_Enhanced
-        || rrcext->extensionValue.present != F1AP_RRC_Version_ExtIEs__extensionValue_PR_OCTET_STRING_SIZE_3_)
+    if (rrcext->id != F1AP_ProtocolIE_ID_id_latest_RRC_Version_Enhanced)
       continue;
+    _EQ_CHECK_INT(rrcext->extensionValue.present, F1AP_RRC_Version_ExtIEs__extensionValue_PR_OCTET_STRING_SIZE_3_);
     const OCTET_STRING_t *os = &rrcext->extensionValue.choice.OCTET_STRING_SIZE_3_;
-    DevAssert(os->size == 3); // SIZE(3), enforced by the ASN.1 decoder
+    AssertError(os->size == 3, return false, "Latest RRC Version Enhanced has size %zu, expected 3\n", os->size);
     memcpy(out, os->buf, os->size);
-    return;
+    return true;
   }
+  // Latest RRC Version Enhanced (O)
+  return true;
 }
 
 /**
@@ -872,7 +874,8 @@ bool decode_f1ap_setup_request(const F1AP_F1AP_PDU_t *pdu, f1ap_setup_req_t *out
         break;
       case F1AP_ProtocolIE_ID_id_GNB_DU_RRC_Version:
         /* gNB-DU RRC version (M) */
-        decode_latest_rrc_version_enhanced(&ie->value.choice.RRC_Version, out->rrc_ver);
+        if (!decode_latest_rrc_version_enhanced(&ie->value.choice.RRC_Version, out->rrc_ver))
+          return false;
         break;
       default:
         AssertError(1 == 0, return false, "F1AP_ProtocolIE_ID_id %ld unknown\n", ie->id);
@@ -1114,7 +1117,8 @@ bool decode_f1ap_setup_response(const F1AP_F1AP_PDU_t *pdu, f1ap_setup_resp_t *o
       // gNB-CU RRC version (M)
       _EQ_CHECK_INT(ie->value.present, F1AP_F1SetupResponseIEs__value_PR_RRC_Version);
       // RRC Version: "This IE is not used in this release."
-      decode_latest_rrc_version_enhanced(&ie->value.choice.RRC_Version, out->rrc_ver);
+      if (!decode_latest_rrc_version_enhanced(&ie->value.choice.RRC_Version, out->rrc_ver))
+        return false;
       break;
 
       case F1AP_ProtocolIE_ID_id_Cells_to_be_Activated_List: {
