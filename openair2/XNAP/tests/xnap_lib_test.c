@@ -743,6 +743,8 @@ static void test_xn_ran_paging(void)
   ran_area_ids[0] = (xnap_ran_area_id_t){.tac = 0x001234, .ranac_present = true, .ranac = 7};
   ran_area_ids[1] = (xnap_ran_area_id_t){.tac = 0x005678, .ranac_present = false};
 
+  uint8_t nr_cap[] = {0x10, 0x11, 0x12, 0x13};
+
   xnap_ran_paging_t cases[] = {
       {.ue_identity_index_value = 0x2A5,
        .ue_ran_paging_identity = 0xABCDE01234ULL,
@@ -759,6 +761,14 @@ static void test_xn_ran_paging(void)
                            .num_ran_area_ids = 2,
                            .ran_area_ids = ran_area_ids}},
   };
+
+  cases[1].paging_priority = malloc_or_fail(sizeof(xnap_paging_priority_t));
+  *cases[1].paging_priority = XNAP_PAGING_PRIO_LEVEL8;
+  cases[1].ran_paging_attempt_info = calloc_or_fail(1, sizeof(xnap_ran_paging_attempt_info_t));
+  *cases[1].ran_paging_attempt_info =
+      (xnap_ran_paging_attempt_info_t){.paging_attempt_count = 2, .intended_num_paging_attempts = 16};
+  cases[1].ran_paging_attempt_info->next_paging_area_scope_changed = true;
+  cases[1].ue_radio_cap_for_paging = create_byte_array(sizeof(nr_cap), nr_cap);
 
   for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); i++) {
     /* ---------- encode ---------- */
@@ -944,6 +954,8 @@ static void test_xn_retrieve_ue_context_failure(void)
       .new_ng_node_ue_xnap_id = 0x00ABCDEF,
       .cause = {.type = XNAP_CAUSE_RADIO_NETWORK, .value = XNAP_CAUSE_RADIO_NETWORK_LAYER_UNKNOWN_LOCAL_NG_RAN_NODE_UE_XNAP_ID},
   };
+  uint8_t resume_container[] = {0x30, 0x31, 0x32, 0x33, 0x34, 0x35};
+  orig.old_to_new_resume_container = create_byte_array(sizeof(resume_container), resume_container);
 
   /* ---------- encode ---------- */
   XNAP_XnAP_PDU_t *xnenc = encode_xnap_retrieve_ue_context_failure(&orig);
