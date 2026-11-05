@@ -13,7 +13,7 @@ FROM ran-build-cuda:latest AS gnb-build
 
 
 #start from scratch for target executable
-FROM nvidia/cuda:12.2.0-runtime-ubuntu22.04 AS oai-gnb
+FROM nvidia/cuda:13.1.0-runtime-ubuntu24.04 AS oai-gnb
 ARG BUILD_OPTION
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Europe/Paris
@@ -24,14 +24,14 @@ RUN apt-get update && \
         software-properties-common \
         procps \
         libsctp1 \
-        libboost-chrono1.74.0 \
-        libboost-date-time1.74.0 \
-        libboost-filesystem1.74.0 \
-        libboost-regex1.74.0 \
-        libboost-serialization1.74.0 \
-        libboost-thread1.74.0 \
-        libboost-system1.74.0 \
-        libboost-program-options1.74.0 \
+        libboost-chrono1.83.0 \
+        libboost-date-time1.83.0 \
+        libboost-filesystem1.83.0 \
+        libboost-regex1.83.0 \
+        libboost-serialization1.83.0 \
+        libboost-thread1.83.0 \
+        libboost-system1.83.0 \
+        libboost-program-options1.83.0 \
         tzdata \
         libconfig9 \
         openssl \
