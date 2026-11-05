@@ -152,6 +152,8 @@ typedef struct {
   _Atomic(bool) search_new_cells_pending;
   int last_blind_slot;
   int last_slot;
+  /// slot of the frame cycle (frame * slots_per_frame + slot) of the last neighboring cell measurement, -1 if none
+  int last_meas_slot;
 } PHY_NR_MEASUREMENTS;
 
 typedef struct {

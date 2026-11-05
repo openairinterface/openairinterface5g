@@ -311,7 +311,8 @@ typedef struct timer_elm_s {
                  parms ? parms->args_to_start_routine : NULL,
                  (char *)itti_get_task_name(task_id),
                  -1,
-                 OAI_PRIORITY_RT);
+                 // rfsim runs as fast as possible, the upper layer tasks need equal priority
+                 IS_SOFTMODEM_RFSIM ? OAI_PRIORITY_RT_MAX : OAI_PRIORITY_RT);
     LOG_D(ITTI,"Created Posix thread %s\n",  itti_get_task_name(task_id) );
     return 0;
   }
