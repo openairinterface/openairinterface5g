@@ -2613,8 +2613,10 @@ static simde__m128i nr_comp_muli_sum(simde__m128i input_x,
     xy_re_128 = simde_mm_srai_epi32(xy_re_128, b);
     xy_im_128 = simde_mm_srai_epi32(xy_im_128, b);
   } else {
-    xy_re_128 = simde_mm_slli_epi32(xy_re_128, -b);
-    xy_im_128 = simde_mm_slli_epi32(xy_im_128, -b);
+    // shift count in a register: on Arm, slli maps to vshlq_n, which clang only accepts with a constant count
+    const simde__m128i shift = simde_mm_cvtsi32_si128(-b);
+    xy_re_128 = simde_mm_sll_epi32(xy_re_128, shift);
+    xy_im_128 = simde_mm_sll_epi32(xy_im_128, shift);
   }
 
   simde__m128i output = oai_mm_pack(xy_re_128, xy_im_128);
@@ -2996,7 +2998,7 @@ uint8_t nr_mmse_2layers(c16_t **rxdataF_comp,
       if (b > 0) {
         mmtmpD2 = simde_mm_srai_epi32(determ_fin_128[0], b);
       } else {
-        mmtmpD2 = simde_mm_slli_epi32(determ_fin_128[0], -b);
+        mmtmpD2 = simde_mm_sll_epi32(determ_fin_128[0], simde_mm_cvtsi32_si128(-b));
       }
       mmtmpD3 = simde_mm_unpacklo_epi32(mmtmpD2, mmtmpD2);
       mmtmpD2 = simde_mm_unpackhi_epi32(mmtmpD2, mmtmpD2);

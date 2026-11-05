@@ -118,22 +118,25 @@ static void test_pack_unpack(nfapi_nr_tx_data_request_t *req)
   DevAssert(header.message_id == req->header.message_id);
   DevAssert(header.message_length == req->header.message_length);
   // test the unpacking and compare with initial message
-  nfapi_nr_tx_data_request_t unpacked_req = {0};
+  // nfapi_nr_tx_data_request_t is several MB: allocate it on the heap, not the stack
+  nfapi_nr_tx_data_request_t *unpacked_req = calloc_or_fail(1, sizeof(nfapi_nr_tx_data_request_t));
   int unpack_result =
-      fapi_nr_p7_message_unpack(msg_buf, header.message_length + NFAPI_HEADER_LENGTH, &unpacked_req, sizeof(unpacked_req), 0);
+      fapi_nr_p7_message_unpack(msg_buf, header.message_length + NFAPI_HEADER_LENGTH, unpacked_req, sizeof(*unpacked_req), 0);
   DevAssert(unpack_result >= 0);
-  DevAssert(eq_tx_data_request(&unpacked_req, req));
-  free_tx_data_request(&unpacked_req);
+  DevAssert(eq_tx_data_request(unpacked_req, req));
+  free_tx_data_request(unpacked_req);
+  free(unpacked_req);
   free(msg_buf);
 }
 
 static void test_copy(const nfapi_nr_tx_data_request_t *msg)
 {
   // Test copy function
-  nfapi_nr_tx_data_request_t copy = {0};
-  copy_tx_data_request(msg, &copy);
-  DevAssert(eq_tx_data_request(msg, &copy));
-  free_tx_data_request(&copy);
+  nfapi_nr_tx_data_request_t *copy = calloc_or_fail(1, sizeof(nfapi_nr_tx_data_request_t));
+  copy_tx_data_request(msg, copy);
+  DevAssert(eq_tx_data_request(msg, copy));
+  free_tx_data_request(copy);
+  free(copy);
 }
 
 int main()

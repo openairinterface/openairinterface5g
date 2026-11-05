@@ -108,7 +108,7 @@ TEST(NrLayerPrecoderTest, Basic)
   }
 
   // Cast flat buffer to the required 2D Variable-Length Array (VLA) style pointer
-  c16_t(*dataF_in)[symbol_size] = reinterpret_cast<c16_t(*)[symbol_size]>(buffer_in.data());
+  c16_t(*dataF_in)[] = reinterpret_cast<c16_t(*)[]>(buffer_in.data());
   c16_t(*dataF_out)[symbol_size] = reinterpret_cast<c16_t(*)[symbol_size]>(buffer_out.data());
 
   // Create and populate the weights
@@ -153,7 +153,7 @@ TEST(NrLayerPrecoderTest, SIMD)
   }
 
   // Cast flat buffer to the required 2D Variable-Length Array (VLA) style pointer
-  c16_t(*dataF_in)[symbol_size] = reinterpret_cast<c16_t(*)[symbol_size]>(buffer_in.data());
+  c16_t(*dataF_in)[] = reinterpret_cast<c16_t(*)[]>(buffer_in.data());
   c16_t(*dataF_out)[symbol_size] = reinterpret_cast<c16_t(*)[symbol_size]>(buffer_out.data());
 
   // Create and populate the weights
@@ -200,7 +200,7 @@ TEST(NrLayerPrecoderTest, Compare_CM_SIMD)
   }
 
   // Cast flat buffer to the required 2D Variable-Length Array (VLA) style pointer
-  c16_t(*dataF_in)[symbol_size] = reinterpret_cast<c16_t(*)[symbol_size]>(buffer_in.data());
+  c16_t(*dataF_in)[] = reinterpret_cast<c16_t(*)[]>(buffer_in.data());
   c16_t(*dataF_out_cm)[symbol_size] = reinterpret_cast<c16_t(*)[symbol_size]>(buffer_out_cm.data());
   c16_t(*dataF_out_simd)[symbol_size] = reinterpret_cast<c16_t(*)[symbol_size]>(buffer_out_simd.data());
 
@@ -253,7 +253,7 @@ TEST(NrLayerPrecoderTest, Compare_2x2_SIMD)
   for (int i = 0; i < n_layers * symbol_size; ++i)
     buffer_in[i] = {static_cast<int16_t>((rand() % (2 * in_max + 1)) - in_max),
                     static_cast<int16_t>((rand() % (2 * in_max + 1)) - in_max)};
-  c16_t(*dataF_in)[symbol_size] = reinterpret_cast<c16_t(*)[symbol_size]>(buffer_in.data());
+  c16_t(*dataF_in)[] = reinterpret_cast<c16_t(*)[]>(buffer_in.data());
 
   // The two 2-port/2-layer PMIs: theta = 1 and theta = j ([layer][port])
   const c16_t pmis[2][2][2] = {
@@ -343,7 +343,7 @@ TEST(NrLayerPrecoderTest, Compare_Xpol_4port_SIMD)
       for (int i = 0; i < n_layers * symbol_size; ++i)
         buffer_in[i] = {static_cast<int16_t>((rand() % (2 * in_max + 1)) - in_max),
                         static_cast<int16_t>((rand() % (2 * in_max + 1)) - in_max)};
-      c16_t(*dataF_in)[symbol_size] = reinterpret_cast<c16_t(*)[symbol_size]>(buffer_in.data());
+      c16_t(*dataF_in)[] = reinterpret_cast<c16_t(*)[]>(buffer_in.data());
 
       // every co-phasing pattern: 4^n_layers is small enough to enumerate exhaustively
       int n_patterns = 1;
