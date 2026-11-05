@@ -662,6 +662,9 @@ static bool decode_up_tnl(const F1AP_UPTransportLayerInformation_t *tnl_info, f1
 {
   _EQ_CHECK_INT(tnl_info->present, F1AP_UPTransportLayerInformation_PR_gTPTunnel);
   const F1AP_GTPTunnel_t *gtp_tnl = tnl_info->choice.gTPTunnel;
+  // only IPv4 transport layer addresses are supported
+  _EQ_CHECK_INT((int)gtp_tnl->transportLayerAddress.size, 4);
+  _EQ_CHECK_INT(gtp_tnl->transportLayerAddress.bits_unused, 0);
   BIT_STRING_TO_TRANSPORT_LAYER_ADDRESS_IPv4(&gtp_tnl->transportLayerAddress, out->tl_address);
   OCTET_STRING_TO_UINT32(&gtp_tnl->gTP_TEID, out->teid);
   return true;
