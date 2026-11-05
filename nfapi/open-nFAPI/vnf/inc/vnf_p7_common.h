@@ -103,7 +103,7 @@ typedef struct vnf_p7_s {
   uint32_t sf_start_time_hr;
   uint32_t slot_start_time_hr;
   uint8_t* rx_message_buffer; // would this be better put in the p7 conenction info?
-  uint16_t rx_message_buffer_size;
+  uint32_t rx_message_buffer_size;
 
 } vnf_p7_t;
 
