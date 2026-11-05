@@ -229,7 +229,7 @@ static void UE_synch(void *arg) {
     // Restart continuous tracking from the newly acquired frequency estimate.
     if (get_nrUE_params()->cont_fo_comp)
       UE->freq_off_acc = 0.0;
-    if (!get_nrUE_params()->cont_fo_comp) {
+    else {
       // rerun with new cell parameters and frequency-offset
       nrue_ru_set_freq(UE, ul_carrier, dl_carrier, freq_offset);
     }
