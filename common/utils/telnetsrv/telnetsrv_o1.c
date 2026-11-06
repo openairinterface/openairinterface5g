@@ -73,7 +73,7 @@ static int get_stats(char *buf, int debug, telnet_printfunc_t prnt)
   const f1ap_setup_req_t *sr = mac->f1_config.setup_req;
   const f1ap_served_cell_info_t *cell_info = &sr->cell[0].info;
 
-  const NR_ServingCellConfigCommon_t *scc = mac->cells[0].common_channels.ServingCellConfigCommon;
+  const NR_ServingCellConfigCommon_t *scc = nr_mac_get_cell_by_idx(mac, 0)->common_channels.ServingCellConfigCommon;
   const NR_FrequencyInfoDL_t *frequencyInfoDL = scc->downlinkConfigCommon->frequencyInfoDL;
   const NR_FrequencyInfoUL_t *frequencyInfoUL = scc->uplinkConfigCommon->frequencyInfoUL;
   frame_type_t frame_type = get_frame_type(*frequencyInfoDL->frequencyBandList.list.array[0], *scc->ssbSubcarrierSpacing);
@@ -286,7 +286,7 @@ static int set_bwconfig(char *buf, int debug, telnet_printfunc_t prnt)
     *end = 0;
 
   gNB_MAC_INST *mac = RC.nrmac[0];
-  NR_ServingCellConfigCommon_t *scc = mac->cells[0].common_channels.ServingCellConfigCommon;
+  NR_ServingCellConfigCommon_t *scc = nr_mac_get_cell_by_idx(mac, 0)->common_channels.ServingCellConfigCommon;
   NR_FrequencyInfoDL_t *frequencyInfoDL = scc->downlinkConfigCommon->frequencyInfoDL;
   NR_BWP_t *initialDL = &scc->downlinkConfigCommon->initialDownlinkBWP->genericParameters;
   NR_FrequencyInfoUL_t *frequencyInfoUL = scc->uplinkConfigCommon->frequencyInfoUL;
@@ -331,7 +331,7 @@ static int set_bwconfig(char *buf, int debug, telnet_printfunc_t prnt)
     ERROR_MSG_RET("unhandled option %s\n", buf);
   }
 
-  nr_cell_sched_t *cell = nr_mac_get_cell_by_phy_id(RC.nrmac[0], 0);
+  nr_cell_sched_t *cell = nr_mac_get_cell_by_idx(RC.nrmac[0], 0);
   free(cell->sched_ctrlSIB1);
   cell->sched_ctrlSIB1 = NULL;
 
@@ -376,7 +376,7 @@ static int start_modem(char *buf, int debug, telnet_printfunc_t prnt)
   UNUSED(buf);
   if (running)
     ERROR_MSG_RET("cannot start, nr-softmodem already running\n");
-  start_L1L2(0, &RC.nrmac[0]->cells[0]);
+  start_L1L2(0, nr_mac_get_cell_by_idx(RC.nrmac[0], 0));
   running = true;
   prnt("OK\n");
   return 0;

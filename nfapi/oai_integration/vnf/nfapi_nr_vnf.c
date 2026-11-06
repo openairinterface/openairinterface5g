@@ -180,7 +180,7 @@ int phy_nr_rach_indication(nfapi_nr_rach_indication_t *ind)
   if (NFAPI_MODE == NFAPI_MODE_VNF || NFAPI_MODE == NFAPI_MODE_AERIAL) {
     nfapi_nr_rach_indication_t *rach_ind = CALLOC(1, sizeof(*rach_ind));
     copy_rach_indication(ind, rach_ind);
-    if (!put_queue(&gnb_rach_ind_queue, rach_ind)) {
+    if (!put_queue(&gnb_rach_ind_queue[ind->header.phy_id], rach_ind)) {
       LOG_E(NR_MAC, "Put_queue failed for rach_ind\n");
       free_rach_indication(rach_ind);
       free(rach_ind);
@@ -198,7 +198,7 @@ int phy_nr_uci_indication(nfapi_nr_uci_indication_t *ind)
     nfapi_nr_uci_indication_t *uci_ind = CALLOC(1, sizeof(*uci_ind));
     AssertFatal(uci_ind, "Memory not allocated for uci_ind in phy_nr_uci_indication.");
     copy_uci_indication(ind, uci_ind);
-    if (!put_queue(&gnb_uci_ind_queue, uci_ind)) {
+    if (!put_queue(&gnb_uci_ind_queue[ind->header.phy_id], uci_ind)) {
       LOG_E(NR_MAC, "Put_queue failed for uci_ind\n");
       free_uci_indication(uci_ind);
       free(uci_ind);
@@ -217,7 +217,7 @@ int phy_nr_crc_indication(nfapi_nr_crc_indication_t *ind)
   if (NFAPI_MODE == NFAPI_MODE_VNF || NFAPI_MODE == NFAPI_MODE_AERIAL) {
     nfapi_nr_crc_indication_t *crc_ind = CALLOC(1, sizeof(*crc_ind));
     copy_crc_indication(ind, crc_ind);
-    if (!put_queue(&gnb_crc_ind_queue, crc_ind)) {
+    if (!put_queue(&gnb_crc_ind_queue[ind->header.phy_id], crc_ind)) {
       LOG_E(NR_MAC, "Put_queue failed for crc_ind\n");
       free_crc_indication(crc_ind);
       free(crc_ind);
@@ -241,7 +241,7 @@ int phy_nr_rx_data_indication(nfapi_nr_rx_data_indication_t *ind)
   if (NFAPI_MODE == NFAPI_MODE_VNF || NFAPI_MODE == NFAPI_MODE_AERIAL) {
     nfapi_nr_rx_data_indication_t *rx_ind = CALLOC(1, sizeof(*rx_ind));
     copy_rx_data_indication(ind, rx_ind);
-    if (!put_queue(&gnb_rx_ind_queue, rx_ind)) {
+    if (!put_queue(&gnb_rx_ind_queue[ind->header.phy_id], rx_ind)) {
       LOG_E(NR_MAC, "Put_queue failed for rx_ind\n");
       free_rx_data_indication(rx_ind);
       free(rx_ind);
@@ -281,26 +281,21 @@ int phy_nr_slot_indication(nfapi_nr_slot_indication_scf_t *ind)
     sched_response.UL_dci_req.header.phy_id = PHY_id;
 #ifdef ENABLE_AERIAL
 
-    bool send_slt_resp = false;
     if (sched_response.DL_req.dl_tti_request_body.nPDUs> 0) {
       oai_fapi_dl_tti_req(&sched_response.DL_req);
-      send_slt_resp = true;
     }
     if (sched_response.UL_tti_req.n_pdus > 0) {
       oai_fapi_ul_tti_req(&sched_response.UL_tti_req);
-      send_slt_resp = true;
     }
     if (sched_response.TX_req.Number_of_PDUs > 0) {
       oai_fapi_tx_data_req(&sched_response.TX_req);
-      send_slt_resp = true;
     }
     if (sched_response.UL_dci_req.numPdus > 0) {
       oai_fapi_ul_dci_req(&sched_response.UL_dci_req);
-      send_slt_resp = true;
     }
-    if (send_slt_resp) {
-      oai_fapi_send_end_request(ind->sfn, ind->slot, PHY_id);
-    }
+    // Aerial requires end-of-slot for every cell, including empty slots,
+    // so that one idle cell cannot hold up the entire cell group.
+    oai_fapi_send_end_request(ind->sfn, ind->slot, PHY_id);
 #else
   if (sched_response.DL_req.dl_tti_request_body.nPDUs > 0)
     oai_nfapi_dl_tti_req(&sched_response.DL_req);
@@ -329,7 +324,7 @@ int phy_nr_slot_indication(nfapi_nr_slot_indication_scf_t *ind)
   NR_UL_IND_t ul_ind;
   ul_ind.frame = ind->sfn;
   ul_ind.slot = ind->slot;
-  ul_ind.phy_id = 0;
+  ul_ind.phy_id = ind->header.phy_id;
   ul_ind.module_id = 0;
   INIT_UL_IND(ul_ind.crc_ind, number_crcs, ind->sfn, ind->slot);
   INIT_UL_IND(ul_ind.rx_ind, number_of_pdus, ind->sfn, ind->slot);
@@ -479,10 +474,12 @@ int vnf_nr_pack_p4_p5_vendor_extension(void *header, uint8_t **ppWritePackedMsg,
 
 void *configure_nr_p7_vnf(void *ptr)
 {
-  init_queue(&gnb_rach_ind_queue);
-  init_queue(&gnb_rx_ind_queue);
-  init_queue(&gnb_crc_ind_queue);
-  init_queue(&gnb_uci_ind_queue);
+  for (int i = 0; i < NR_MAX_CELLS; i++) {
+    init_queue(&gnb_rach_ind_queue[i]);
+    init_queue(&gnb_rx_ind_queue[i]);
+    init_queue(&gnb_crc_ind_queue[i]);
+    init_queue(&gnb_uci_ind_queue[i]);
+  }
 
   vnf_p7_info *p7_vnf = (vnf_p7_info *)ptr;
   p7_vnf->config->port = p7_vnf->local_port;

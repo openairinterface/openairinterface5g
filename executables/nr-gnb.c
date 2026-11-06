@@ -180,7 +180,7 @@ static void rx_func(processingData_L1_t *info)
     UL_INFO.frame = frame_rx;
     UL_INFO.slot = slot_rx;
     UL_INFO.module_id = gNB->Mod_id;
-    UL_INFO.phy_id = gNB->CC_id;
+    UL_INFO.phy_id = 0;
     // Do PRACH RU processing
     UL_INFO.rach_ind.header.transmit_timestamp = 0;
     UL_INFO.rach_ind.pdu_list = UL_INFO.prach_pdu_indication_list;

@@ -274,8 +274,6 @@ typedef struct {
 
 /// Context data structure for RX/TX portion of slot processing
 typedef struct {
-  /// Component Carrier index
-  uint8_t CC_id;
   /// timestamp transmitted to HW
   openair0_timestamp_t timestamp_tx;
   /// slot to act upon for transmission
@@ -298,8 +296,6 @@ typedef struct {
 
 /// Context data structure for eNB slot processing
 typedef struct gNB_L1_proc_t_s {
-  /// Component Carrier index
-  uint8_t CC_id;
   /// timestamp received from HW
   openair0_timestamp_t timestamp_rx;
   /// timestamp to send to "slave rru"
@@ -358,7 +354,6 @@ typedef struct {
 typedef struct PHY_VARS_gNB_s {
   /// Module ID indicator for this instance
   module_id_t Mod_id;
-  uint8_t CC_id;
   uint8_t configured;
   gNB_L1_proc_t proc;
   int num_RU;

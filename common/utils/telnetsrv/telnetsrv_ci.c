@@ -186,6 +186,43 @@ int rrc_gNB_trigger_f1_ho(char *buf, int debug, telnet_printfunc_t prnt)
   return 0;
 }
 
+/** @brief Trigger F1 handover to a specific target PCI
+ *  @param buf: target_pci(uint32_t),rrc_ue_id(int,opt)
+ *  @param debug: Debug flag
+ *  @param prnt: Print function
+ *  @return 0 on success, -1 on failure */
+int rrc_gNB_trigger_f1_ho_pci(char *buf, int debug, telnet_printfunc_t prnt)
+{
+  UNUSED(debug);
+  if (!RC.nrrrc)
+    ERROR_MSG_RET("no RRC present, cannot trigger handover\n");
+  if (!buf)
+    ERROR_MSG_RET("please provide target PCI (and optionally rrc_ue_id)\n");
+
+  char *token = strtok(buf, ",");
+  if (!token)
+    ERROR_MSG_RET("invalid input, expected format: target_pci[,rrc_ue_id]\n");
+  uint32_t target_pci = strtol(token, NULL, 10);
+
+  rrc_gNB_ue_context_t *ue = NULL;
+  token = strtok(NULL, ",");
+  if (token) {
+    ue_id_t ue_id = strtol(token, NULL, 10);
+    ue = rrc_gNB_get_ue_context(RC.nrrrc[0], ue_id);
+    if (!ue)
+      ERROR_MSG_RET("could not find UE with ue_id %d in RRC\n", ue_id);
+  } else {
+    ue = get_single_rrc_ue();
+    if (!ue)
+      ERROR_MSG_RET("no single UE in RRC present\n");
+  }
+
+  gNB_RRC_UE_t *UE = &ue->ue_context;
+  nr_HO_F1_trigger_telnet_pci(RC.nrrrc[0], target_pci, UE->rrc_ue_id);
+  prnt("RRC F1 handover to PCI %u triggered for UE %u\n", target_pci, UE->rrc_ue_id);
+  return 0;
+}
+
 /** @brief Trigger N2 handover for UE
  *  @param buf: Neighbour PCI, SCell PCI, RRC UE ID
  *  @param debug: Debug flag
@@ -404,6 +441,7 @@ static telnetshell_cmddef_t cicmds[] = {
     {"force_ue_release", "[rnti(hex,opt)]", force_ue_release},
     {"force_ul_failure", "[rnti(hex,opt)]", force_ul_failure},
     {"trigger_f1_ho", "[rrc_ue_id(int,opt)]", rrc_gNB_trigger_f1_ho},
+    {"trigger_f1_ho_pci", "target_pci(uint32_t)[,rrc_ue_id(int,opt)]", rrc_gNB_trigger_f1_ho_pci},
     {"fetch_du_by_ue_id", "[rrc_ue_id(int,opt)]", fetch_du_by_ue_id},
     {"get_current_bwp", "[rnti(hex,opt)]", get_current_bwp},
     {"trigger_bwp_switch", "newBWPId [rnti(hex,opt)]", trigger_bwp_switch},

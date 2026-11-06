@@ -172,6 +172,7 @@ static bool eq_dl_tti_request_prs_pdu(const nfapi_nr_dl_tti_prs_pdu_rel16_t *a, 
 
 bool eq_dl_tti_request(const nfapi_nr_dl_tti_request_t *a, const nfapi_nr_dl_tti_request_t *b)
 {
+  EQ(a->header.phy_id, b->header.phy_id);
   EQ(a->header.message_id, b->header.message_id);
   EQ(a->header.message_length, b->header.message_length);
 
@@ -450,6 +451,7 @@ static bool eq_ul_tti_request_srs_pdu(const nfapi_nr_srs_pdu_t *a, const nfapi_n
 
 bool eq_ul_tti_request(const nfapi_nr_ul_tti_request_t *a, const nfapi_nr_ul_tti_request_t *b)
 {
+  EQ(a->header.phy_id, b->header.phy_id);
   EQ(a->header.message_id, b->header.message_id);
   EQ(a->header.message_length, b->header.message_length);
 
@@ -499,6 +501,7 @@ bool eq_ul_tti_request(const nfapi_nr_ul_tti_request_t *a, const nfapi_nr_ul_tti
 
 bool eq_slot_indication(const nfapi_nr_slot_indication_scf_t *a, const nfapi_nr_slot_indication_scf_t *b)
 {
+  EQ(a->header.phy_id, b->header.phy_id);
   EQ(a->header.message_id, b->header.message_id);
   EQ(a->header.message_length, b->header.message_length);
 
@@ -518,6 +521,7 @@ bool eq_ul_dci_request_PDU(const nfapi_nr_ul_dci_request_pdus_t *a, const nfapi_
 
 bool eq_ul_dci_request(const nfapi_nr_ul_dci_request_t *a, const nfapi_nr_ul_dci_request_t *b)
 {
+  EQ(a->header.phy_id, b->header.phy_id);
   EQ(a->header.message_id, b->header.message_id);
   EQ(a->header.message_length, b->header.message_length);
 
@@ -552,6 +556,7 @@ bool eq_tx_data_request_PDU(const nfapi_nr_pdu_t *a, const nfapi_nr_pdu_t *b)
 
 bool eq_tx_data_request(const nfapi_nr_tx_data_request_t *a, const nfapi_nr_tx_data_request_t *b)
 {
+  EQ(a->header.phy_id, b->header.phy_id);
   EQ(a->header.message_id, b->header.message_id);
   EQ(a->header.message_length, b->header.message_length);
 
@@ -581,6 +586,7 @@ bool eq_rx_data_indication_PDU(const nfapi_nr_rx_data_pdu_t *a, const nfapi_nr_r
 
 bool eq_rx_data_indication(const nfapi_nr_rx_data_indication_t *a, const nfapi_nr_rx_data_indication_t *b)
 {
+  EQ(a->header.phy_id, b->header.phy_id);
   EQ(a->header.message_id, b->header.message_id);
   EQ(a->header.message_length, b->header.message_length);
   EQ(a->sfn, b->sfn);
@@ -612,6 +618,7 @@ bool eq_crc_indication_CRC(const nfapi_nr_crc_t *a, const nfapi_nr_crc_t *b)
 
 bool eq_crc_indication(const nfapi_nr_crc_indication_t *a, const nfapi_nr_crc_indication_t *b)
 {
+  EQ(a->header.phy_id, b->header.phy_id);
   EQ(a->header.message_id, b->header.message_id);
   EQ(a->header.message_length, b->header.message_length);
   EQ(a->sfn, b->sfn);
@@ -776,6 +783,7 @@ bool eq_uci_indication_UCI(const nfapi_nr_uci_t *a, const nfapi_nr_uci_t *b)
 
 bool eq_uci_indication(const nfapi_nr_uci_indication_t *a, const nfapi_nr_uci_indication_t *b)
 {
+  EQ(a->header.phy_id, b->header.phy_id);
   EQ(a->header.message_id, b->header.message_id);
   EQ(a->header.message_length, b->header.message_length);
   EQ(a->sfn, b->sfn);
@@ -811,6 +819,7 @@ static bool eq_srs_indication_PDU(const nfapi_nr_srs_indication_pdu_t *a, const 
 
 bool eq_srs_indication(const nfapi_nr_srs_indication_t *a, const nfapi_nr_srs_indication_t *b)
 {
+  EQ(a->header.phy_id, b->header.phy_id);
   EQ(a->header.message_id, b->header.message_id);
   EQ(a->header.message_length, b->header.message_length);
   EQ(a->sfn, b->sfn);
@@ -826,6 +835,7 @@ bool eq_srs_indication(const nfapi_nr_srs_indication_t *a, const nfapi_nr_srs_in
 bool eq_srs_toa_vendor_ext_indication(const nfapi_nr_srs_toa_vendor_ext_indication_t *a,
                                       const nfapi_nr_srs_toa_vendor_ext_indication_t *b)
 {
+  EQ(a->header.phy_id, b->header.phy_id);
   EQ(a->header.message_id, b->header.message_id);
   EQ(a->header.message_length, b->header.message_length);
   EQ(a->sfn, b->sfn);
@@ -859,6 +869,7 @@ static bool eq_rach_indication_PDU(const nfapi_nr_prach_indication_pdu_t *a, con
 
 bool eq_rach_indication(const nfapi_nr_rach_indication_t *a, const nfapi_nr_rach_indication_t *b)
 {
+  EQ(a->header.phy_id, b->header.phy_id);
   EQ(a->header.message_id, b->header.message_id);
   EQ(a->header.message_length, b->header.message_length);
   EQ(a->sfn, b->sfn);
@@ -1127,6 +1138,7 @@ static void copy_dl_tti_request_pdu(const nfapi_nr_dl_tti_request_pdu_t *src, nf
 
 void copy_dl_tti_request(const nfapi_nr_dl_tti_request_t *src, nfapi_nr_dl_tti_request_t *dst)
 {
+  dst->header.phy_id = src->header.phy_id;
   dst->header.message_id = src->header.message_id;
   dst->header.message_length = src->header.message_length;
   if (src->vendor_extension) {
@@ -1272,6 +1284,7 @@ static void copy_ul_tti_request_srs_pdu(const nfapi_nr_srs_pdu_t *src, nfapi_nr_
 
 void copy_ul_tti_request(const nfapi_nr_ul_tti_request_t *src, nfapi_nr_ul_tti_request_t *dst)
 {
+  dst->header.phy_id = src->header.phy_id;
   dst->header.message_id = src->header.message_id;
   dst->header.message_length = src->header.message_length;
 
@@ -1320,6 +1333,7 @@ void copy_ul_tti_request(const nfapi_nr_ul_tti_request_t *src, nfapi_nr_ul_tti_r
 
 void copy_slot_indication(const nfapi_nr_slot_indication_scf_t *src, nfapi_nr_slot_indication_scf_t *dst)
 {
+  dst->header.phy_id = src->header.phy_id;
   dst->header.message_id = src->header.message_id;
   dst->header.message_length = src->header.message_length;
 
@@ -1338,6 +1352,7 @@ void copy_ul_dci_request_pdu(const nfapi_nr_ul_dci_request_pdus_t *src, nfapi_nr
 
 void copy_ul_dci_request(const nfapi_nr_ul_dci_request_t *src, nfapi_nr_ul_dci_request_t *dst)
 {
+  dst->header.phy_id = src->header.phy_id;
   dst->header.message_id = src->header.message_id;
   dst->header.message_length = src->header.message_length;
 
@@ -1380,6 +1395,7 @@ void copy_tx_data_request_PDU(const nfapi_nr_pdu_t *src, nfapi_nr_pdu_t *dst)
 
 void copy_tx_data_request(const nfapi_nr_tx_data_request_t *src, nfapi_nr_tx_data_request_t *dst)
 {
+  dst->header.phy_id = src->header.phy_id;
   dst->header.message_id = src->header.message_id;
   dst->header.message_length = src->header.message_length;
 
@@ -1432,6 +1448,7 @@ void copy_rx_data_indication_PDU(const nfapi_nr_rx_data_pdu_t *src, nfapi_nr_rx_
 
 void copy_rx_data_indication(const nfapi_nr_rx_data_indication_t *src, nfapi_nr_rx_data_indication_t *dst)
 {
+  dst->header.phy_id = src->header.phy_id;
   dst->header.message_id = src->header.message_id;
   dst->header.message_length = src->header.message_length;
 
@@ -1486,6 +1503,7 @@ void copy_crc_indication_CRC(const nfapi_nr_crc_t *src, nfapi_nr_crc_t *dst)
 
 void copy_crc_indication(const nfapi_nr_crc_indication_t *src, nfapi_nr_crc_indication_t *dst)
 {
+  dst->header.phy_id = src->header.phy_id;
   dst->header.message_id = src->header.message_id;
   dst->header.message_length = src->header.message_length;
 
@@ -1673,6 +1691,7 @@ void copy_uci_indication_UCI(const nfapi_nr_uci_t *src, nfapi_nr_uci_t *dst)
 
 void copy_uci_indication(const nfapi_nr_uci_indication_t *src, nfapi_nr_uci_indication_t *dst)
 {
+  dst->header.phy_id = src->header.phy_id;
   dst->header.message_id = src->header.message_id;
   dst->header.message_length = src->header.message_length;
   dst->sfn = src->sfn;
@@ -1775,6 +1794,7 @@ void copy_srs_indication_PDU(const nfapi_nr_srs_indication_pdu_t *src, nfapi_nr_
 
 void copy_srs_indication(const nfapi_nr_srs_indication_t *src, nfapi_nr_srs_indication_t *dst)
 {
+  dst->header.phy_id = src->header.phy_id;
   dst->header.message_id = src->header.message_id;
   dst->header.message_length = src->header.message_length;
   dst->sfn = src->sfn;
@@ -1790,6 +1810,7 @@ void copy_srs_indication(const nfapi_nr_srs_indication_t *src, nfapi_nr_srs_indi
 void copy_srs_toa_vendor_ext_indication(const nfapi_nr_srs_toa_vendor_ext_indication_t *src,
                                         nfapi_nr_srs_toa_vendor_ext_indication_t *dst)
 {
+  dst->header.phy_id = src->header.phy_id;
   dst->header.message_id = src->header.message_id;
   dst->header.message_length = src->header.message_length;
   dst->sfn = src->sfn;
@@ -1853,6 +1874,7 @@ static void copy_rach_indication_PDU(const nfapi_nr_prach_indication_pdu_t *src,
 
 void copy_rach_indication(const nfapi_nr_rach_indication_t *src, nfapi_nr_rach_indication_t *dst)
 {
+  dst->header.phy_id = src->header.phy_id;
   dst->header.message_id = src->header.message_id;
   dst->header.message_length = src->header.message_length;
   dst->sfn = src->sfn;
