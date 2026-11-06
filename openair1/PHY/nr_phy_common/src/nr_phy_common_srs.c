@@ -2,6 +2,7 @@
  * SPDX-License-Identifier: LicenseRef-CSSL-1.0
  */
 
+#include <math.h>
 #include "PHY/nr_phy_common/inc/nr_phy_common_srs.h"
 #include "PHY/NR_REFSIG/dmrs_nr.h"
 #include "PHY/NR_REFSIG/ul_ref_seq_nr.h"
@@ -109,6 +110,64 @@ static int compute_n_b(frame_t frame_number,
   return n_b;
 }
 
+// Compute cyclic shift of an SRS resource for antenna port
+// 38.211 Release 18 : 6.4.1.4.2
+static uint16_t nr_srs_cyclic_shift(int N_ap, int p_index, uint8_t n_SRS_cs_max, int n_SRS_cs)
+{
+  const int port = SRS_antenna_port[p_index] - 1000;
+  int offset = n_SRS_cs_max * port / N_ap;
+
+  switch (N_ap) {
+    case 8:
+      if (n_SRS_cs_max == 6)
+        offset = n_SRS_cs_max * (port / 4) / (N_ap / 4);
+      else if (n_SRS_cs_max == 12)
+        offset = n_SRS_cs_max * (port / 2) / (N_ap / 2);
+      break;
+    case 4:
+      if (n_SRS_cs_max == 6)
+        offset = n_SRS_cs_max * (port / 2) / (N_ap / 2);
+      break;
+    default:
+      break;
+  }
+
+  return (n_SRS_cs + offset) % n_SRS_cs_max;
+}
+
+// Compute comb offset of an SRS resource for antenna port
+// 38.211 Release 18: 6.4.1.4.3
+static uint8_t nr_srs_comb_offset(int N_ap, int p_index, uint8_t K_TC, uint8_t n_SRS_cs_max, int n_SRS_cs, uint8_t K_TC_overbar)
+{
+  const int16_t port = SRS_antenna_port[p_index];
+  const bool port_odd = (port == 1001) || (port == 1003) || (port == 1005) || (port == 1007);
+  const bool cs_upper_half = (n_SRS_cs >= n_SRS_cs_max / 2) && (n_SRS_cs < n_SRS_cs_max);
+
+  switch (N_ap) {
+    case 8:
+      if (n_SRS_cs_max == 6) {
+        if ((port == 1003) || (port == 1007))
+          return (K_TC_overbar + 3 * K_TC / 4) % K_TC;
+        if ((port == 1002) || (port == 1006))
+          return (K_TC_overbar + K_TC / 2) % K_TC;
+        if ((port == 1001) || (port == 1005))
+          return (K_TC_overbar + K_TC / 4) % K_TC;
+      } else if (port_odd && (n_SRS_cs_max == 12 || (n_SRS_cs_max == 8 && cs_upper_half))) {
+        return (K_TC_overbar + K_TC / 2) % K_TC;
+      }
+      break;
+    case 4:
+      if (((port == 1001) || (port == 1003))
+          && ((n_SRS_cs_max == 6) || (((n_SRS_cs_max == 8) || (n_SRS_cs_max == 12)) && cs_upper_half)))
+        return (K_TC_overbar + K_TC / 2) % K_TC;
+      break;
+    default:
+      break;
+  }
+
+  return K_TC_overbar;
+}
+
 /*************************************************************************
 *
 * NAME :         generate_srs_nr
@@ -202,12 +261,26 @@ bool generate_srs_nr(const NR_DL_FRAME_PARMS *frame_parms,
     }
   }
 
+  // amp is per subcarrier, which suits the channels that fill the band. The SRS covers only
+  // M_sc_b_SRS of the ofdm_symbol_size subcarriers, so it leaves the IFFT that much quieter, and
+  // the fixed point FFT at the receiver rounds against the full scale and not against the signal,
+  // so its floor ends up right under it. Undoing the factor levels every comb and bandwidth at
+  // amp/sqrt(N_ap) per antenna; the cap keeps a narrow SRS off the rails.
+  const uint32_t srs_sc_total = frame_parms->ofdm_symbol_size;
+  double amp_scaled = (double)amp * sqrt((double)srs_sc_total / (M_sc_b_SRS ? M_sc_b_SRS : 1));
+  const double amp_max = (double)NR_SRS_GEN_MAX_SUBCARRIER * sqrt((double)N_ap);
+  if (amp_scaled > amp_max)
+    amp_scaled = amp_max;
+  if (amp_scaled < (double)amp)
+    amp_scaled = (double)amp;
+  const int32_t amp_eff = (int32_t)lround(amp_scaled);
+
   // Variable initialization
   if(nr_srs_info) {
-    nr_srs_info->srs_generated_signal_bits = log2_approx(amp);
+    nr_srs_info->srs_generated_signal_bits = log2_approx(amp_eff);
   }
   const uint64_t subcarrier_offset = bwp_start * NR_NB_SC_PER_RB;
-  float amp_sqrt_N_ap = amp / sqrt(N_ap);
+  float amp_sqrt_N_ap = amp_eff / sqrt(N_ap);
   int n_b[nr_srs_info->B_SRS + 1];
 
   // Find index of table which is for this SRS length
@@ -221,7 +294,7 @@ bool generate_srs_nr(const NR_DL_FRAME_PARMS *frame_parms,
     LOG_I(NR_PHY,"============ port %d ============\n", p_index);
 #endif
 
-    uint16_t n_SRS_cs_i = (nr_srs_info->n_SRS_cs + (n_SRS_cs_max * (SRS_antenna_port[p_index] - 1000) / N_ap)) % n_SRS_cs_max;
+    uint16_t n_SRS_cs_i = nr_srs_cyclic_shift(N_ap, p_index, n_SRS_cs_max, nr_srs_info->n_SRS_cs);
     double alpha_i = 2 * M_PI * ((double)n_SRS_cs_i / (double)n_SRS_cs_max);
 
 #ifdef SRS_DEBUG
@@ -274,20 +347,11 @@ bool generate_srs_nr(const NR_DL_FRAME_PARMS *frame_parms,
       LOG_I(NR_PHY,"sum_n_b = %i\n", sum_n_b);
 #endif
 
-      // Compute the frequency-domain starting position
-      uint8_t K_TC_p = 0;
-      if((nr_srs_info->n_SRS_cs >= n_SRS_cs_max / 2)
-         && (nr_srs_info->n_SRS_cs < n_SRS_cs_max)
-         && (N_ap == 4)
-         && ((SRS_antenna_port[p_index] == 1001) || (SRS_antenna_port[p_index] == 1003))) {
-        K_TC_p = (nr_srs_info->K_TC_overbar + K_TC / 2) % K_TC;
-      } else {
-        K_TC_p = nr_srs_info->K_TC_overbar;
-      }
+      uint8_t K_TC_p = nr_srs_comb_offset(N_ap, p_index, K_TC, n_SRS_cs_max, nr_srs_info->n_SRS_cs, nr_srs_info->K_TC_overbar);
       uint8_t k_l_offset = 0; // If the SRS is configured by the IE SRS-PosResource-r16, the quantity k_l_offset is
                               // given by TS 38.211 - Table 6.4.1.4.3-2, otherwise k_l_offset = 0.
-      uint8_t k_0_overbar_p = nr_srs_info->n_shift * NR_NB_SC_PER_RB + (K_TC_p + k_l_offset) % K_TC;
-      uint8_t k_0_p = k_0_overbar_p + K_TC * M_sc_b_SRS * sum_n_b;
+      uint16_t k_0_overbar_p = nr_srs_info->n_shift * NR_NB_SC_PER_RB + (K_TC_p + k_l_offset) % K_TC;
+      uint16_t k_0_p = k_0_overbar_p + K_TC * M_sc_b_SRS * sum_n_b;
       nr_srs_info->k_0_p[p_index][l_line] = k_0_p;
 
 #ifdef SRS_DEBUG
@@ -308,8 +372,8 @@ bool generate_srs_nr(const NR_DL_FRAME_PARMS *frame_parms,
           .r = shift.r * r_overbar.r - shift.i * r_overbar.i,
           .i = shift.r * r_overbar.i + shift.i * r_overbar.r,
         };
-        c16_t r_amp = {(((int32_t)(amp_sqrt_N_ap * r.r)) >> 15),
-                       (((int32_t)(amp_sqrt_N_ap * r.i)) >> 15)};
+        // Rounding, not truncation
+        c16_t r_amp = {(((int32_t)(amp_sqrt_N_ap * r.r) + (1 << 14)) >> 15), (((int32_t)(amp_sqrt_N_ap * r.i) + (1 << 14)) >> 15)};
 
 #ifdef SRS_DEBUG
         int subcarrier_log = subcarrier - subcarrier_offset;
