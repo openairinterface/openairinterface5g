@@ -1615,6 +1615,14 @@ static void rrc_handle_RRCReestablishmentRequest(gNB_RRC_INST *rrc,
     goto fallback_rrc_setup;
   }
 
+  /* The core already commanded the release of this UE (NGAP UE Context Release
+   * Command): the context is only kept until the F1 release completes, and the
+   * DU might have removed the UE already, so it cannot be re-established. */
+  if (UE->an_release) {
+    LOG_E(NR_RRC, "UE %d: release already commanded by core, fallback to RRC setup\n", UE->rrc_ue_id);
+    goto fallback_rrc_setup;
+  }
+
   f1_ue_data_t ue_data = cu_get_f1_ue_data(UE->rrc_ue_id);
 
   nr_ho_source_cu_t *source_ctx = UE->ho_context ? UE->ho_context->source : NULL;
@@ -1727,8 +1735,9 @@ fallback_rrc_setup:
   random_value = random_value & NR_RRC_RANDOM_VALUE_39_BIT_MASK;
 
   ngap_cause_t cause = {.type = NGAP_CAUSE_RADIO_NETWORK, .value = ngap_cause};
-  /* request release of the "old" UE in case it exists */
-  if (ue_context_p != NULL)
+  /* request release of the "old" UE in case it exists, unless the core
+   * already commanded it */
+  if (ue_context_p != NULL && !ue_context_p->ue_context.an_release)
     rrc_gNB_send_NGAP_UE_CONTEXT_RELEASE_REQ(0, ue_context_p, cause);
 
   rrc_gNB_ue_context_t *new = rrc_gNB_create_ue_context(assoc_id, msg->crnti, rrc, random_value, msg->gNB_DU_ue_id);

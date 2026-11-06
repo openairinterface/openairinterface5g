@@ -882,6 +882,19 @@ void ue_context_modification_request(const f1ap_ue_context_mod_req_t *req)
     return;
   }
 
+  /* Re-establishment of a UE that only has SRB1 (e.g., the old UE context was
+   * already removed on this DU): there is nothing to re-establish, and the
+   * CellGroupConfig without SRB1 would have an empty rlc-BearerToAddModList,
+   * which cannot be encoded. */
+  const bool config_query = req->gNB_DU_Configuration_Query != NULL && *req->gNB_DU_Configuration_Query;
+  if (config_query && UE->reestablish_rlc && seq_arr_size(&UE->UE_sched_ctrl.lc_config) <= 1) {
+    // TODO UE Context Modification Failure does not exist, stop handling the request.
+    LOG_E(NR_MAC, "UE %04x: re-establishment with only one LCID, ignoring UE Context Modification Request\n", UE->rnti);
+    NR_SCHED_UNLOCK(&mac->sched_lock);
+    ASN_STRUCT_FREE(asn_DEF_NR_UE_NR_Capability, ue_cap);
+    return;
+  }
+
   // SpCell CGI is optional in UE Context Modification (only present on handover).
   // TODO: Add proper error handling
   nr_cell_sched_t *cell = (req->plmn && req->nr_cellid)
