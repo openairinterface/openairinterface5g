@@ -311,10 +311,7 @@ XNAP_XnAP_PDU_t *encode_xnap_handover_request(const xnap_handover_req_t *req)
   ie4->id = XNAP_ProtocolIE_ID_id_GUAMI;
   ie4->criticality = XNAP_Criticality_reject;
   ie4->value.present = XNAP_HandoverRequest_IEs__value_PR_GUAMI;
-  MCC_MNC_TO_PLMNID(req->guami.plmn.mcc, req->guami.plmn.mnc, req->guami.plmn.mnc_digit_length, &ie4->value.choice.GUAMI.plmn_ID);
-  AMF_REGION_TO_BIT_STRING(req->guami.amf_region_id, &ie4->value.choice.GUAMI.amf_region_id);
-  AMF_SETID_TO_BIT_STRING(req->guami.amf_set_id, &ie4->value.choice.GUAMI.amf_set_id);
-  AMF_POINTER_TO_BIT_STRING(req->guami.amf_pointer, &ie4->value.choice.GUAMI.amf_pointer);
+  ie4->value.choice.GUAMI = encode_xnap_guami(&req->guami);
 
   /* UE Context Information (M) */
   asn1cSequenceAdd(out->protocolIEs.list, XNAP_HandoverRequest_IEs_t, ie5);
@@ -418,12 +415,7 @@ bool decode_xnap_handover_request(xnap_handover_req_t *out, const XNAP_XnAP_PDU_
 
       case XNAP_ProtocolIE_ID_id_GUAMI: {
         _EQ_CHECK_INT(ie->value.present, XNAP_HandoverRequest_IEs__value_PR_GUAMI);
-        const XNAP_GUAMI_t *guami = &ie->value.choice.GUAMI;
-        plmn_id_t *plmn = &out->guami.plmn;
-        PLMNID_TO_MCC_MNC(&guami->plmn_ID, plmn->mcc, plmn->mnc, plmn->mnc_digit_length);
-        out->guami.amf_region_id = BIT_STRING_to_uint8(&guami->amf_region_id);
-        out->guami.amf_set_id = BIT_STRING_to_uint16(&guami->amf_set_id);
-        out->guami.amf_pointer = BIT_STRING_to_uint8(&guami->amf_pointer);
+        out->guami = decode_xnap_guami(&ie->value.choice.GUAMI);
       } break;
 
       case XNAP_ProtocolIE_ID_id_UEContextInfoHORequest: {
@@ -581,7 +573,7 @@ bool eq_xnap_handover_request(const xnap_handover_req_t *a, const xnap_handover_
   if (!eq_xnap_ngran_cgi(&a->target_cgi, &b->target_cgi))
     return false;
 
-  if (!eq_nr_guami(&a->guami, &b->guami))
+  if (!eq_xnap_guami(&a->guami, &b->guami))
     return false;
 
   if (!eq_xnap_ue_context_info(&a->ue_context, &b->ue_context))
@@ -2157,10 +2149,7 @@ XNAP_XnAP_PDU_t *encode_xnap_retrieve_ue_context_response(const xnap_retrieve_ue
   ie3->id = XNAP_ProtocolIE_ID_id_GUAMI;
   ie3->criticality = XNAP_Criticality_reject;
   ie3->value.present = XNAP_RetrieveUEContextResponse_IEs__value_PR_GUAMI;
-  MCC_MNC_TO_PLMNID(msg->guami.plmn.mcc, msg->guami.plmn.mnc, msg->guami.plmn.mnc_digit_length, &ie3->value.choice.GUAMI.plmn_ID);
-  AMF_REGION_TO_BIT_STRING(msg->guami.amf_region_id, &ie3->value.choice.GUAMI.amf_region_id);
-  AMF_SETID_TO_BIT_STRING(msg->guami.amf_set_id, &ie3->value.choice.GUAMI.amf_set_id);
-  AMF_POINTER_TO_BIT_STRING(msg->guami.amf_pointer, &ie3->value.choice.GUAMI.amf_pointer);
+  ie3->value.choice.GUAMI = encode_xnap_guami(&msg->guami);
 
   /* UE Context Information – Retrieve UE Context Response (M) 9.2.1.13 */
   asn1cSequenceAdd(out->protocolIEs.list, XNAP_RetrieveUEContextResponse_IEs_t, ie4);
@@ -2207,12 +2196,7 @@ bool decode_xnap_retrieve_ue_context_response(xnap_retrieve_ue_context_response_
 
       case XNAP_ProtocolIE_ID_id_GUAMI: {
         _EQ_CHECK_INT(ie->value.present, XNAP_RetrieveUEContextResponse_IEs__value_PR_GUAMI);
-        const XNAP_GUAMI_t *guami = &ie->value.choice.GUAMI;
-        plmn_id_t *plmn = &out->guami.plmn;
-        PLMNID_TO_MCC_MNC(&guami->plmn_ID, plmn->mcc, plmn->mnc, plmn->mnc_digit_length);
-        out->guami.amf_region_id = BIT_STRING_to_uint8(&guami->amf_region_id);
-        out->guami.amf_set_id = BIT_STRING_to_uint16(&guami->amf_set_id);
-        out->guami.amf_pointer = BIT_STRING_to_uint8(&guami->amf_pointer);
+        out->guami = decode_xnap_guami(&ie->value.choice.GUAMI);
       } break;
 
       case XNAP_ProtocolIE_ID_id_UEContextInfoRetrUECtxtResp: {
@@ -2250,7 +2234,7 @@ bool eq_xnap_retrieve_ue_context_response(const xnap_retrieve_ue_context_respons
 {
   _EQ_CHECK_UINT32(a->new_ng_node_ue_xnap_id, b->new_ng_node_ue_xnap_id);
   _EQ_CHECK_UINT32(a->old_ng_node_ue_xnap_id, b->old_ng_node_ue_xnap_id);
-  if (!eq_nr_guami(&a->guami, &b->guami))
+  if (!eq_xnap_guami(&a->guami, &b->guami))
     return false;
   if (!eq_xnap_ue_context_info(&a->ue_context, &b->ue_context))
     return false;

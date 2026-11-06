@@ -37,7 +37,7 @@
 
 /* Function Prototypes */
 bool eq_transport_layer_addr(const transport_layer_addr_t *a, const transport_layer_addr_t *b);
-bool eq_nr_guami(const nr_guami_t *a, const nr_guami_t *b);
+bool eq_xnap_guami(const nr_guami_t *a, const nr_guami_t *b);
 bool eq_xnap_ngran_cgi(const xnap_ngran_cgi_t *a, const xnap_ngran_cgi_t *b);
 bool eq_gtpu_tunnel(const gtpu_tunnel_t *a, const gtpu_tunnel_t *b);
 bool eq_xnap_plmn(const plmn_id_t *a, const plmn_id_t *b);
@@ -54,5 +54,8 @@ bool decode_xnap_snssai(const XNAP_S_NSSAI_t *in, nssai_t *out);
 
 XNAP_Target_CGI_t xnap_encode_target_cgi(const xnap_ngran_cgi_t *in);
 bool xnap_decode_target_cgi(const XNAP_Target_CGI_t *in, xnap_ngran_cgi_t *out);
+
+XNAP_GUAMI_t encode_xnap_guami(const nr_guami_t *in);
+nr_guami_t decode_xnap_guami(const XNAP_GUAMI_t *in);
 
 #endif /* XNAP_LIB_COMMON_H_ */
