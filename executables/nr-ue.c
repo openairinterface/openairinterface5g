@@ -226,7 +226,10 @@ static void UE_synch(void *arg) {
         + round((float)((ret.rx_offset * 2) % fp->samples_per_subframe) / fp->samples_per_slot0);
 
     UE->freq_offset = freq_offset - UE->dl_Doppler_shift;
-    if (!get_nrUE_params()->cont_fo_comp) {
+    // Restart continuous tracking from the newly acquired frequency estimate.
+    if (get_nrUE_params()->cont_fo_comp)
+      UE->freq_off_acc = 0.0;
+    else {
       // rerun with new cell parameters and frequency-offset
       nrue_ru_set_freq(UE, ul_carrier, dl_carrier, freq_offset);
     }
