@@ -244,7 +244,7 @@ typedef struct e1ap_setup_fail_s {
 
 typedef struct UP_TL_information_s {
   in_addr_t tlAddress;
-  int32_t teId;
+  uint32_t teId;
 } UP_TL_information_t;
 
 typedef struct up_params_s {
@@ -295,7 +295,7 @@ typedef struct drb_to_setup_s {
   long pre_emptionCapability;
   long pre_emptionVulnerability;
   in_addr_t tlAddress;
-  long teId;
+  uint32_t teId;
   int numCellGroups;
   cell_group_id_t cellGroupList[E1AP_MAX_NUM_CELL_GROUPS];
 } drb_to_setup_t;

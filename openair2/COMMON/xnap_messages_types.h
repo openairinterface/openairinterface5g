@@ -471,6 +471,28 @@ typedef struct {
   };
 } xnap_ran_paging_area_t;
 
+/* 3GPP TS 38.423 9.2.3.44 – Paging Priority; lower value codepoint indicates higher priority */
+typedef enum {
+  XNAP_PAGING_PRIO_LEVEL1 = 0,
+  XNAP_PAGING_PRIO_LEVEL2,
+  XNAP_PAGING_PRIO_LEVEL3,
+  XNAP_PAGING_PRIO_LEVEL4,
+  XNAP_PAGING_PRIO_LEVEL5,
+  XNAP_PAGING_PRIO_LEVEL6,
+  XNAP_PAGING_PRIO_LEVEL7,
+  XNAP_PAGING_PRIO_LEVEL8,
+} xnap_paging_priority_t;
+
+/* 3GPP TS 38.423 9.2.3.42 – RAN Paging Attempt Information */
+typedef struct {
+  /* Paging Attempt Count, 1..16 (M) */
+  uint8_t paging_attempt_count;
+  /* Intended Number of Paging Attempts, 1..16 (M) */
+  uint8_t intended_num_paging_attempts;
+  /* Next Paging Area Scope (O) */
+  bool next_paging_area_scope_changed;
+} xnap_ran_paging_attempt_info_t;
+
 /* 3GPP TS 38.423 9.1.1.7 – RAN Paging */
 typedef struct {
   /* UE Identity Index Value – 10-bit index (M) */
@@ -481,6 +503,12 @@ typedef struct {
   xnap_paging_drx_t paging_drx;
   /* RAN Paging Area (M) */
   xnap_ran_paging_area_t ran_paging_area;
+  /* Paging Priority (O) */
+  xnap_paging_priority_t *paging_priority;
+  /* Assistance Data for RAN Paging (O) 9.2.3.41 – RAN Paging Attempt Information (O) */
+  xnap_ran_paging_attempt_info_t *ran_paging_attempt_info;
+  /* UE Radio Capability for Paging (O) 9.2.3.91 – of NR (O): RRC UERadioPagingInformation, TS 38.331 */
+  byte_array_t ue_radio_cap_for_paging;
 } xnap_ran_paging_t;
 
 /* 3GPP TS 38.423 9.2.3.40 – UE Context ID */
@@ -554,6 +582,9 @@ typedef struct {
 typedef struct {
   /* New NG-RAN node UE XnAP ID (M) */
   uint32_t new_ng_node_ue_xnap_id;
+  /* Old NG-RAN node To New NG-RAN node Resume Container (O): RRCRelease (TS 38.331) or
+   * RRCConnectionRelease (TS 36.331) encapsulated in a PDCP-C PDU */
+  byte_array_t old_to_new_resume_container;
   /* Cause (M) */
   xnap_cause_t cause;
 } xnap_retrieve_ue_context_failure_t;

@@ -17,6 +17,7 @@
 #include "T.h"
 #include "assertions.h"
 #include "common/utils/T/T.h"
+#include "common/utils/utils.h"
 #include "constr_TYPE.h"
 #include "conversions.h"
 #include "intertask_interface.h"
@@ -64,23 +65,13 @@ static void ngap_send_register_gnb_cnf(ngap_gNB_instance_t *inst)
   int r = 0;
   ngap_gNB_amf_data_t *amf_node;
   struct served_guami_s *guami;
-  struct plmn_identity_s *plmn;
-  struct served_region_id_s *region;
   RB_FOREACH(amf_node, ngap_amf_map, &inst->ngap_amf_head) {
     STAILQ_FOREACH(guami, &amf_node->served_guami, next) {
       if (r >= NGAP_MAX_NB_AMF_REGIONS)
         break;
       ngap_amf_region_info_t *amf_region = &cnf->amf_region_info[r];
-      STAILQ_FOREACH(plmn, &guami->served_plmns, next) {
-        amf_region->plmn.mcc = plmn->mcc;
-        amf_region->plmn.mnc = plmn->mnc;
-        amf_region->plmn.mnc_digit_length = plmn->mnc_digit_length;
-        break;
-      }
-      STAILQ_FOREACH(region, &guami->served_region_ids, next) {
-        amf_region->amf_region_id = region->amf_region_id;
-        break;
-      }
+      amf_region->plmn = guami->guami.plmn;
+      amf_region->amf_region_id = guami->guami.amf_region_id;
       r++;
     }
   }
@@ -173,10 +164,6 @@ static int ngap_gNB_handle_ng_setup_failure(sctp_assoc_t assoc_id, uint32_t stre
 static void ngap_dump_served_guami(const ngap_gNB_amf_data_t *amf_desc_p)
 {
   const struct served_guami_s *guami_p;
-  const struct plmn_identity_s *plmn_p;
-  const struct served_region_id_s *region_p;
-  const struct amf_set_id_s *set_id_p;
-  const struct amf_pointer_s *pointer_p;
 
   NGAP_DEBUG("Served GUAMIs for AMF %s (assoc_id=%d):\n",
              amf_desc_p->amf_name ? amf_desc_p->amf_name : "(no name)",
@@ -184,19 +171,13 @@ static void ngap_dump_served_guami(const ngap_gNB_amf_data_t *amf_desc_p)
 
   STAILQ_FOREACH(guami_p, &amf_desc_p->served_guami, next)
   {
-    NGAP_DEBUG(" GUAMI:\n");
-    STAILQ_FOREACH(plmn_p, &guami_p->served_plmns, next) {
-      NGAP_DEBUG("   PLMN: MCC=%03d, MNC=%0*d\n", plmn_p->mcc, plmn_p->mnc_digit_length, plmn_p->mnc);
-    }
-    STAILQ_FOREACH(region_p, &guami_p->served_region_ids, next) {
-      NGAP_DEBUG("   AMF Region ID: %d\n", region_p->amf_region_id);
-    }
-    STAILQ_FOREACH(set_id_p, &guami_p->amf_set_ids, next) {
-      NGAP_DEBUG("   AMF Set ID: %d\n", set_id_p->amf_set_id);
-    }
-    STAILQ_FOREACH(pointer_p, &guami_p->amf_pointers, next) {
-      NGAP_DEBUG("   AMF Pointer: %d\n", pointer_p->amf_pointer);
-    }
+    NGAP_DEBUG("  GUAMI: PLMN MCC=%03d MNC=%0*d region=%u set=%u pointer=%u\n",
+               guami_p->guami.plmn.mcc,
+               guami_p->guami.plmn.mnc_digit_length,
+               guami_p->guami.plmn.mnc,
+               guami_p->guami.amf_region_id,
+               guami_p->guami.amf_set_id,
+               guami_p->guami.amf_pointer);
   }
 }
 
@@ -243,38 +224,8 @@ static int ngap_gNB_handle_ng_setup_response(sctp_assoc_t assoc_id, uint32_t str
     struct served_guami_s   *new_guami_p;
 
     guami_item_p = ie->value.choice.ServedGUAMIList.list.array[i];
-    new_guami_p = calloc(1, sizeof(struct served_guami_s));
-    STAILQ_INIT(&new_guami_p->served_plmns);
-    STAILQ_INIT(&new_guami_p->served_region_ids);
-    STAILQ_INIT(&new_guami_p->amf_set_ids);
-    STAILQ_INIT(&new_guami_p->amf_pointers);
-    
-    NGAP_PLMNIdentity_t *plmn_identity_p;
-    struct plmn_identity_s *new_plmn_identity_p;
-    plmn_identity_p = &guami_item_p->gUAMI.pLMNIdentity;
-    new_plmn_identity_p = calloc(1, sizeof(struct plmn_identity_s));
-    TBCD_TO_MCC_MNC(plmn_identity_p, new_plmn_identity_p->mcc,
-                    new_plmn_identity_p->mnc, new_plmn_identity_p->mnc_digit_length);
-    STAILQ_INSERT_TAIL(&new_guami_p->served_plmns, new_plmn_identity_p, next);
-    new_guami_p->nb_served_plmns++;
-    
-    struct served_region_id_s *new_region_id_p;
-    new_region_id_p = calloc(1, sizeof(struct served_region_id_s));
-    new_region_id_p->amf_region_id = BIT_STRING_to_uint8(&guami_item_p->gUAMI.aMFRegionID);
-    STAILQ_INSERT_TAIL(&new_guami_p->served_region_ids, new_region_id_p, next);
-    new_guami_p->nb_region_id++;
-
-    struct amf_set_id_s    *new_amf_set_id_p;
-    new_amf_set_id_p = calloc(1, sizeof(struct amf_set_id_s));
-    new_amf_set_id_p->amf_set_id = BIT_STRING_to_uint16(&guami_item_p->gUAMI.aMFSetID);
-    STAILQ_INSERT_TAIL(&new_guami_p->amf_set_ids, new_amf_set_id_p, next);
-    new_guami_p->nb_amf_set_id++;
-
-    struct amf_pointer_s     *new_amf_pointer_p;
-    new_amf_pointer_p = calloc(1, sizeof(struct amf_pointer_s));
-    new_amf_pointer_p->amf_pointer = BIT_STRING_to_uint8(&guami_item_p->gUAMI.aMFPointer);
-    STAILQ_INSERT_TAIL(&new_guami_p->amf_pointers, new_amf_pointer_p, next);
-    new_guami_p->nb_amf_pointer++;
+    new_guami_p = calloc_or_fail(1, sizeof(*new_guami_p));
+    new_guami_p->guami = decode_ngap_guami(&guami_item_p->gUAMI);
 
     STAILQ_INSERT_TAIL(&amf_desc_p->served_guami, new_guami_p, next);
   }
@@ -288,63 +239,40 @@ static int ngap_gNB_handle_ng_setup_response(sctp_assoc_t assoc_id, uint32_t str
   /* mandatory set the amf name */
   NGAP_FIND_PROTOCOLIE_BY_ID(NGAP_NGSetupResponseIEs_t, ie, container,
                              NGAP_ProtocolIE_ID_id_AMFName, true);
-
-  if (ie) {
-    amf_desc_p->amf_name = malloc(ie->value.choice.AMFName.size + 1);
-    memcpy(amf_desc_p->amf_name, ie->value.choice.AMFName.buf, ie->value.choice.AMFName.size);
-    amf_desc_p->amf_name[ie->value.choice.AMFName.size] = '\0';
+  amf_desc_p->amf_name = strndup((const char *)ie->value.choice.AMFName.buf, ie->value.choice.AMFName.size);
+  if (amf_desc_p->amf_name == NULL) {
+    NGAP_ERROR("Failed to allocate AMF name\n");
+    return -1;
   }
+
   ngap_dump_served_guami(amf_desc_p);
-  
-  /* mandatory set the plmn supports */
+
+  /* PLMN Support List (Mandatory) */
   NGAP_FIND_PROTOCOLIE_BY_ID(NGAP_NGSetupResponseIEs_t, ie, container,
                                NGAP_ProtocolIE_ID_id_PLMNSupportList, true);
 
   DevAssert(ie->value.choice.PLMNSupportList.list.count > 0);
   DevAssert(ie->value.choice.PLMNSupportList.list.count <= NGAP_maxnoofPLMNs);
 
-  STAILQ_INIT(&amf_desc_p->plmn_supports);
-
   for (i = 0; i < ie->value.choice.PLMNSupportList.list.count; i++) {
-    NGAP_PLMNSupportItem_t *plmn_support_item_p;
-    struct plmn_support_s  *new_plmn_support_p;
-    NGAP_SliceSupportItem_t  *slice_support_item_p;
-    struct slice_support_s *new_slice_support_p;
-
-    plmn_support_item_p = ie->value.choice.PLMNSupportList.list.array[i];
-
-    new_plmn_support_p = calloc(1, sizeof(struct plmn_support_s));
-
-    struct plmn_identity_s *plmn = &new_plmn_support_p->plmn_identity;
-    TBCD_TO_MCC_MNC(&plmn_support_item_p->pLMNIdentity, plmn->mcc, plmn->mnc, plmn->mnc_digit_length);
-    NGAP_INFO("Supported PLMN %d: MCC=%03d MNC=%0*d\n", i, plmn->mcc, plmn->mnc_digit_length, plmn->mnc);
+    NGAP_PLMNSupportItem_t *plmn_support_item_p = ie->value.choice.PLMNSupportList.list.array[i];
+    plmn_id_t plmn = {0};
+    TBCD_TO_MCC_MNC(&plmn_support_item_p->pLMNIdentity, plmn.mcc, plmn.mnc, plmn.mnc_digit_length);
+    NGAP_INFO("Supported PLMN %d: MCC=%03d MNC=%0*d\n", i, plmn.mcc, plmn.mnc_digit_length, plmn.mnc);
     DevAssert(plmn_support_item_p->sliceSupportList.list.count > 0);
     DevAssert(plmn_support_item_p->sliceSupportList.list.count <= NGAP_maxnoofSliceItems);
 
-    STAILQ_INIT(&new_plmn_support_p->slice_supports);
-    for(int j=0; j<plmn_support_item_p->sliceSupportList.list.count; j++) {
-      slice_support_item_p = plmn_support_item_p->sliceSupportList.list.array[j];
-      
-      new_slice_support_p = calloc(1, sizeof(struct slice_support_s));
+    for (int j = 0; j < plmn_support_item_p->sliceSupportList.list.count; j++) {
+      NGAP_SliceSupportItem_t *slice_support_item_p = plmn_support_item_p->sliceSupportList.list.array[j];
+      uint8_t sst;
+      uint8_t sd[3] = {0};
+      OCTET_STRING_TO_INT8(&slice_support_item_p->s_NSSAI.sST, sst);
 
-      OCTET_STRING_TO_INT8(&slice_support_item_p->s_NSSAI.sST, new_slice_support_p->sST);
-
-      if(slice_support_item_p->s_NSSAI.sD != NULL) {
-        new_slice_support_p->sD_flag = 1;
-        new_slice_support_p->sD[0] = slice_support_item_p->s_NSSAI.sD->buf[0];
-        new_slice_support_p->sD[1] = slice_support_item_p->s_NSSAI.sD->buf[1];
-        new_slice_support_p->sD[2] = slice_support_item_p->s_NSSAI.sD->buf[2];
+      if (slice_support_item_p->s_NSSAI.sD != NULL) {
+        memcpy(sd, slice_support_item_p->s_NSSAI.sD->buf, sizeof(sd));
       }
-      NGAP_INFO("Supported slice (PLMN %d): SST=0x%02x SD=%d%d%d\n",
-                i,
-                new_slice_support_p->sST,
-                new_slice_support_p->sD[0],
-                new_slice_support_p->sD[1],
-                new_slice_support_p->sD[2]);
-      STAILQ_INSERT_TAIL(&new_plmn_support_p->slice_supports, new_slice_support_p, next);
+      NGAP_INFO("Supported slice (PLMN %d): SST=0x%02x SD=0x%02x%02x%02x\n", i, sst, sd[0], sd[1], sd[2]);
     }
-
-    STAILQ_INSERT_TAIL(&amf_desc_p->plmn_supports, new_plmn_support_p, next);
   }
 
   /* The association is now ready as gNB and AMF know parameters of each other.

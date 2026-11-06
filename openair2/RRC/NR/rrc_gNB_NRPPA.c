@@ -404,6 +404,7 @@ static nrppa_srs_configuration_t cp_f1ap_to_nrppa_srs_configuration(f1ap_srs_con
             res_type->choice.periodic.periodicity =
                 (nrppa_srs_resource_type_periodicity_pr)f1_res_type->choice.periodic.periodicity;
             res_type->choice.periodic.offset = f1_res_type->choice.periodic.offset;
+            break;
           case F1AP_RESOURCE_TYPE_PR_SEMI_PERSISTENT:
             res_type->present = NRPPA_RESOURCE_TYPE_PR_SEMI_PERSISTENT;
             res_type->choice.semi_persistent.periodicity =

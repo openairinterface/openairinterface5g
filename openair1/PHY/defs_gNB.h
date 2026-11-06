@@ -274,8 +274,6 @@ typedef struct {
 
 /// Context data structure for RX/TX portion of slot processing
 typedef struct {
-  /// Component Carrier index
-  uint8_t CC_id;
   /// timestamp transmitted to HW
   openair0_timestamp_t timestamp_tx;
   /// slot to act upon for transmission
@@ -298,8 +296,6 @@ typedef struct {
 
 /// Context data structure for eNB slot processing
 typedef struct gNB_L1_proc_t_s {
-  /// Component Carrier index
-  uint8_t CC_id;
   /// timestamp received from HW
   openair0_timestamp_t timestamp_rx;
   /// timestamp to send to "slave rru"
@@ -340,10 +336,24 @@ typedef struct {
 } PHY_MEASUREMENTS_gNB;
 
 /// Top-level PHY Data Structure for gNB
+#define NR_PRACH_RB_MASK_SLOTS 64
+#define NR_PRACH_RB_MASK_OCC_MAX 8
+
+/// PRACH occasions of one UL slot, excluded from the I0 measurement
+typedef struct {
+  int frame;
+  int slot;
+  int n;
+  struct {
+    int first_prb;
+    int nb_prb;
+    uint16_t symb_mask;
+  } occ[NR_PRACH_RB_MASK_OCC_MAX];
+} nr_prach_rb_mask_t;
+
 typedef struct PHY_VARS_gNB_s {
   /// Module ID indicator for this instance
   module_id_t Mod_id;
-  uint8_t CC_id;
   uint8_t configured;
   gNB_L1_proc_t proc;
   int num_RU;
@@ -364,6 +374,8 @@ typedef struct PHY_VARS_gNB_s {
   NR_gNB_COMMON common_vars;
   spsc_q_t prach_ru_queue;
   spsc_q_t prach_l1rx_queue;
+  /// PRACH PRBs/symbols per UL slot (indexed by absolute slot modulo NR_PRACH_RB_MASK_SLOTS)
+  nr_prach_rb_mask_t prach_rb_mask[NR_PRACH_RB_MASK_SLOTS];
   // TODO: can we remove c from NR_gNB_DLSCH_t and put it on the stack?
   NR_gNB_DLSCH_t *dlsch;
   NR_gNB_PRS prs_vars;

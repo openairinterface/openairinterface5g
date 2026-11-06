@@ -711,18 +711,18 @@ static void modlist_coreset(NR_ControlResourceSet_t *source, NR_ControlResourceS
 {
   target->controlResourceSetId = source->controlResourceSetId;
   target->frequencyDomainResources.size = source->frequencyDomainResources.size;
+  target->frequencyDomainResources.bits_unused = source->frequencyDomainResources.bits_unused;
   if (!target->frequencyDomainResources.buf)
     target->frequencyDomainResources.buf =
-        calloc(target->frequencyDomainResources.size, sizeof(*target->frequencyDomainResources.buf));
+        calloc_or_fail(target->frequencyDomainResources.size, sizeof(*target->frequencyDomainResources.buf));
   for (int i = 0; i < source->frequencyDomainResources.size; i++)
     target->frequencyDomainResources.buf[i] = source->frequencyDomainResources.buf[i];
   target->duration = source->duration;
   target->precoderGranularity = source->precoderGranularity;
-  long *shiftIndex = NULL;
-  if (target->cce_REG_MappingType.present == NR_ControlResourceSet__cce_REG_MappingType_PR_interleaved)
-    shiftIndex = target->cce_REG_MappingType.choice.interleaved->shiftIndex;
   if (source->cce_REG_MappingType.present == NR_ControlResourceSet__cce_REG_MappingType_PR_interleaved) {
     target->cce_REG_MappingType.present = NR_ControlResourceSet__cce_REG_MappingType_PR_interleaved;
+    if (!target->cce_REG_MappingType.choice.interleaved)
+      target->cce_REG_MappingType.choice.interleaved = calloc_or_fail(1, sizeof(*target->cce_REG_MappingType.choice.interleaved));
     target->cce_REG_MappingType.choice.interleaved->reg_BundleSize = source->cce_REG_MappingType.choice.interleaved->reg_BundleSize;
     target->cce_REG_MappingType.choice.interleaved->interleaverSize =
         source->cce_REG_MappingType.choice.interleaved->interleaverSize;
@@ -730,13 +730,19 @@ static void modlist_coreset(NR_ControlResourceSet_t *source, NR_ControlResourceS
               source->cce_REG_MappingType.choice.interleaved->shiftIndex,
               long);
   } else {
-    free(shiftIndex);
+    if (target->cce_REG_MappingType.present == NR_ControlResourceSet__cce_REG_MappingType_PR_interleaved) {
+      if (target->cce_REG_MappingType.choice.interleaved) {
+        free(target->cce_REG_MappingType.choice.interleaved->shiftIndex);
+        free(target->cce_REG_MappingType.choice.interleaved);
+      }
+    }
     target->cce_REG_MappingType = source->cce_REG_MappingType;
+    target->cce_REG_MappingType.choice.interleaved = NULL;
   }
   UPDATE_IE(target->tci_PresentInDCI, source->tci_PresentInDCI, long);
   UPDATE_IE(target->pdcch_DMRS_ScramblingID, source->pdcch_DMRS_ScramblingID, long);
   // TCI States
-  if (source->tci_StatesPDCCH_ToReleaseList) {
+  if (source->tci_StatesPDCCH_ToReleaseList && target->tci_StatesPDCCH_ToAddList) {
     for (int i = 0; i < source->tci_StatesPDCCH_ToReleaseList->list.count; i++) {
       long id = *source->tci_StatesPDCCH_ToReleaseList->list.array[i];
       int j;
@@ -760,7 +766,7 @@ static void modlist_coreset(NR_ControlResourceSet_t *source, NR_ControlResourceS
             break;
         }
         if (j == target->tci_StatesPDCCH_ToAddList->list.count) {
-          long *tci_id = calloc(1, sizeof(*tci_id));
+          long *tci_id = calloc_or_fail(1, sizeof(*tci_id));
           *tci_id = id;
           ASN_SEQUENCE_ADD(&target->tci_StatesPDCCH_ToAddList->list, tci_id);
         }
@@ -790,7 +796,7 @@ static void configure_ss_coreset(NR_BWP_PDCCH_t *pdcch, NR_PDCCH_Config_t *pdcch
         }
       }
       if (!target_coreset) {
-        target_coreset = calloc(1, sizeof(*target_coreset));
+        target_coreset = calloc_or_fail(1, sizeof(*target_coreset));
         ASN_SEQUENCE_ADD(&pdcch->list_Coreset, target_coreset);
       }
       modlist_coreset(source_coreset, target_coreset);

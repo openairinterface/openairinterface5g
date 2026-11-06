@@ -123,6 +123,11 @@ int encode_gprs_timer_ie(byte_array_t *buffer, nas_service_IEI_t iei, const gprs
 /* Decode GPRS Timer IE (3GPP TS 24.008 10.5.7.3) */
 int decode_gprs_timer_ie(gprs_timer_t *timer, const byte_array_t *buffer)
 {
+  if (buffer->len < GPRS_TIMER_LENGTH - IEI_LEN) {
+    PRINT_ERROR("Buffer length is too short to decode the GPRS Timer IE\n");
+    return -1;
+  }
+
   int decoded = 1; // Skip length ie (1 octet)
   // Extract unit and value
   uint8_t *buf = buffer->buf;

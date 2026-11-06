@@ -17,7 +17,11 @@
 
 NR_gNB_PHY_STATS_t *get_phy_stats(PHY_VARS_gNB *gNB, uint16_t rnti);
 
-int nr_generate_prs(int slot, c16_t *txdataF, int16_t amp, prs_config_t *prs_cfg, const NR_DL_FRAME_PARMS *frame_parms);
+bool nr_generate_prs(int slot,
+                     c16_t *txdataF,
+                     int16_t amp,
+                     const nfapi_nr_dl_tti_prs_pdu_rel16_t *prs_pdu,
+                     const NR_DL_FRAME_PARMS *frame_parms);
 
 /*!
 \fn int nr_generate_pss
@@ -118,10 +122,11 @@ void nr_fill_ulsch(PHY_VARS_gNB *gNB,
                    uint8_t mu_group_size);
 
 void nr_schedule_rx_prach(PHY_VARS_gNB *gNB, int SFN, int Slot, nfapi_nr_prach_pdu_t *prach_pdu);
+void nr_prach_rb_mask_update(PHY_VARS_gNB *gNB, const prach_item_t *prach);
 
 typedef struct rx_prach_out {
   uint16_t max_preamble;
-  uint16_t max_preamble_energy;
+  int max_preamble_energy; // dB x10, -900 when energy is 0: must stay signed
   uint16_t max_preamble_delay;
   uint16_t max_preamble_delay_raw; // raw PRACH correlation-bin delay before TA normalization
 } rx_prach_out_t;
@@ -151,23 +156,22 @@ int nr_get_srs_signal(PHY_VARS_gNB *gNB,
                       slot_t slot,
                       const nfapi_nr_srs_pdu_t *srs_pdu,
                       nr_srs_info_t *nr_srs_info,
-                      c16_t srs_received_signal[][gNB->frame_parms.ofdm_symbol_size * (1 << srs_pdu->num_symbols)],
-                      c16_t srs_received_noise[][gNB->frame_parms.ofdm_symbol_size * (1 << srs_pdu->num_symbols)]);
+                      c16_t srs_received_signal[][gNB->frame_parms.ofdm_symbol_size * (1 << srs_pdu->num_symbols)]);
 
 nr_srs_info_t nr_srs_rx_procedures(PHY_VARS_gNB *gNB,
-                          int frame_rx,
-                          int slot_rx,
-                          uint8_t nb_antennas_rx,
-                          uint8_t N_ap,
-                          uint8_t N_symb_SRS,
-                          uint16_t ofdm_symbol_size,
-                          const NR_gNB_SRS_job_t *srs,
-                          int *srs_est,
-                          int8_t *snr,
-                          c16_t srs_estimated_channel_freq[][N_ap][ofdm_symbol_size * N_symb_SRS],
-                          int16_t *snr_per_rb,
-                          uint16_t *timing_advance_offset,
-                          int16_t *timing_advance_offset_nsec);
+                                   int frame_rx,
+                                   int slot_rx,
+                                   uint8_t nb_antennas_rx,
+                                   uint8_t N_ap,
+                                   uint8_t N_symb_SRS,
+                                   uint16_t ofdm_symbol_size,
+                                   const NR_gNB_SRS_job_t *srs,
+                                   int *srs_est,
+                                   int8_t *snr,
+                                   c16_t srs_estimated_channel_freq[][N_ap][ofdm_symbol_size * N_symb_SRS],
+                                   int16_t *snr_per_prg,
+                                   uint16_t *timing_advance_offset,
+                                   int16_t *timing_advance_offset_nsec);
 
 int get_nr_prach_duration(uint8_t prach_format);
 

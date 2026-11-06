@@ -148,8 +148,31 @@ static bool eq_dl_tti_request_ssb_pdu(const nfapi_nr_dl_tti_ssb_pdu_rel15_t *a, 
   return true;
 }
 
+static bool eq_dl_tti_request_prs_pdu(const nfapi_nr_dl_tti_prs_pdu_rel16_t *a, const nfapi_nr_dl_tti_prs_pdu_rel16_t *b)
+{
+  EQ(a->subcarrierSpacing, b->subcarrierSpacing);
+  EQ(a->cyclicPrefix, b->cyclicPrefix);
+  EQ(a->nIdPrs, b->nIdPrs);
+  EQ(a->pduIndex, b->pduIndex);
+  EQ(a->combSize, b->combSize);
+  EQ(a->combOffset, b->combOffset);
+  EQ(a->numSymbols, b->numSymbols);
+  EQ(a->firstSymbol, b->firstSymbol);
+  EQ(a->numRbs, b->numRbs);
+  EQ(a->startRb, b->startRb);
+  EQ(a->symbolPuncturingBitmap, b->symbolPuncturingBitmap);
+#ifndef ENABLE_AERIAL
+  EQ(a->spatialStreamIndexPresent, b->spatialStreamIndexPresent);
+  EQ(a->spatialStreamIndex, b->spatialStreamIndex);
+#endif
+  EQ(eq_dl_tti_beamforming(&a->precodingAndBeamforming, &b->precodingAndBeamforming), true);
+  EQ(a->prsPowerOffset, b->prsPowerOffset);
+  return true;
+}
+
 bool eq_dl_tti_request(const nfapi_nr_dl_tti_request_t *a, const nfapi_nr_dl_tti_request_t *b)
 {
+  EQ(a->header.phy_id, b->header.phy_id);
   EQ(a->header.message_id, b->header.message_id);
   EQ(a->header.message_length, b->header.message_length);
 
@@ -178,6 +201,9 @@ bool eq_dl_tti_request(const nfapi_nr_dl_tti_request_t *a, const nfapi_nr_dl_tti
         break;
       case NFAPI_NR_DL_TTI_SSB_PDU_TYPE:
         EQ(eq_dl_tti_request_ssb_pdu(&a_dl_pdu->ssb_pdu.ssb_pdu_rel15, &b_dl_pdu->ssb_pdu.ssb_pdu_rel15), true);
+        break;
+      case NFAPI_NR_DL_TTI_PRS_PDU_TYPE:
+        EQ(eq_dl_tti_request_prs_pdu(&a_dl_pdu->prs_pdu.prs_pdu_rel16, &b_dl_pdu->prs_pdu.prs_pdu_rel16), true);
         break;
       default:
         // PDU Type is not any known value
@@ -425,6 +451,7 @@ static bool eq_ul_tti_request_srs_pdu(const nfapi_nr_srs_pdu_t *a, const nfapi_n
 
 bool eq_ul_tti_request(const nfapi_nr_ul_tti_request_t *a, const nfapi_nr_ul_tti_request_t *b)
 {
+  EQ(a->header.phy_id, b->header.phy_id);
   EQ(a->header.message_id, b->header.message_id);
   EQ(a->header.message_length, b->header.message_length);
 
@@ -474,6 +501,7 @@ bool eq_ul_tti_request(const nfapi_nr_ul_tti_request_t *a, const nfapi_nr_ul_tti
 
 bool eq_slot_indication(const nfapi_nr_slot_indication_scf_t *a, const nfapi_nr_slot_indication_scf_t *b)
 {
+  EQ(a->header.phy_id, b->header.phy_id);
   EQ(a->header.message_id, b->header.message_id);
   EQ(a->header.message_length, b->header.message_length);
 
@@ -493,6 +521,7 @@ bool eq_ul_dci_request_PDU(const nfapi_nr_ul_dci_request_pdus_t *a, const nfapi_
 
 bool eq_ul_dci_request(const nfapi_nr_ul_dci_request_t *a, const nfapi_nr_ul_dci_request_t *b)
 {
+  EQ(a->header.phy_id, b->header.phy_id);
   EQ(a->header.message_id, b->header.message_id);
   EQ(a->header.message_length, b->header.message_length);
 
@@ -527,6 +556,7 @@ bool eq_tx_data_request_PDU(const nfapi_nr_pdu_t *a, const nfapi_nr_pdu_t *b)
 
 bool eq_tx_data_request(const nfapi_nr_tx_data_request_t *a, const nfapi_nr_tx_data_request_t *b)
 {
+  EQ(a->header.phy_id, b->header.phy_id);
   EQ(a->header.message_id, b->header.message_id);
   EQ(a->header.message_length, b->header.message_length);
 
@@ -556,6 +586,7 @@ bool eq_rx_data_indication_PDU(const nfapi_nr_rx_data_pdu_t *a, const nfapi_nr_r
 
 bool eq_rx_data_indication(const nfapi_nr_rx_data_indication_t *a, const nfapi_nr_rx_data_indication_t *b)
 {
+  EQ(a->header.phy_id, b->header.phy_id);
   EQ(a->header.message_id, b->header.message_id);
   EQ(a->header.message_length, b->header.message_length);
   EQ(a->sfn, b->sfn);
@@ -587,6 +618,7 @@ bool eq_crc_indication_CRC(const nfapi_nr_crc_t *a, const nfapi_nr_crc_t *b)
 
 bool eq_crc_indication(const nfapi_nr_crc_indication_t *a, const nfapi_nr_crc_indication_t *b)
 {
+  EQ(a->header.phy_id, b->header.phy_id);
   EQ(a->header.message_id, b->header.message_id);
   EQ(a->header.message_length, b->header.message_length);
   EQ(a->sfn, b->sfn);
@@ -751,6 +783,7 @@ bool eq_uci_indication_UCI(const nfapi_nr_uci_t *a, const nfapi_nr_uci_t *b)
 
 bool eq_uci_indication(const nfapi_nr_uci_indication_t *a, const nfapi_nr_uci_indication_t *b)
 {
+  EQ(a->header.phy_id, b->header.phy_id);
   EQ(a->header.message_id, b->header.message_id);
   EQ(a->header.message_length, b->header.message_length);
   EQ(a->sfn, b->sfn);
@@ -786,6 +819,7 @@ static bool eq_srs_indication_PDU(const nfapi_nr_srs_indication_pdu_t *a, const 
 
 bool eq_srs_indication(const nfapi_nr_srs_indication_t *a, const nfapi_nr_srs_indication_t *b)
 {
+  EQ(a->header.phy_id, b->header.phy_id);
   EQ(a->header.message_id, b->header.message_id);
   EQ(a->header.message_length, b->header.message_length);
   EQ(a->sfn, b->sfn);
@@ -801,14 +835,20 @@ bool eq_srs_indication(const nfapi_nr_srs_indication_t *a, const nfapi_nr_srs_in
 bool eq_srs_toa_vendor_ext_indication(const nfapi_nr_srs_toa_vendor_ext_indication_t *a,
                                       const nfapi_nr_srs_toa_vendor_ext_indication_t *b)
 {
+  EQ(a->header.phy_id, b->header.phy_id);
   EQ(a->header.message_id, b->header.message_id);
   EQ(a->header.message_length, b->header.message_length);
   EQ(a->sfn, b->sfn);
   EQ(a->slot, b->slot);
-  EQ(a->rnti, b->rnti);
-  EQ(a->num_ta, b->num_ta);
-  for (int ta_idx = 0; ta_idx < a->num_ta; ++ta_idx) {
-    EQ(a->ta_offset_nsec[ta_idx], b->ta_offset_nsec[ta_idx]);
+  EQ(a->number_of_pdus, b->number_of_pdus);
+  for (int pdu_idx = 0; pdu_idx < a->number_of_pdus; ++pdu_idx) {
+    const nfapi_nr_srs_toa_vendor_ext_pdu_t *pdu_a = &a->pdu_list[pdu_idx];
+    const nfapi_nr_srs_toa_vendor_ext_pdu_t *pdu_b = &b->pdu_list[pdu_idx];
+    EQ(pdu_a->rnti, pdu_b->rnti);
+    EQ(pdu_a->num_ta, pdu_b->num_ta);
+    for (int ta_idx = 0; ta_idx < pdu_a->num_ta; ++ta_idx) {
+      EQ(pdu_a->ta_offset_nsec[ta_idx], pdu_b->ta_offset_nsec[ta_idx]);
+    }
   }
   return true;
 }
@@ -834,6 +874,7 @@ static bool eq_rach_indication_PDU(const nfapi_nr_prach_indication_pdu_t *a, con
 
 bool eq_rach_indication(const nfapi_nr_rach_indication_t *a, const nfapi_nr_rach_indication_t *b)
 {
+  EQ(a->header.phy_id, b->header.phy_id);
   EQ(a->header.message_id, b->header.message_id);
   EQ(a->header.message_length, b->header.message_length);
   EQ(a->sfn, b->sfn);
@@ -971,8 +1012,7 @@ void free_srs_indication(nfapi_nr_srs_indication_t *msg)
 
 void free_srs_toa_vendor_ext_indication(nfapi_nr_srs_toa_vendor_ext_indication_t *msg)
 {
-  // Nothing to free
-  UNUSED(msg);
+  free(msg->pdu_list);
 }
 
 void free_rach_indication(nfapi_nr_rach_indication_t *msg)
@@ -1066,6 +1106,13 @@ static void copy_dl_tti_request_ssb_pdu(const nfapi_nr_dl_tti_ssb_pdu_rel15_t *s
   dst->param_v4 = src->param_v4;
 }
 
+static void copy_dl_tti_request_prs_pdu(const nfapi_nr_dl_tti_prs_pdu_rel16_t *src, nfapi_nr_dl_tti_prs_pdu_rel16_t *dst)
+{
+  PARTIAL_COPY(dst, src, nfapi_nr_dl_tti_prs_pdu_rel16_t, spatialStreamIndex);
+  copy_dl_tti_beamforming(&src->precodingAndBeamforming, &dst->precodingAndBeamforming);
+  dst->prsPowerOffset = src->prsPowerOffset;
+}
+
 static void copy_dl_tti_request_pdu(const nfapi_nr_dl_tti_request_pdu_t *src, nfapi_nr_dl_tti_request_pdu_t *dst)
 {
   dst->PDUType = src->PDUType;
@@ -1084,14 +1131,18 @@ static void copy_dl_tti_request_pdu(const nfapi_nr_dl_tti_request_pdu_t *src, nf
     case NFAPI_NR_DL_TTI_SSB_PDU_TYPE:
       copy_dl_tti_request_ssb_pdu(&src->ssb_pdu.ssb_pdu_rel15, &dst->ssb_pdu.ssb_pdu_rel15);
       break;
+    case NFAPI_NR_DL_TTI_PRS_PDU_TYPE:
+      copy_dl_tti_request_prs_pdu(&src->prs_pdu.prs_pdu_rel16, &dst->prs_pdu.prs_pdu_rel16);
+      break;
     default:
       // PDU Type is not any known value
-      AssertFatal(1 == 0, "PDU Type value unknown, allowed values range from 0 to 3\n");
+      AssertFatal(1 == 0, "PDU Type value unknown, allowed values are 0 to 3 and 5\n");
   }
 }
 
 void copy_dl_tti_request(const nfapi_nr_dl_tti_request_t *src, nfapi_nr_dl_tti_request_t *dst)
 {
+  dst->header.phy_id = src->header.phy_id;
   dst->header.message_id = src->header.message_id;
   dst->header.message_length = src->header.message_length;
   if (src->vendor_extension) {
@@ -1237,6 +1288,7 @@ static void copy_ul_tti_request_srs_pdu(const nfapi_nr_srs_pdu_t *src, nfapi_nr_
 
 void copy_ul_tti_request(const nfapi_nr_ul_tti_request_t *src, nfapi_nr_ul_tti_request_t *dst)
 {
+  dst->header.phy_id = src->header.phy_id;
   dst->header.message_id = src->header.message_id;
   dst->header.message_length = src->header.message_length;
 
@@ -1285,6 +1337,7 @@ void copy_ul_tti_request(const nfapi_nr_ul_tti_request_t *src, nfapi_nr_ul_tti_r
 
 void copy_slot_indication(const nfapi_nr_slot_indication_scf_t *src, nfapi_nr_slot_indication_scf_t *dst)
 {
+  dst->header.phy_id = src->header.phy_id;
   dst->header.message_id = src->header.message_id;
   dst->header.message_length = src->header.message_length;
 
@@ -1303,6 +1356,7 @@ void copy_ul_dci_request_pdu(const nfapi_nr_ul_dci_request_pdus_t *src, nfapi_nr
 
 void copy_ul_dci_request(const nfapi_nr_ul_dci_request_t *src, nfapi_nr_ul_dci_request_t *dst)
 {
+  dst->header.phy_id = src->header.phy_id;
   dst->header.message_id = src->header.message_id;
   dst->header.message_length = src->header.message_length;
 
@@ -1345,6 +1399,7 @@ void copy_tx_data_request_PDU(const nfapi_nr_pdu_t *src, nfapi_nr_pdu_t *dst)
 
 void copy_tx_data_request(const nfapi_nr_tx_data_request_t *src, nfapi_nr_tx_data_request_t *dst)
 {
+  dst->header.phy_id = src->header.phy_id;
   dst->header.message_id = src->header.message_id;
   dst->header.message_length = src->header.message_length;
 
@@ -1397,6 +1452,7 @@ void copy_rx_data_indication_PDU(const nfapi_nr_rx_data_pdu_t *src, nfapi_nr_rx_
 
 void copy_rx_data_indication(const nfapi_nr_rx_data_indication_t *src, nfapi_nr_rx_data_indication_t *dst)
 {
+  dst->header.phy_id = src->header.phy_id;
   dst->header.message_id = src->header.message_id;
   dst->header.message_length = src->header.message_length;
 
@@ -1451,6 +1507,7 @@ void copy_crc_indication_CRC(const nfapi_nr_crc_t *src, nfapi_nr_crc_t *dst)
 
 void copy_crc_indication(const nfapi_nr_crc_indication_t *src, nfapi_nr_crc_indication_t *dst)
 {
+  dst->header.phy_id = src->header.phy_id;
   dst->header.message_id = src->header.message_id;
   dst->header.message_length = src->header.message_length;
 
@@ -1638,6 +1695,7 @@ void copy_uci_indication_UCI(const nfapi_nr_uci_t *src, nfapi_nr_uci_t *dst)
 
 void copy_uci_indication(const nfapi_nr_uci_indication_t *src, nfapi_nr_uci_indication_t *dst)
 {
+  dst->header.phy_id = src->header.phy_id;
   dst->header.message_id = src->header.message_id;
   dst->header.message_length = src->header.message_length;
   dst->sfn = src->sfn;
@@ -1740,6 +1798,7 @@ void copy_srs_indication_PDU(const nfapi_nr_srs_indication_pdu_t *src, nfapi_nr_
 
 void copy_srs_indication(const nfapi_nr_srs_indication_t *src, nfapi_nr_srs_indication_t *dst)
 {
+  dst->header.phy_id = src->header.phy_id;
   dst->header.message_id = src->header.message_id;
   dst->header.message_length = src->header.message_length;
   dst->sfn = src->sfn;
@@ -1752,17 +1811,28 @@ void copy_srs_indication(const nfapi_nr_srs_indication_t *src, nfapi_nr_srs_indi
   }
 }
 
+static void copy_srs_toa_vendor_ext_indication_PDU(const nfapi_nr_srs_toa_vendor_ext_pdu_t *src,
+                                                   nfapi_nr_srs_toa_vendor_ext_pdu_t *dst)
+{
+  dst->rnti = src->rnti;
+  dst->num_ta = src->num_ta;
+  for (int ta_idx = 0; ta_idx < src->num_ta; ++ta_idx) {
+    dst->ta_offset_nsec[ta_idx] = src->ta_offset_nsec[ta_idx];
+  }
+}
+
 void copy_srs_toa_vendor_ext_indication(const nfapi_nr_srs_toa_vendor_ext_indication_t *src,
                                         nfapi_nr_srs_toa_vendor_ext_indication_t *dst)
 {
+  dst->header.phy_id = src->header.phy_id;
   dst->header.message_id = src->header.message_id;
   dst->header.message_length = src->header.message_length;
   dst->sfn = src->sfn;
   dst->slot = src->slot;
-  dst->rnti = src->rnti;
-  dst->num_ta = src->num_ta;
-  for (int ta_idx = 0; ta_idx < src->num_ta; ++ta_idx) {
-    memcpy(dst->ta_offset_nsec, src->ta_offset_nsec, sizeof(dst->ta_offset_nsec));
+  dst->number_of_pdus = src->number_of_pdus;
+  dst->pdu_list = calloc(dst->number_of_pdus, sizeof(*dst->pdu_list));
+  for (int pdu_idx = 0; pdu_idx < src->number_of_pdus; ++pdu_idx) {
+    copy_srs_toa_vendor_ext_indication_PDU(&src->pdu_list[pdu_idx], &dst->pdu_list[pdu_idx]);
   }
 }
 
@@ -1791,9 +1861,8 @@ size_t get_srs_toa_vendor_ext_indication_size(const nfapi_nr_srs_toa_vendor_ext_
   total_size += sizeof(msg->header);
   total_size += sizeof(msg->sfn);
   total_size += sizeof(msg->slot);
-  total_size += sizeof(msg->rnti);
-  total_size += sizeof(msg->num_ta);
-  total_size += sizeof(msg->ta_offset_nsec);
+  total_size += sizeof(msg->number_of_pdus);
+  total_size += msg->number_of_pdus * sizeof(*msg->pdu_list);
 
   return total_size;
 }
@@ -1818,6 +1887,7 @@ static void copy_rach_indication_PDU(const nfapi_nr_prach_indication_pdu_t *src,
 
 void copy_rach_indication(const nfapi_nr_rach_indication_t *src, nfapi_nr_rach_indication_t *dst)
 {
+  dst->header.phy_id = src->header.phy_id;
   dst->header.message_id = src->header.message_id;
   dst->header.message_length = src->header.message_length;
   dst->sfn = src->sfn;
@@ -2003,6 +2073,25 @@ static void dump_dl_tti_request_SSB_PDU(const nfapi_nr_dl_tti_ssb_pdu_rel15_t *p
   dump_dl_beamforming_pdu(&pdu->precoding_and_beamforming, depth + 1);
 }
 
+static void dump_dl_tti_request_PRS_PDU(const nfapi_nr_dl_tti_prs_pdu_rel16_t *pdu, int depth)
+{
+  INDENTED_PRINTF("SubcarrierSpacing = %d\n", pdu->subcarrierSpacing);
+  INDENTED_PRINTF("CyclicPrefix = %d\n", pdu->cyclicPrefix);
+  INDENTED_PRINTF("nIdPrs = %d\n", pdu->nIdPrs);
+  INDENTED_PRINTF("pduIndex = %d\n", pdu->pduIndex);
+  INDENTED_PRINTF("combSize = %d\n", pdu->combSize);
+  INDENTED_PRINTF("combOffset = %d\n", pdu->combOffset);
+  INDENTED_PRINTF("numSymbols = %d\n", pdu->numSymbols);
+  INDENTED_PRINTF("firstSymbol = %d\n", pdu->firstSymbol);
+  INDENTED_PRINTF("numRbs = %d\n", pdu->numRbs);
+  INDENTED_PRINTF("startRb = %d\n", pdu->startRb);
+  INDENTED_PRINTF("symbolPuncturingBitmap = 0x%04x\n", pdu->symbolPuncturingBitmap);
+  INDENTED_PRINTF("spatialStreamIndexPresent = %d\n", pdu->spatialStreamIndexPresent);
+  INDENTED_PRINTF("spatialStreamIndex = %d\n", pdu->spatialStreamIndex);
+  INDENTED_PRINTF("prsPowerOffset = %d\n", pdu->prsPowerOffset);
+  dump_dl_beamforming_pdu(&pdu->precodingAndBeamforming, depth + 1);
+}
+
 static char *dl_tti_pdu_type_to_str(uint16_t pdu_type)
 {
   switch (pdu_type) {
@@ -2014,6 +2103,8 @@ static char *dl_tti_pdu_type_to_str(uint16_t pdu_type)
       return "NFAPI_NR_DL_TTI_CSI_RS_PDU_TYPE";
     case NFAPI_NR_DL_TTI_SSB_PDU_TYPE:
       return "NFAPI_NR_DL_TTI_SSB_PDU_TYPE";
+    case NFAPI_NR_DL_TTI_PRS_PDU_TYPE:
+      return "NFAPI_NR_DL_TTI_PRS_PDU_TYPE";
     default:
       return "Unknown";
       break;
@@ -2048,6 +2139,9 @@ void dump_dl_tti_request(const nfapi_nr_dl_tti_request_t *msg)
         break;
       case NFAPI_NR_DL_TTI_SSB_PDU_TYPE:
         dump_dl_tti_request_SSB_PDU(&pdu->ssb_pdu.ssb_pdu_rel15, depth + 1);
+        break;
+      case NFAPI_NR_DL_TTI_PRS_PDU_TYPE:
+        dump_dl_tti_request_PRS_PDU(&pdu->prs_pdu.prs_pdu_rel16, depth + 1);
         break;
       default:
         INDENTED_PRINTF("Unknown PDU type 0x%02x\n", pdu->PDUType);
@@ -2736,11 +2830,17 @@ void dump_srs_toa_vendor_ext_indication(const nfapi_nr_srs_toa_vendor_ext_indica
   depth++;
   INDENTED_PRINTF("SFN = %d\n", msg->sfn);
   INDENTED_PRINTF("Slot = %d\n", msg->slot);
-  INDENTED_PRINTF("RNTI = 0x%02x\n", msg->rnti);
-  INDENTED_PRINTF("Number of TA_NSEC = %d\n", msg->num_ta);
+  INDENTED_PRINTF("Number of PDUs = %d\n", msg->number_of_pdus);
   depth++;
-  for (int i = 0; i < msg->num_ta; i++) {
-    INDENTED_PRINTF("Timing advance offset in nanoseconds [%d] = 0x%02x\n", i, msg->ta_offset_nsec[i]);
+  for (int pdu_idx = 0; pdu_idx < msg->number_of_pdus; pdu_idx++) {
+    const nfapi_nr_srs_toa_vendor_ext_pdu_t *pdu = &msg->pdu_list[pdu_idx];
+    INDENTED_PRINTF("RNTI = 0x%02x\n", pdu->rnti);
+    INDENTED_PRINTF("Number of TA_NSEC = %d\n", pdu->num_ta);
+    depth++;
+    for (int i = 0; i < pdu->num_ta; i++) {
+      INDENTED_PRINTF("Timing advance offset in nanoseconds [%d] = 0x%02x\n", i, pdu->ta_offset_nsec[i]);
+    }
+    depth--;
   }
 }
 

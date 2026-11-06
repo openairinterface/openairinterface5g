@@ -446,7 +446,7 @@ void init_nr_transport(PHY_VARS_gNB *gNB)
   ret = spsc_q_alloc(&gNB->pusch_queue, gNB->max_nb_pusch, sizeof(NR_gNB_PUSCH_job_t));
   DevAssert(ret);
 
-  int max_nb_srs = buffer_ul_slots ? buffer_ul_slots << 1 : 1; // assuming at most 2 SRS per slot
+  int max_nb_srs = buffer_ul_slots ? MAX_MOBILES_PER_GNB * buffer_ul_slots : 1;
   ret = spsc_q_alloc(&gNB->srs_queue, max_nb_srs, sizeof(NR_gNB_SRS_job_t));
   DevAssert(ret);
 

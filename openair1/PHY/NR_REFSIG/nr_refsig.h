@@ -17,7 +17,7 @@ uint32_t *nr_gold_pdcch(int N_RB_DL, int symbols_per_slot, unsigned short n_idDM
 uint32_t *nr_gold_pdsch(int N_RB_DL, int symbols_per_slot, int nid, int nscid, int slot, int symbol);
 uint32_t *nr_gold_pusch(int N_RB_UL, int symbols_per_slot, int Nid, int nscid, int slot, int symbol);
 uint32_t *nr_gold_csi_rs(int N_RB_DL, int symbols_per_slot, int slot, int symb, uint32_t Nid);
-uint32_t *nr_gold_prs(int nid, int slot, int symbol);
+uint32_t *nr_gold_prs(int nid, int symbols_per_slot, int slot, int symbol);
 
 int nr_pdsch_dmrs_rx(nr_prefix_type_t Ncp,
                      const unsigned int *nr_gold_pdsch,

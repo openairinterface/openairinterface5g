@@ -339,14 +339,14 @@ cirdb_provider_t *cirdb_connect(int num_tx_antennas,
   return p;
 }
 
-void cirdb_update(cirdb_provider_t *G, uint64_t ns_since_start)
+bool cirdb_update(cirdb_provider_t *G, uint64_t ns_since_start)
 {
   if (!G)
-    return;
+    return false;
   if (!G->channel_desc_out || !*G->channel_desc_out)
-    return;
+    return false;
   if (G->S <= 0)
-    return;
+    return false;
 
   double dt_s = (G->snapshot_dt_s > 0.0 ? G->snapshot_dt_s : 0.5);
   if (dt_s <= 0.0)
@@ -366,7 +366,9 @@ void cirdb_update(cirdb_provider_t *G, uint64_t ns_since_start)
       if (!isnan(angle_deg))
         LOG_I(HW, "CIRDB: UE angle at snapshot %u/%d (t=%.3fs): %.2f deg from tx boresight\n", s, G->S, s * dt_s, angle_deg);
     }
+    return true;
   }
+  return false;
 }
 
 void cirdb_stop(cirdb_provider_t *G)

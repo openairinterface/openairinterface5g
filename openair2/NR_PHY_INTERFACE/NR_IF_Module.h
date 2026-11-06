@@ -46,7 +46,7 @@ typedef struct {
   /// SRS indication list
   nfapi_nr_srs_indication_t srs_ind;
 
-  /// SRS ToA vendor extension list
+  /// SRS ToA vendor extension
   nfapi_nr_srs_toa_vendor_ext_indication_t srs_toa_vendor_ext_ind;
 
   /// UCI indication
@@ -54,6 +54,7 @@ typedef struct {
   nfapi_nr_crc_t crc_pdu_list[MAX_UL_PDUS_PER_SLOT];
   nfapi_nr_rx_data_pdu_t rx_pdu_list[MAX_UL_PDUS_PER_SLOT];
   nfapi_nr_srs_indication_pdu_t srs_pdu_list[MAX_NUM_NR_SRS_PDUS];
+  nfapi_nr_srs_toa_vendor_ext_pdu_t srs_toa_vendor_ext_pdu_list[MAX_NUM_NR_SRS_PDUS];
   nfapi_nr_uci_t uci_pdu_list[MAX_NUM_NR_UCI_PDUS];
   /// NFAPI PRACH information
   nfapi_nr_prach_indication_pdu_t prach_pdu_indication_list[MAX_NUM_NR_RX_RACH_PDUS];

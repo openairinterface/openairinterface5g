@@ -284,7 +284,7 @@ function main() {
             SIMUS_PHY=1
             CMAKE_CMD="$CMAKE_CMD -DENABLE_PHYSIM_TESTS=ON"
             # TODO: fix: dlsim_tm4 pucchsim prachsim pdcchsim pbchsim mbmssim
-            TARGET_LIST="$TARGET_LIST dlsim ulsim ldpctest polartest smallblocktest nr_pbchsim nr_dlschsim nr_ulschsim nr_dlsim nr_ulsim nr_pucchsim nr_prachsim nr_psbchsim nr_srssim nr_ulsim_mu_mimo"
+            TARGET_LIST="$TARGET_LIST dlsim ulsim ldpctest polartest smallblocktest nr_pbchsim nr_dlschsim nr_ulschsim nr_dlsim nr_ulsim nr_pucchsim nr_prachsim nr_psbchsim nr_srssim nr_ulsim_mu_mimo nr_prssim"
             echo_info "Will compile dlsim, ulsim, ..."
             shift;;
        -V | --vcd)

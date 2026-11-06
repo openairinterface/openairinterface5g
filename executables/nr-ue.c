@@ -226,7 +226,10 @@ static void UE_synch(void *arg) {
         + round((float)((ret.rx_offset * 2) % fp->samples_per_subframe) / fp->samples_per_slot0);
 
     UE->freq_offset = freq_offset - UE->dl_Doppler_shift;
-    if (!get_nrUE_params()->cont_fo_comp) {
+    // Restart continuous tracking from the newly acquired frequency estimate.
+    if (get_nrUE_params()->cont_fo_comp)
+      UE->freq_off_acc = 0.0;
+    else {
       // rerun with new cell parameters and frequency-offset
       nrue_ru_set_freq(UE, ul_carrier, dl_carrier, freq_offset);
     }
@@ -471,6 +474,29 @@ void processSlotTX(void *arg)
   TracyCZoneEnd(ctx);
 }
 
+static void process_slot_tx_job(void *arg)
+{
+  nr_rxtx_thread_data_t *data = arg;
+  processSlotTX(arg);
+  __atomic_fetch_add(&data->UE->tx_jobs_completed, 1, __ATOMIC_RELEASE);
+}
+
+static void flush_ue_actors(PHY_VARS_NR_UE *UE, Actor_t *dl_actors, Actor_t *ul_actors)
+{
+  for (int i = 0; i < get_nrUE_params()->num_dl_actors; i++)
+    flush_actor(&dl_actors[i]);
+
+  // Main-thread admission has stopped. A TX predecessor can still enqueue its
+  // successor behind an actor's flush sentinel, so drain the finite admitted
+  // chain until an entire sweep completes without another TX job returning.
+  uint64_t completed;
+  do {
+    completed = __atomic_load_n(&UE->tx_jobs_completed, __ATOMIC_ACQUIRE);
+    for (int i = 0; i < get_nrUE_params()->num_ul_actors; i++)
+      flush_actor(&ul_actors[i]);
+  } while (completed != __atomic_load_n(&UE->tx_jobs_completed, __ATOMIC_ACQUIRE));
+}
+
 static uint64_t get_carrier_frequency(const int N_RB, const int mu, const uint32_t pointA_freq_khz)
 {
   const uint64_t bw = (NR_NB_SC_PER_RB * N_RB) * MU_SCS(mu);
@@ -483,6 +509,9 @@ static int handle_sync_req_from_mac(PHY_VARS_NR_UE *UE, Actor_t *dl_actors, Acto
   NR_DL_FRAME_PARMS *fp = &UE->frame_parms;
   // Start synchronization with a target gNB
   if (UE->synch_request.received_synch_request == 1) {
+    // Finish old-cell jobs before changing their radio configuration or HARQ state.
+    flush_ue_actors(UE, dl_actors, ul_actors);
+
     // if upper layers signal BW scan we do as instructed by command line parameter
     // if upper layers disable BW scan we set it to false
     if (UE->synch_request.synch_req.ssb_bw_scan)
@@ -529,15 +558,6 @@ static int handle_sync_req_from_mac(PHY_VARS_NR_UE *UE, Actor_t *dl_actors, Acto
       apply_ntn_timing_advance_and_doppler(UE, fp, -1);
     // Apply NTN DL Doppler as initial FO
     UE->initial_fo = UE->dl_Doppler_shift;
-
-    /* Clearing UE harq while DL actors are active causes race condition.
-        So we let the current execution to complete here.*/
-    for (int i = 0; i < get_nrUE_params()->num_dl_actors; i++) {
-      flush_actor(&dl_actors[i]);
-    }
-    for (int i = 0; i < get_nrUE_params()->num_ul_actors; i++) {
-      flush_actor(&ul_actors[i]);
-    }
 
     clean_UE_harq(UE);
     UE->is_synchronized = 0;
@@ -882,6 +902,7 @@ void *UE_thread(void *arg)
   // zero-length VLAs are undefined (C11 6.7.6.2), hence the size-1 floor
   Actor_t dl_actors[num_dl_actors > 0 ? num_dl_actors : 1];
   Actor_t ul_actors[num_ul_actors > 0 ? num_ul_actors : 1];
+  __atomic_store_n(&UE->tx_jobs_completed, 0, __ATOMIC_RELAXED);
   init_ue_actors(&sync_actor, dl_actors, ul_actors);
 
   const double ntn_init_time_drift = get_nrUE_params()->ntn_init_time_drift;
@@ -1184,7 +1205,18 @@ void *UE_thread(void *arg)
     // RX slot processing. We launch and forget.
     notifiedFIFO_elt_t *newRx = newNotifiedFIFO_elt(sizeof(nr_rxtx_thread_data_t), curMsg.proc.nr_slot_tx, NULL, UE_dl_processing);
     nr_rxtx_thread_data_t *curMsgRx = (nr_rxtx_thread_data_t *)NotifiedFifoData(newRx);
-    *curMsgRx = (nr_rxtx_thread_data_t){.proc = curMsg.proc, .UE = UE};
+    /* not zeroing the whole message: 10 KB per slot and per UE are the search space configurations, that the scheduled
+       response writes entirely, up to nb_search_space */
+    curMsgRx->proc = curMsg.proc;
+    curMsgRx->UE = UE;
+    curMsgRx->writeBlockSize = 0;
+    curMsgRx->next_barrier = NULL;
+    curMsgRx->absolute_deadline_us = 0;
+    curMsgRx->ul_actors = NULL;
+    nr_phy_data_t *phy_data_rx = &curMsgRx->phy_data;
+    _Static_assert(offsetof(nr_phy_data_t, phy_pdcch_config) == 0, "phy_pdcch_config must be the first field");
+    phy_data_rx->phy_pdcch_config.nb_search_space = 0;
+    memset(&phy_data_rx->dlsch_config, 0, sizeof(*phy_data_rx) - offsetof(nr_phy_data_t, dlsch_config));
     int ret = UE_dl_preprocessing(UE, &curMsgRx->proc, tx_wait_for_dlsch, &curMsgRx->phy_data, &stats_printed);
     if (ret != INT_MAX)
       shiftForNextFrame = ret;
@@ -1207,7 +1239,7 @@ void *UE_thread(void *arg)
 
     // Start TX slot processing here. It runs in parallel with RX slot processing
     // in current code, DURATION_RX_TO_TX constant is the limit to get UL data to encode from a RX slot
-    notifiedFIFO_elt_t *newTx = newNotifiedFIFO_elt(sizeof(nr_rxtx_thread_data_t), 0, 0, processSlotTX);
+    notifiedFIFO_elt_t *newTx = newNotifiedFIFO_elt(sizeof(nr_rxtx_thread_data_t), 0, 0, process_slot_tx_job);
     nr_rxtx_thread_data_t *curMsgTx = NotifiedFifoData(newTx);
     memset(curMsgTx, 0, sizeof(*curMsgTx));
     curMsgTx->proc = curMsg.proc;

@@ -213,8 +213,9 @@ void update_mac_ul_timers(NR_UE_MAC_INST_t *mac)
 
   nr_phr_info_t *phr_info = &mac->scheduling_info.phr_info;
   if (phr_info->is_configured) {
-    bool prohibit_expired = nr_timer_tick(&phr_info->prohibitPHR_Timer);
-    if (prohibit_expired) {
+    nr_timer_tick(&phr_info->prohibitPHR_Timer);
+    // Pathloss can change after the expiry tick, while reporting remains allowed.
+    if (nr_timer_expired(&phr_info->prohibitPHR_Timer)) {
       int16_t pathloss = compute_nr_SSB_PL(mac);
       if (abs(pathloss - phr_info->PathlossLastValue) > phr_info->PathlossChange_db) {
         phr_info->phr_reporting |= (1 << phr_cause_prohibit_timer);
@@ -634,7 +635,8 @@ int nr_config_pusch_pdu(NR_UE_MAC_INST_t *mac,
     if (tp_enabled) {
 
       uint32_t n_RS_Id = 0;
-      if (NR_DMRS_ulconfig->transformPrecodingEnabled &&
+      if (NR_DMRS_ulconfig &&
+          NR_DMRS_ulconfig->transformPrecodingEnabled &&
           NR_DMRS_ulconfig->transformPrecodingEnabled->nPUSCH_Identity)
         n_RS_Id = *NR_DMRS_ulconfig->transformPrecodingEnabled->nPUSCH_Identity;
       else

@@ -8,7 +8,7 @@
 #---------------------------------------------------------------------
 
 
-FROM nvidia/cuda:12.2.0-devel-ubuntu22.04 AS ran-base-cuda
+FROM nvidia/cuda:13.1.0-devel-ubuntu24.04 AS ran-base-cuda
 
 ARG NEEDED_GIT_PROXY
 ARG TARGETARCH
@@ -26,9 +26,6 @@ RUN apt-get update && \
        ccache \
        psmisc \
        git \
-       #use gcc-12 to avoid problems of default gcc-11 in FlexRIC
-       gcc-12 \
-       g++-12 \
        xxd \
        libpcre2-dev \
        python3-dev \
@@ -41,8 +38,8 @@ RUN apt-get update && \
        flatbuffers-compiler \
        libflatbuffers-dev \
        libnanomsg-dev && \
-    update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 100 --slave /usr/bin/g++ g++ /usr/bin/g++-12 && \
-    pip3 install --ignore-installed pyyaml
+    # --break-system-packages allows externally managed environment in pip
+    pip3 install --ignore-installed pyyaml --break-system-packages
 
 # Add "Tini - A tiny but valid init for containers", https://github.com/krallin/tini
 # it will be copied into target containers, to print exit numbers and handle signals properly

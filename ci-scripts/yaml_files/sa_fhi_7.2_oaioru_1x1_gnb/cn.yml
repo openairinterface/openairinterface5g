@@ -26,7 +26,7 @@ services:
                 ipv4_address: 192.168.101.131
     oai-amf:
         container_name: "rfsim5g-oai-amf"
-        image: oaisoftwarealliance/oai-amf:v2.2.1
+        image: oaisoftwarealliance/oai-amf:v2.2.2
         environment:
             - TZ=Europe/paris
         volumes:
@@ -38,7 +38,7 @@ services:
                 ipv4_address: 192.168.101.132
     oai-smf:
         container_name: "rfsim5g-oai-smf"
-        image: oaisoftwarealliance/oai-smf:v2.2.1
+        image: oaisoftwarealliance/oai-smf:v2.2.2
         environment:
             - TZ=Europe/Paris
         volumes:
@@ -50,7 +50,7 @@ services:
                 ipv4_address: 192.168.101.133
     oai-upf:
         container_name: "rfsim5g-oai-upf"
-        image: oaisoftwarealliance/oai-upf:v2.2.1
+        image: oaisoftwarealliance/oai-upf:v2.2.2
         init: true
         environment:
             - TZ=Europe/Paris

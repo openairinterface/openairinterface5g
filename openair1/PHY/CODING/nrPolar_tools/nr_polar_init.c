@@ -6,7 +6,7 @@
 #include "nr_polar_psbch_defs.h"
 #include "common/utils/LOG/log.h"
 
-#define PolarKey ((messageType << 24) | (messageLength << 8) | aggregation_level)
+#define PolarKey (((uint64_t)messageType << 48) | ((uint64_t)messageLength << 32) | (uint32_t)aggregation_level)
 static t_nrPolar_params *PolarList = NULL;
 pthread_mutex_t PolarListMutex = PTHREAD_MUTEX_INITIALIZER;
 
@@ -230,8 +230,7 @@ t_nrPolar_params *nr_polar_params(int8_t messageType, uint16_t messageLength, in
 
 void nr_polar_print_polarParams()
 {
-  uint8_t i = 0;
-
+  int i = 0;
   if (PolarList == NULL) {
     printf("polarParams is empty.\n");
   } else {
@@ -239,14 +238,13 @@ void nr_polar_print_polarParams()
     while (polarParams != NULL) {
       printf("polarParams[%d] = %d, %d, %d\n",
              i,
-             polarParams->idx >> 24,
-             (polarParams->idx >> 8) & 0xFFFF,
-             polarParams->idx & 0xFF);
+             (int)(polarParams->idx >> 48),
+             (int)((polarParams->idx >> 32) & 0xFFFF),
+             (int)(polarParams->idx & 0xFFFFFFFF));
       polarParams = polarParams->nextPtr;
       i++;
     }
   }
-
   return;
 }
 

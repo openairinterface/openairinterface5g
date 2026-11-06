@@ -651,6 +651,7 @@ typedef struct NR_UE_ul_harq {
   bool is_waiting;
   uint8_t ndi;
   uint8_t round;
+  uint16_t feedback_frame;
   uint16_t feedback_slot;
 
   /// sched_pusch keeps information on MCS etc used for the initial transmission
@@ -1414,8 +1415,8 @@ typedef struct gNB_MAC_INST_s {
   NR_IF_Module_t                  *if_inst;
   pthread_t                       stats_thread;
 
-  /// Per-cell scheduling contexts
-  nr_cell_sched_t cells[NR_MAX_CELLS];
+  /// Per-cell scheduling contexts (one entry per configured cell, indexed by phy_id)
+  seq_arr_t cells;
 
   NR_UEs_t UE_info;
 

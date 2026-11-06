@@ -1585,6 +1585,40 @@ XNAP_XnAP_PDU_t *encode_xnap_ran_paging(const xnap_ran_paging_t *msg)
     }
   }
 
+  /* Paging Priority (O) */
+  if (msg->paging_priority) {
+    asn1cSequenceAdd(out->protocolIEs.list, XNAP_RANPaging_IEs_t, ie5);
+    ie5->id = XNAP_ProtocolIE_ID_id_PagingPriority;
+    ie5->criticality = XNAP_Criticality_ignore;
+    ie5->value.present = XNAP_RANPaging_IEs__value_PR_PagingPriority;
+    ie5->value.choice.PagingPriority = *msg->paging_priority;
+  }
+
+  /* Assistance Data for RAN Paging (O) – RAN Paging Attempt Information */
+  if (msg->ran_paging_attempt_info) {
+    const xnap_ran_paging_attempt_info_t *info = msg->ran_paging_attempt_info;
+    asn1cSequenceAdd(out->protocolIEs.list, XNAP_RANPaging_IEs_t, ie6);
+    ie6->id = XNAP_ProtocolIE_ID_id_AssistanceDataForRANPaging;
+    ie6->criticality = XNAP_Criticality_ignore;
+    ie6->value.present = XNAP_RANPaging_IEs__value_PR_AssistanceDataForRANPaging;
+    asn1cCalloc(ie6->value.choice.AssistanceDataForRANPaging.ran_paging_attempt_info, attempt);
+    attempt->pagingAttemptCount = info->paging_attempt_count;
+    attempt->intendedNumberOfPagingAttempts = info->intended_num_paging_attempts;
+    if (info->next_paging_area_scope_changed)
+      asn1cCallocOne(attempt->nextPagingAreaScope, XNAP_RANPagingAttemptInfo__nextPagingAreaScope_changed);
+  }
+
+  /* UE Radio Capability for Paging (O) */
+  if (msg->ue_radio_cap_for_paging.buf && msg->ue_radio_cap_for_paging.len > 0) {
+    asn1cSequenceAdd(out->protocolIEs.list, XNAP_RANPaging_IEs_t, ie7);
+    ie7->id = XNAP_ProtocolIE_ID_id_UERadioCapabilityForPaging;
+    ie7->criticality = XNAP_Criticality_ignore;
+    ie7->value.present = XNAP_RANPaging_IEs__value_PR_UERadioCapabilityForPaging;
+    const byte_array_t *cap = &msg->ue_radio_cap_for_paging;
+    asn1cCalloc(ie7->value.choice.UERadioCapabilityForPaging.uERadioCapabilityForPagingOfNR, nr);
+    OCTET_STRING_fromBuf(nr, (const char *)cap->buf, cap->len);
+  }
+
   return pdu;
 }
 
@@ -1672,17 +1706,32 @@ bool decode_xnap_ran_paging(xnap_ran_paging_t *out, const XNAP_XnAP_PDU_t *pdu)
         }
       } break;
 
-      case XNAP_ProtocolIE_ID_id_PagingPriority:
-        PRINT_ERROR("XNAP_ProtocolIE_ID_id %ld not handled, skipping\n", ie->id);
-        break;
+      case XNAP_ProtocolIE_ID_id_PagingPriority: {
+        _EQ_CHECK_INT(ie->value.present, XNAP_RANPaging_IEs__value_PR_PagingPriority);
+        out->paging_priority = malloc_or_fail(sizeof(*out->paging_priority));
+        *out->paging_priority = ie->value.choice.PagingPriority;
+      } break;
 
-      case XNAP_ProtocolIE_ID_id_AssistanceDataForRANPaging:
-        PRINT_ERROR("XNAP_ProtocolIE_ID_id %ld not handled, skipping\n", ie->id);
-        break;
+      case XNAP_ProtocolIE_ID_id_AssistanceDataForRANPaging: {
+        _EQ_CHECK_INT(ie->value.present, XNAP_RANPaging_IEs__value_PR_AssistanceDataForRANPaging);
+        const XNAP_RANPagingAttemptInfo_t *attempt = ie->value.choice.AssistanceDataForRANPaging.ran_paging_attempt_info;
+        if (attempt) {
+          xnap_ran_paging_attempt_info_t *info = calloc_or_fail(1, sizeof(*info));
+          out->ran_paging_attempt_info = info;
+          info->paging_attempt_count = attempt->pagingAttemptCount;
+          info->intended_num_paging_attempts = attempt->intendedNumberOfPagingAttempts;
+          info->next_paging_area_scope_changed =
+              attempt->nextPagingAreaScope
+              && *attempt->nextPagingAreaScope == XNAP_RANPagingAttemptInfo__nextPagingAreaScope_changed;
+        }
+      } break;
 
-      case XNAP_ProtocolIE_ID_id_UERadioCapabilityForPaging:
-        PRINT_ERROR("XNAP_ProtocolIE_ID_id %ld not handled, skipping\n", ie->id);
-        break;
+      case XNAP_ProtocolIE_ID_id_UERadioCapabilityForPaging: {
+        _EQ_CHECK_INT(ie->value.present, XNAP_RANPaging_IEs__value_PR_UERadioCapabilityForPaging);
+        const OCTET_STRING_t *nr = ie->value.choice.UERadioCapabilityForPaging.uERadioCapabilityForPagingOfNR;
+        if (nr)
+          out->ue_radio_cap_for_paging = create_byte_array(nr->size, nr->buf);
+      } break;
 
       default:
         PRINT_ERROR("XNAP_ProtocolIE_ID_id %ld unknown, skipping\n", ie->id);
@@ -1719,6 +1768,21 @@ bool eq_xnap_ran_paging(const xnap_ran_paging_t *a, const xnap_ran_paging_t *b)
     }
   }
 
+  _EQ_CHECK_OPTIONAL_IE(a, b, paging_priority, _EQ_CHECK_INT);
+
+  _EQ_CHECK_OPTIONAL_PTR(a, b, ran_paging_attempt_info);
+  if (a->ran_paging_attempt_info) {
+    const xnap_ran_paging_attempt_info_t *ia = a->ran_paging_attempt_info;
+    const xnap_ran_paging_attempt_info_t *ib = b->ran_paging_attempt_info;
+    _EQ_CHECK_INT(ia->paging_attempt_count, ib->paging_attempt_count);
+    _EQ_CHECK_INT(ia->intended_num_paging_attempts, ib->intended_num_paging_attempts);
+    _EQ_CHECK_INT(ia->next_paging_area_scope_changed, ib->next_paging_area_scope_changed);
+  }
+
+  if ((a->ue_radio_cap_for_paging.len || b->ue_radio_cap_for_paging.len)
+      && !eq_byte_array(&a->ue_radio_cap_for_paging, &b->ue_radio_cap_for_paging))
+    return false;
+
   return true;
 }
 
@@ -1731,6 +1795,9 @@ void free_xnap_ran_paging(xnap_ran_paging_t *msg)
     free(msg->ran_paging_area.cell_ids);
   else
     free(msg->ran_paging_area.ran_area_ids);
+  free(msg->paging_priority);
+  free(msg->ran_paging_attempt_info);
+  free_byte_array(msg->ue_radio_cap_for_paging);
 }
 
 /* ======================================================================
@@ -2220,6 +2287,17 @@ XNAP_XnAP_PDU_t *encode_xnap_retrieve_ue_context_failure(const xnap_retrieve_ue_
   ie1->value.present = XNAP_RetrieveUEContextFailure_IEs__value_PR_NG_RANnodeUEXnAPID;
   ie1->value.choice.NG_RANnodeUEXnAPID = msg->new_ng_node_ue_xnap_id;
 
+  /* Old NG-RAN node To New NG-RAN node Resume Container (O) */
+  if (msg->old_to_new_resume_container.buf && msg->old_to_new_resume_container.len > 0) {
+    asn1cSequenceAdd(out->protocolIEs.list, XNAP_RetrieveUEContextFailure_IEs_t, ie_rc);
+    ie_rc->id = XNAP_ProtocolIE_ID_id_OldtoNewNG_RANnodeResumeContainer;
+    ie_rc->criticality = XNAP_Criticality_ignore;
+    ie_rc->value.present = XNAP_RetrieveUEContextFailure_IEs__value_PR_OCTET_STRING;
+    OCTET_STRING_fromBuf(&ie_rc->value.choice.OCTET_STRING,
+                         (const char *)msg->old_to_new_resume_container.buf,
+                         msg->old_to_new_resume_container.len);
+  }
+
   /* Cause (M) 9.2.3.2 */
   asn1cSequenceAdd(out->protocolIEs.list, XNAP_RetrieveUEContextFailure_IEs_t, ie2);
   ie2->id = XNAP_ProtocolIE_ID_id_Cause;
@@ -2261,7 +2339,12 @@ bool decode_xnap_retrieve_ue_context_failure(xnap_retrieve_ue_context_failure_t 
         out->cause = decode_xnap_cause(&ie->value.choice.Cause);
       } break;
 
-      case XNAP_ProtocolIE_ID_id_OldtoNewNG_RANnodeResumeContainer:
+      case XNAP_ProtocolIE_ID_id_OldtoNewNG_RANnodeResumeContainer: {
+        _EQ_CHECK_INT(ie->value.present, XNAP_RetrieveUEContextFailure_IEs__value_PR_OCTET_STRING);
+        OCTET_STRING_t *container = &ie->value.choice.OCTET_STRING;
+        out->old_to_new_resume_container = create_byte_array(container->size, container->buf);
+      } break;
+
       case XNAP_ProtocolIE_ID_id_CriticalityDiagnostics:
         PRINT_ERROR("XNAP_ProtocolIE_ID_id %ld not handled, skipping\n", ie->id);
         break;
@@ -2281,6 +2364,9 @@ bool decode_xnap_retrieve_ue_context_failure(xnap_retrieve_ue_context_failure_t 
 bool eq_xnap_retrieve_ue_context_failure(const xnap_retrieve_ue_context_failure_t *a, const xnap_retrieve_ue_context_failure_t *b)
 {
   _EQ_CHECK_UINT32(a->new_ng_node_ue_xnap_id, b->new_ng_node_ue_xnap_id);
+  if ((a->old_to_new_resume_container.len || b->old_to_new_resume_container.len)
+      && !eq_byte_array(&a->old_to_new_resume_container, &b->old_to_new_resume_container))
+    return false;
   if (!eq_xnap_cause(&a->cause, &b->cause))
     return false;
   return true;
@@ -2291,6 +2377,5 @@ bool eq_xnap_retrieve_ue_context_failure(const xnap_retrieve_ue_context_failure_
  */
 void free_xnap_retrieve_ue_context_failure(xnap_retrieve_ue_context_failure_t *msg)
 {
-  // Nothing to free
-  UNUSED(msg);
+  free_byte_array(msg->old_to_new_resume_container);
 }

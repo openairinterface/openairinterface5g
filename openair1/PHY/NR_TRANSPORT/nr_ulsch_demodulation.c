@@ -1175,6 +1175,9 @@ int nr_rx_pusch_group_tp(PHY_VARS_gNB *gNB,
     }
   } // symbol loop
 
+  // Complete symbol processing before copying its IQ and interpolated channel estimates.
+  join_task_ans(&ans);
+
 #if T_TRACER
   int dmrs_port = get_dmrs_port(0, rel15_ul_ref->dmrs_ports);
 
@@ -1216,7 +1219,6 @@ int nr_rx_pusch_group_tp(PHY_VARS_gNB *gNB,
       rel15_ul_ref->rb_size * NR_NB_SC_PER_RB * rel15_ul_ref->nr_of_symbols * num_sp_streams * total_layers * 4);
 #endif
 
-  join_task_ans(&ans);
   for (int u = 0; u < group_size; u++) {
     NR_gNB_PUSCH *pv = pusch_vars_group[u];
     // Copy unavailable resources per UE

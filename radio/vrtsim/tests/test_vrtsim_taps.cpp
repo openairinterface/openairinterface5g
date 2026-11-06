@@ -44,6 +44,7 @@ struct mock_taps_client_t {
     channel_desc_t desc;
     std::vector<struct complexf *> ch_ps_ptrs;
     bool has_data = false;
+    bool updated = false;
   } data[4];
   std::mutex mutex;
 };
@@ -84,14 +85,17 @@ void taps_client_stop(void *handle)
   delete client;
 }
 
-channel_desc_t *taps_client_get_model(void *handle, int id)
+channel_desc_t *taps_client_get_model(void *handle, int id, bool *updated)
 {
   auto *client = static_cast<mock_taps_client_t *>(handle);
   std::lock_guard<std::mutex> lock(client->mutex);
+  *updated = false;
   if (id < 0 || id >= 4)
     return nullptr;
   if (!client->data[id].has_data)
     return nullptr;
+  *updated = client->data[id].updated;
+  client->data[id].updated = false;
   return &client->data[id].desc;
 }
 }
@@ -130,6 +134,7 @@ class TapsProducer {
         d.desc.path_loss_dB = 0;
         d.desc.ch_ps = (struct complexf **)d.ch_ps_ptrs.data();
         d.has_data = true;
+        d.updated = true;
         break;
       }
     }

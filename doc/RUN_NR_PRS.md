@@ -231,9 +231,8 @@ FR2: 1 gNB, 8 PRS resources
 ```
 > Note : verify that peak channel power, SNR and rsrp have reasonable values
 
-On the UE side, the T tracer dumps the PRS channel estimates in both the time
-and frequency domains, using `UE_PHY_DL_CHANNEL_ESTIMATE` and
-`UE_PHY_DL_CHANNEL_ESTIMATE_FREQ` respectively. These dumps can be enabled by
+On the UE side, the T tracer dumps the PRS channel estimates in both the frequency
+and time domains, using the single event `UE_PHY_PRS_CHANNEL_ESTIMATE`. These dumps can be enabled by
 adding `--T_stdout 0` (without console prints) or `--T_stdout 2` (with console
 prints) to the nrUE launch command above.
 
@@ -246,7 +245,7 @@ Once the build is successful, execute the following command to start recording
 the PRS channel-estimate dumps:
 
 ```
-./record -d ../T_messages.txt -on LEGACY_PHY_INFO -on UE_PHY_DL_CHANNEL_ESTIMATE -on UE_PHY_DL_CHANNEL_ESTIMATE_FREQ -o prs_dumps.raw
+./record -d ../T_messages.txt -on LEGACY_PHY_INFO -on UE_PHY_PRS_CHANNEL_ESTIMATE -o prs_dumps.raw
 ```
 
 Exit using `Ctrl+C` to stop recording; otherwise it will keep running and take

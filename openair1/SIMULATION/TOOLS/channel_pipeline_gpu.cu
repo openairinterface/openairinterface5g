@@ -163,6 +163,12 @@ __global__ void scatter_add_block_kernel(const cufftComplex *__restrict__ rx_tim
   atomicAdd(&rx_accum[rx * accum_len + pos].y, v.y * scale);
 }
 
+// Round to nearest (ties to even) and saturate to int16, as the CPU pipeline does.
+__device__ static int16_t round_s16(float v)
+{
+  return (int16_t)__float2int_rn(fminf(fmaxf(v, -32768.0f), 32767.0f));
+}
+
 __global__ void extract_and_noise_block_kernel(const cufftComplex *__restrict__ rx_accum,
                                                int accum_len,
                                                int window_offset,
@@ -187,12 +193,11 @@ __global__ void extract_and_noise_block_kernel(const cufftComplex *__restrict__ 
     im += awgn.y * noise_power;
     curand_states[rx * num_samples + i] = local_state;
   }
+  c16_t out = {round_s16(r), round_s16(im)};
   if (i < num_samples_rx_sig0) {
-    rx_sig0[rx][i].r = r;
-    rx_sig0[rx][i].i = im;
+    rx_sig0[rx][i] = out;
   } else {
-    rx_sig1[rx][i - num_samples_rx_sig0].r = r;
-    rx_sig1[rx][i - num_samples_rx_sig0].i = im;
+    rx_sig1[rx][i - num_samples_rx_sig0] = out;
   }
 }
 

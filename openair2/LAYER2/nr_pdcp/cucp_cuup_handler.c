@@ -280,7 +280,7 @@ void e1_bearer_context_setup(const e1ap_bearer_setup_req_t *req)
         up_params_t *up = &resp_drb->UpParamList[resp_drb->numUpParam++];
         up->tl_info = f1_drb_gtpu_create(f1inst, &f1_tunnel_req);
         LOG_D(E1AP,
-              "Created F1-U tunnel for DRB %ld (TEID %d tlAddress %x)\n",
+              "Created F1-U tunnel for DRB %ld (TEID %u tlAddress %x)\n",
               req_drb->id,
               up->tl_info.teId,
               up->tl_info.tlAddress);
@@ -425,7 +425,7 @@ void e1_bearer_context_modif(const e1ap_bearer_mod_req_t *req)
         up_params_t *up = &resp_drb->UpParamList[resp_drb->numUpParam++];
         up->tl_info = f1_drb_gtpu_create(f1inst, &f1_tunnel_req);
         LOG_D(E1AP,
-              "Created F1-U tunnel for DRB %ld (TEID %d tlAddress %x)\n",
+              "Created F1-U tunnel for DRB %ld (TEID %u tlAddress %x)\n",
               req_drb->id,
               up->tl_info.teId,
               up->tl_info.tlAddress);

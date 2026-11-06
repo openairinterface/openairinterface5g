@@ -107,6 +107,7 @@ void rrc_remove_xn_candidate(gNB_RRC_INST *rrc, uint32_t gnb_id);
 const nr_neighbour_cell_t *get_neighbour_cell_by_pci(const neighbour_cell_configuration_t *cell, int pci);
 const nr_neighbour_cell_t *get_neighbour_cell_by_cell_id(const neighbour_cell_configuration_t *cell, uint64_t nrcell_id);
 void nr_HO_F1_trigger_telnet(gNB_RRC_INST *rrc, uint32_t rrc_ue_id);
+void nr_HO_F1_trigger_telnet_pci(gNB_RRC_INST *rrc, uint32_t target_pci, uint32_t rrc_ue_id);
 void nr_HO_N2_trigger_telnet(gNB_RRC_INST *rrc, uint32_t neighbour_pci, uint32_t rrc_ue_id);
 
 #endif /* RRC_GNB_MOBILITY_H_ */

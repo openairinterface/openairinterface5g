@@ -1105,6 +1105,8 @@ void lte_ue_measurements(PHY_VARS_UE *ue,
       for (aarx=0; aarx<frame_parms->nb_antennas_rx; aarx++) {
         dl_ch0    = &ue->common_vars.common_vars_rx_data_per_thread[ue->current_thread_id[subframe]].dl_ch_estimates[eNB_id][aarx][4];
         dl_ch1    = &ue->common_vars.common_vars_rx_data_per_thread[ue->current_thread_id[subframe]].dl_ch_estimates[eNB_id][2+aarx][4];
+        ue->measurements.wideband_pmi_re[eNB_id][aarx] = 0;
+        ue->measurements.wideband_pmi_im[eNB_id][aarx] = 0;
 
         for (subband=0; subband<nb_subbands; subband++) {
 

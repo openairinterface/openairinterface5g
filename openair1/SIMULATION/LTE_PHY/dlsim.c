@@ -149,6 +149,7 @@ void DL_channel(RU_t *ru,PHY_VARS_UE *UE,uint subframe,int awgn_flag,double SNR,
 
   if(abstx) {
     if (trials==0 && round==0) {
+      allocCast3D(chF0, struct complexd, eNB2UE[0]->chF, eNB2UE[0]->nb_tx, eNB2UE[0]->nb_rx, eNB2UE[0]->channelF_len, false);
       // calculate freq domain representation to compute SINR
       freq_channel(eNB2UE[0], ru->frame_parms->N_RB_DL,2*ru->frame_parms->N_RB_DL + 1, 15);
       // snr=pow(10.0,.1*SNR);
@@ -157,45 +158,48 @@ void DL_channel(RU_t *ru,PHY_VARS_UE *UE,uint subframe,int awgn_flag,double SNR,
       for (u=0; u<2*ru->frame_parms->N_RB_DL; u++) {
         for (aarx=0; aarx<eNB2UE[0]->nb_rx; aarx++) {
           for (aatx=0; aatx<eNB2UE[0]->nb_tx; aatx++) {
-            channelx = eNB2UE[0]->chF[aarx+(aatx*eNB2UE[0]->nb_rx)][u].r;
-            channely = eNB2UE[0]->chF[aarx+(aatx*eNB2UE[0]->nb_rx)][u].i;
+            channelx = chF0[aatx][aarx][u].r;
+            channely = chF0[aatx][aarx][u].i;
             fprintf(csv_fd,"%e+i*(%e),",channelx,channely);
           }
         }
       }
 
       if(num_rounds>1) {
+        allocCast3D(chF1, struct complexd, eNB2UE[1]->chF, eNB2UE[1]->nb_tx, eNB2UE[1]->nb_rx, eNB2UE[1]->channelF_len, false);
         freq_channel(eNB2UE[1], ru->frame_parms->N_RB_DL,2*ru->frame_parms->N_RB_DL + 1, 15);
 
         for (u=0; u<2*ru->frame_parms->N_RB_DL; u++) {
           for (aarx=0; aarx<eNB2UE[1]->nb_rx; aarx++) {
             for (aatx=0; aatx<eNB2UE[1]->nb_tx; aatx++) {
-              channelx = eNB2UE[1]->chF[aarx+(aatx*eNB2UE[1]->nb_rx)][u].r;
-              channely = eNB2UE[1]->chF[aarx+(aatx*eNB2UE[1]->nb_rx)][u].i;
+              channelx = chF1[aatx][aarx][u].r;
+              channely = chF1[aatx][aarx][u].i;
               fprintf(csv_fd,"%e+i*(%e),",channelx,channely);
             }
           }
         }
 
         freq_channel(eNB2UE[2], ru->frame_parms->N_RB_DL,2*ru->frame_parms->N_RB_DL + 1, 15);
+        allocCast3D(chF2, struct complexd, eNB2UE[2]->chF, eNB2UE[2]->nb_tx, eNB2UE[2]->nb_rx, eNB2UE[2]->channelF_len, false);
 
         for (u=0; u<2*ru->frame_parms->N_RB_DL; u++) {
           for (aarx=0; aarx<eNB2UE[2]->nb_rx; aarx++) {
             for (aatx=0; aatx<eNB2UE[2]->nb_tx; aatx++) {
-              channelx = eNB2UE[2]->chF[aarx+(aatx*eNB2UE[2]->nb_rx)][u].r;
-              channely = eNB2UE[2]->chF[aarx+(aatx*eNB2UE[2]->nb_rx)][u].i;
+              channelx = chF2[aatx][aarx][u].r;
+              channely = chF2[aatx][aarx][u].i;
               fprintf(csv_fd,"%e+i*(%e),",channelx,channely);
             }
           }
         }
 
+        allocCast3D(chF3, struct complexd, eNB2UE[3]->chF, eNB2UE[3]->nb_tx, eNB2UE[3]->nb_rx, eNB2UE[3]->channelF_len, false);
         freq_channel(eNB2UE[3], ru->frame_parms->N_RB_DL,2*ru->frame_parms->N_RB_DL + 1, 15);
 
         for (u=0; u<2*ru->frame_parms->N_RB_DL; u++) {
           for (aarx=0; aarx<eNB2UE[3]->nb_rx; aarx++) {
             for (aatx=0; aatx<eNB2UE[3]->nb_tx; aatx++) {
-              channelx = eNB2UE[3]->chF[aarx+(aatx*eNB2UE[3]->nb_rx)][u].r;
-              channely = eNB2UE[3]->chF[aarx+(aatx*eNB2UE[3]->nb_rx)][u].i;
+              channelx = chF3[aatx][aarx][u].r;
+              channely = chF3[aatx][aarx][u].i;
               fprintf(csv_fd,"%e+i*(%e),",channelx,channely);
             }
           }
@@ -1564,10 +1568,11 @@ int main(int argc, char **argv) {
               }
 
             LOG_M("dlsch_ber_bit.m","ber_bit",uncoded_ber_bit,coded_bits_per_codeword,1,0);
-            LOG_M("ch0.m","ch0",eNB2UE[0]->ch[0],eNB2UE[0]->channel_length,1,8);
+            allocCast3D(ch, struct complexd, eNB2UE[0]->ch, eNB2UE[0]->nb_tx, eNB2UE[0]->nb_rx, eNB2UE[0]->channel_length, false);
+            LOG_M("ch0.m", "ch0", ch[0], eNB2UE[0]->channel_length, 1, 8);
 
-            if (eNB->frame_parms.nb_antennas_tx>1)
-              LOG_M("ch1.m","ch1",eNB2UE[0]->ch[eNB->frame_parms.nb_antennas_rx],eNB2UE[0]->channel_length,1,8);
+            if (eNB->frame_parms.nb_antennas_tx > 1)
+              LOG_M("ch1.m", "ch1", ch[1], eNB2UE[0]->channel_length, 1, 8);
 
             //common vars
             LOG_M("rxsig0.m","rxs0", &UE->common_vars.rxdata[0][0],10*UE->frame_parms.samples_per_tti,1,1);

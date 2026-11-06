@@ -32,7 +32,7 @@ RUN \
       -w USRP -t Ethernet -w BLADERF \
       --build-e2 --cmake-opt -DKPM_VERSION=$KPM_VERSION --cmake-opt -DE2AP_VERSION=$E2AP_VERSION \
       --cmake-opt -DOAI_VRTSIM_TAPS_CLIENT=ON \
-      --cmake-opt -DCUDA_TOOLKIT_ROOT_DIR=/usr/local/cuda-12.2 \
+      --cmake-opt -DCUDA_TOOLKIT_ROOT_DIR=/usr/local/cuda-13.1 \
       --noavx512 \
       --build-tool-opt -k10 \
       --cmake-opt -DCMAKE_C_FLAGS="-Werror" --cmake-opt -DCMAKE_CXX_FLAGS="-Werror" $BUILD_OPTION && \
@@ -50,8 +50,6 @@ RUN \
     cd openair2/E2AP/flexric/build && \
     cmake -GNinja -DCMAKE_BUILD_TYPE=Release \
           -DKPM_VERSION=$KPM_VERSION \
-          -DCMAKE_C_COMPILER=gcc-12 \
-          -DCMAKE_CXX_COMPILER=g++-12 .. \
           -DE2AP_VERSION=$E2AP_VERSION .. && \
     ninja && \
     ninja install

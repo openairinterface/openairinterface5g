@@ -152,6 +152,8 @@ typedef struct {
   _Atomic(bool) search_new_cells_pending;
   int last_blind_slot;
   int last_slot;
+  /// slot of the frame cycle (frame * slots_per_frame + slot) of the last neighboring cell measurement, -1 if none
+  int last_meas_slot;
 } PHY_NR_MEASUREMENTS;
 
 typedef struct {
@@ -430,6 +432,8 @@ typedef struct PHY_VARS_NR_UE_s {
   uint8_t *phy_sim_test_buf;
 
   dynamic_barrier_t process_slot_tx_barriers[NUM_PROCESS_SLOT_TX_BARRIERS];
+  // Accessed atomically; counts every TX job return, including cancelled work.
+  uint64_t tx_jobs_completed;
 
   // Gain change required for automation RX gain change
   int adjust_rxgain;

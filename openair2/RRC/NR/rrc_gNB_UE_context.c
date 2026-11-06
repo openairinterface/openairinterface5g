@@ -221,11 +221,5 @@ rrc_gNB_ue_context_t *rrc_gNB_create_ue_context(sctp_assoc_t assoc_id,
   seq_arr_init(&ue->serving_cells, sizeof(ue_serving_cell_t));
 
   RB_INSERT(rrc_nr_ue_tree_s, &rrc_instance_pP->rrc_ue_head, ue_context_p);
-  LOG_UE_EVENT(ue,
-               "Create UE context: CU UE ID %u DU UE ID %u (rnti: %04x, random ue id %lx)\n",
-               ue->rrc_ue_id,
-               du_ue_id,
-               ue->rnti,
-               ue->random_ue_identity);
   return ue_context_p;
 }

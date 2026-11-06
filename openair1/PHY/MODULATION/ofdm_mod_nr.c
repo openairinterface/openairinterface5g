@@ -58,34 +58,21 @@ void nr_normal_prefix_mod(c16_t *txdataF,
         }
       }
     }
-  }
-  else { // numerology = 0, longer CP for every 7th symbol
-      PHY_ofdm_mod((int *)txdataF,
-                   (int *)txdata,
-                   frame_parms->ofdm_symbol_size,
-                   1,
-                   frame_parms->nb_prefix_samples0,
-                   CYCLIC_PREFIX);
-      PHY_ofdm_mod((int *)txdataF + frame_parms->ofdm_symbol_size,
-                  (int *)txdata + frame_parms->ofdm_symbol_size + frame_parms->nb_prefix_samples0,
-                  frame_parms->ofdm_symbol_size,
-                  6,
-                  frame_parms->nb_prefix_samples,
-                  CYCLIC_PREFIX);
-      PHY_ofdm_mod((int *)txdataF + 7*frame_parms->ofdm_symbol_size,
-                   (int *)txdata + 6*(frame_parms->ofdm_symbol_size+frame_parms->nb_prefix_samples)
-                                 + frame_parms->ofdm_symbol_size + frame_parms->nb_prefix_samples0,
-                   frame_parms->ofdm_symbol_size,
-                   1,
-                   frame_parms->nb_prefix_samples0,
-                   CYCLIC_PREFIX);
-      PHY_ofdm_mod((int *)txdataF + 8 * frame_parms->ofdm_symbol_size,
-                   (int *)txdata + 6 * (frame_parms->ofdm_symbol_size + frame_parms->nb_prefix_samples)
-                                 + 2*(frame_parms->ofdm_symbol_size + frame_parms->nb_prefix_samples0),
-                   frame_parms->ofdm_symbol_size,
-                   6,
-                   frame_parms->nb_prefix_samples,
-                   CYCLIC_PREFIX);
+  } else { // numerology = 0, longer CP for symbols 0 and 7
+    c16_t *tx_data_ptr = txdata;
+    for (int i = 0; i < nsymb; i++) {
+      const int cp = (i % 7) == 0 ? frame_parms->nb_prefix_samples0 : frame_parms->nb_prefix_samples;
+      if (was_symbol_used[i])
+        PHY_ofdm_mod((int *)txdataF + frame_parms->ofdm_symbol_size * i,
+                     (int *)tx_data_ptr,
+                     frame_parms->ofdm_symbol_size,
+                     1,
+                     cp,
+                     CYCLIC_PREFIX);
+      else
+        memset(tx_data_ptr, 0, (cp + frame_parms->ofdm_symbol_size) * sizeof(c16_t));
+      tx_data_ptr += cp + frame_parms->ofdm_symbol_size;
+    }
   }
 }
 

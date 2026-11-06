@@ -7,6 +7,8 @@
 
 #include "common/platform_types.h"
 
+#define NR_SRS_GEN_MAX_SUBCARRIER 4096
+
 // forward declarations
 typedef struct NR_DL_FRAME_PARMS_s NR_DL_FRAME_PARMS;
 typedef struct nr_srs_info_s nr_srs_info_t;

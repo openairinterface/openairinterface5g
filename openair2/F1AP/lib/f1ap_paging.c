@@ -249,6 +249,8 @@ bool decode_f1ap_paging(f1ap_paging_t *out, const F1AP_F1AP_PDU_t *pdu)
         for (int j = 0; j < out->n_cells; j++) {
           F1AP_PagingCell_ItemIEs_t *cell_item = (F1AP_PagingCell_ItemIEs_t *)ie->value.choice.PagingCell_list.list.array[j];
           DevAssert(cell_item);
+          _EQ_CHECK_LONG(cell_item->id, F1AP_ProtocolIE_ID_id_PagingCell_Item);
+          _EQ_CHECK_INT(cell_item->value.present, F1AP_PagingCell_ItemIEs__value_PR_PagingCell_Item);
           F1AP_NRCGI_t *nRCGI = &cell_item->value.choice.PagingCell_Item.nRCGI;
           f1ap_paging_cell_item_t *cell = &out->cells[j];
           PLMNID_TO_MCC_MNC(&nRCGI->pLMN_Identity, cell->plmn.mcc, cell->plmn.mnc, cell->plmn.mnc_digit_length);

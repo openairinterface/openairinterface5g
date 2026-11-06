@@ -5,6 +5,7 @@
 #include "openair2/GNB_APP/gnb_config_common.h"
 #include "common/config/config_paramdesc.h"
 #include "common/config/config_userapi.h"
+#include "common/platform_constants.h"
 #include "RRC_nr_paramsvalues.h"
 #include "gnb_paramdef.h"
 
@@ -47,9 +48,12 @@ uint8_t set_plmn_config(plmn_id_t *p, uint8_t idx)
   char gnbpath[MAX_OPTNAME_SIZE * 2 + 8];
   snprintf(gnbpath, sizeof(gnbpath), "%s.[%i]", GNB_CONFIG_STRING_GNB_LIST, idx);
   GET_PARAMS_LIST(PLMNParamList, PLMNParams, GNBPLMNPARAMS_DESC, GNB_CONFIG_STRING_PLMN_LIST, gnbpath, PLMNPARAMS_CHECK);
-  uint8_t num_plmn = PLMNParamList.numelt;
+  int num_plmn = PLMNParamList.numelt;
   const int n_plmn_params = sizeofArray(PLMNParams);
-  AssertFatal(num_plmn >= 1 && num_plmn <= 6, "The number of PLMN IDs must be in [1,6], but is %d\n", num_plmn);
+  AssertFatal(num_plmn >= 1 && num_plmn <= NR_MAX_NB_PLMNS,
+              "The number of PLMN IDs must be in [1,%d], but is %d\n",
+              NR_MAX_NB_PLMNS,
+              num_plmn);
   for (int l = 0; l < num_plmn; ++l) {
     p[l] = extract_plmn_from_params(PLMNParamList.paramarray[l], n_plmn_params);
   }

@@ -461,6 +461,27 @@ static uint8_t pack_dl_tti_ssb_pdu_rel15_value(void *tlv, uint8_t **ppWritePacke
   return 1;
 }
 
+static uint8_t pack_dl_tti_prs_pdu_rel16_value(void *tlv, uint8_t **ppWritePackedMsg, uint8_t *end)
+{
+  const nfapi_nr_dl_tti_prs_pdu_rel16_t *value = (const nfapi_nr_dl_tti_prs_pdu_rel16_t *)tlv;
+  if (!(push8(value->subcarrierSpacing, ppWritePackedMsg, end) && push8(value->cyclicPrefix, ppWritePackedMsg, end)
+        && push16(value->nIdPrs, ppWritePackedMsg, end) && push16(value->pduIndex, ppWritePackedMsg, end)
+        && push8(value->combSize, ppWritePackedMsg, end) && push8(value->combOffset, ppWritePackedMsg, end)
+        && push8(value->numSymbols, ppWritePackedMsg, end) && push8(value->firstSymbol, ppWritePackedMsg, end)
+        && push16(value->numRbs, ppWritePackedMsg, end) && push16(value->startRb, ppWritePackedMsg, end)
+        && push16(value->symbolPuncturingBitmap, ppWritePackedMsg, end)))
+    return 0;
+#ifndef ENABLE_AERIAL
+  if (!(push8(value->spatialStreamIndexPresent, ppWritePackedMsg, end) && push16(value->spatialStreamIndex, ppWritePackedMsg, end)))
+    return 0;
+#endif
+  if (!pack_nr_tx_beamforming_pdu(&value->precodingAndBeamforming, ppWritePackedMsg, end))
+    return 0;
+  if (!pushs16(value->prsPowerOffset, ppWritePackedMsg, end))
+    return 0;
+  return 1;
+}
+
 static uint8_t pack_dl_tti_request_body_value(void *tlv, uint8_t **ppWritePackedMsg, uint8_t *end)
 {
   nfapi_nr_dl_tti_request_pdu_t *value = (nfapi_nr_dl_tti_request_pdu_t *)tlv;
@@ -490,6 +511,11 @@ static uint8_t pack_dl_tti_request_body_value(void *tlv, uint8_t **ppWritePacked
 
     case NFAPI_NR_DL_TTI_SSB_PDU_TYPE: {
       if (!(pack_dl_tti_ssb_pdu_rel15_value(&value->ssb_pdu.ssb_pdu_rel15, ppWritePackedMsg, end)))
+        return 0;
+    } break;
+
+    case NFAPI_NR_DL_TTI_PRS_PDU_TYPE: {
+      if (!(pack_dl_tti_prs_pdu_rel16_value(&value->prs_pdu.prs_pdu_rel16, ppWritePackedMsg, end)))
         return 0;
     } break;
 
@@ -751,6 +777,28 @@ static uint8_t unpack_dl_tti_ssb_pdu_rel15_value(void *tlv, uint8_t **ppReadPack
   return 1;
 }
 
+static uint8_t unpack_dl_tti_prs_pdu_rel16_value(void *tlv, uint8_t **ppReadPackedMsg, uint8_t *end)
+{
+  nfapi_nr_dl_tti_prs_pdu_rel16_t *value = (nfapi_nr_dl_tti_prs_pdu_rel16_t *)tlv;
+  if (!(pull8(ppReadPackedMsg, &value->subcarrierSpacing, end) && pull8(ppReadPackedMsg, &value->cyclicPrefix, end)
+        && pull16(ppReadPackedMsg, &value->nIdPrs, end) && pull16(ppReadPackedMsg, &value->pduIndex, end)
+        && pull8(ppReadPackedMsg, &value->combSize, end) && pull8(ppReadPackedMsg, &value->combOffset, end)
+        && pull8(ppReadPackedMsg, &value->numSymbols, end) && pull8(ppReadPackedMsg, &value->firstSymbol, end)
+        && pull16(ppReadPackedMsg, &value->numRbs, end) && pull16(ppReadPackedMsg, &value->startRb, end)
+        && pull16(ppReadPackedMsg, &value->symbolPuncturingBitmap, end)))
+    return 0;
+#ifndef ENABLE_AERIAL
+  if (!(pull8(ppReadPackedMsg, &value->spatialStreamIndexPresent, end)
+        && pull16(ppReadPackedMsg, &value->spatialStreamIndex, end)))
+    return 0;
+#endif
+  if (!unpack_nr_tx_beamforming_pdu(&value->precodingAndBeamforming, ppReadPackedMsg, end))
+    return 0;
+  if (!pulls16(ppReadPackedMsg, &value->prsPowerOffset, end))
+    return 0;
+  return 1;
+}
+
 static uint8_t unpack_dl_tti_request_body_value(uint8_t **ppReadPackedMsg, uint8_t *end, void *msg)
 {
   nfapi_nr_dl_tti_request_pdu_t *value = (nfapi_nr_dl_tti_request_pdu_t *)msg;
@@ -777,6 +825,11 @@ static uint8_t unpack_dl_tti_request_body_value(uint8_t **ppReadPackedMsg, uint8
 
     case NFAPI_NR_DL_TTI_SSB_PDU_TYPE: {
       if (!(unpack_dl_tti_ssb_pdu_rel15_value(&value->ssb_pdu.ssb_pdu_rel15, ppReadPackedMsg, end)))
+        return 0;
+    } break;
+
+    case NFAPI_NR_DL_TTI_PRS_PDU_TYPE: {
+      if (!(unpack_dl_tti_prs_pdu_rel16_value(&value->prs_pdu.prs_pdu_rel16, ppReadPackedMsg, end)))
         return 0;
     } break;
 
@@ -2457,18 +2510,22 @@ uint8_t pack_nr_srs_toa_vendor_ext_indication(void *msg, uint8_t **ppWritePacked
   nfapi_nr_srs_toa_vendor_ext_indication_t *pNfapiMsg = (nfapi_nr_srs_toa_vendor_ext_indication_t *)msg;
 
   if (!(push16(pNfapiMsg->sfn, ppWritePackedMsg, end) && push16(pNfapiMsg->slot, ppWritePackedMsg, end)
-        && push16(pNfapiMsg->rnti, ppWritePackedMsg, end) && push8(pNfapiMsg->num_ta, ppWritePackedMsg, end))) {
+        && push8(pNfapiMsg->number_of_pdus, ppWritePackedMsg, end))) {
     return 0;
   }
 
-  AssertFatal(pNfapiMsg->num_ta <= NFAPI_NR_MAX_NUM_TA_NSEC,
-              "pNfapiMsg->num_ta %d cannot be greater than %d\n",
-              pNfapiMsg->num_ta,
-              NFAPI_NR_MAX_NUM_TA_NSEC);
-
-  for (int i = 0; i < pNfapiMsg->num_ta; i++) {
-    if (!pushs16(pNfapiMsg->ta_offset_nsec[i], ppWritePackedMsg, end)) {
+  for (int pdu_idx = 0; pdu_idx < pNfapiMsg->number_of_pdus; pdu_idx++) {
+    const nfapi_nr_srs_toa_vendor_ext_pdu_t *pdu = &pNfapiMsg->pdu_list[pdu_idx];
+    if (!(push16(pdu->rnti, ppWritePackedMsg, end) && push8(pdu->num_ta, ppWritePackedMsg, end))) {
       return 0;
+    }
+
+    NR_FAPI_CHECK_COUNT(pdu->num_ta, pdu->ta_offset_nsec);
+
+    for (int i = 0; i < pdu->num_ta; i++) {
+      if (!pushs16(pdu->ta_offset_nsec[i], ppWritePackedMsg, end)) {
+        return 0;
+      }
     }
   }
 
@@ -2563,16 +2620,25 @@ uint8_t unpack_nr_srs_indication(uint8_t **ppReadPackedMsg, uint8_t *end, void *
 uint8_t unpack_nr_srs_toa_vendor_ext_indication(uint8_t **ppReadPackedMsg, uint8_t *end, void *msg)
 {
   nfapi_nr_srs_toa_vendor_ext_indication_t *pNfapiMsg = (nfapi_nr_srs_toa_vendor_ext_indication_t *)msg;
+
   if (!(pull16(ppReadPackedMsg, &pNfapiMsg->sfn, end) && pull16(ppReadPackedMsg, &pNfapiMsg->slot, end)
-        && pull16(ppReadPackedMsg, &pNfapiMsg->rnti, end) && pull8(ppReadPackedMsg, &pNfapiMsg->num_ta, end))) {
+        && pull8(ppReadPackedMsg, &pNfapiMsg->number_of_pdus, end))) {
     return 0;
   }
 
-  NR_FAPI_CHECK_COUNT(pNfapiMsg->num_ta, pNfapiMsg->ta_offset_nsec);
-
-  for (int i = 0; i < pNfapiMsg->num_ta; i++) {
-    if (!pulls16(ppReadPackedMsg, &pNfapiMsg->ta_offset_nsec[i], end)) {
+  pNfapiMsg->pdu_list = calloc(pNfapiMsg->number_of_pdus, sizeof(*pNfapiMsg->pdu_list));
+  for (int pdu_idx = 0; pdu_idx < pNfapiMsg->number_of_pdus; pdu_idx++) {
+    nfapi_nr_srs_toa_vendor_ext_pdu_t *pdu = &pNfapiMsg->pdu_list[pdu_idx];
+    if (!(pull16(ppReadPackedMsg, &pdu->rnti, end) && pull8(ppReadPackedMsg, &pdu->num_ta, end))) {
       return 0;
+    }
+
+    NR_FAPI_CHECK_COUNT(pdu->num_ta, pdu->ta_offset_nsec);
+
+    for (int i = 0; i < pdu->num_ta; i++) {
+      if (!pulls16(ppReadPackedMsg, &pdu->ta_offset_nsec[i], end)) {
+        return 0;
+      }
     }
   }
 

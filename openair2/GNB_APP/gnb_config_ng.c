@@ -52,6 +52,10 @@ int RCconfig_NR_NG(MessageDef *msg_p, uint32_t i)
         for (j = 0; j < GNBSParams[GNB_ACTIVE_GNBS_IDX].numelt; j++) {
           if (strcmp(GNBSParams[GNB_ACTIVE_GNBS_IDX].strlistptr[j], *(GNBParamList.paramarray[k][GNB_GNB_NAME_IDX].strptr)) == 0) {
             char aprefix[MAX_OPTNAME_SIZE * 2 + 8];
+            snprintf(aprefix, sizeof(aprefix), "%s.[%i]", GNB_CONFIG_STRING_GNB_LIST, k);
+            GET_PARAMS_LIST(NGParamList, NGParams, GNBNGPARAMS_DESC, GNB_CONFIG_STRING_AMF_IP_ADDRESS, aprefix);
+            if (NGParamList.numelt == 0)
+              break; /* multi-cell: AMF config only on first gNBs entry */
             NGAP_REGISTER_GNB_REQ(msg_p).gNB_id = gnb_id;
 
             if (strcmp(*(GNBParamList.paramarray[k][GNB_CELL_TYPE_IDX].strptr), "CELL_MACRO_GNB") == 0) {
@@ -79,7 +83,7 @@ int RCconfig_NR_NG(MessageDef *msg_p, uint32_t i)
                         "    tracking_area_code  =  1; // no string!!\n"
                         "    plmn_list = ( { mcc = 208; mnc = 93; mnc_length = 2; } )\n");
             // PLMN
-            plmn_id_t p[PLMN_LIST_MAX_SIZE] = {0};
+            plmn_id_t p[NR_MAX_NB_PLMNS] = {0};
             NGAP_REGISTER_GNB_REQ(msg_p).num_plmn = set_plmn_config(p, 0);
             for (int l = 0; l < NGAP_REGISTER_GNB_REQ(msg_p).num_plmn; ++l) {
               NGAP_REGISTER_GNB_REQ(msg_p).plmn[l].plmn = p[l];
@@ -88,9 +92,6 @@ int RCconfig_NR_NG(MessageDef *msg_p, uint32_t i)
                   set_snssai_config(NGAP_REGISTER_GNB_REQ(msg_p).plmn[l].s_nssai, 8, k, l);
             }
             NGAP_REGISTER_GNB_REQ(msg_p).default_drx = 0;
-            // NG
-            snprintf(aprefix, sizeof(aprefix), "%s.[%i]", GNB_CONFIG_STRING_GNB_LIST, k);
-            GET_PARAMS_LIST(NGParamList, NGParams, GNBNGPARAMS_DESC, GNB_CONFIG_STRING_AMF_IP_ADDRESS, aprefix);
             NGAP_REGISTER_GNB_REQ(msg_p).nb_amf = 0;
 
             for (int l = 0; l < NGParamList.numelt; l++) {

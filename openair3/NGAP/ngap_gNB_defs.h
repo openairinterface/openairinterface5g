@@ -58,83 +58,11 @@ typedef enum {
   NGAP_OVERLOAD_MAX,
 } ngap_overload_state_t;
 
-/* Served PLMN identity element */
-struct plmn_identity_s {
-  uint16_t mcc;
-  uint16_t mnc;
-  uint8_t  mnc_digit_length;
-  STAILQ_ENTRY(plmn_identity_s) next;
-};
-
-/* Served amf region id for a particular AMF */
-struct served_region_id_s {
-  uint8_t amf_region_id;
-  STAILQ_ENTRY(served_region_id_s) next;
-};
-
-/* Served amf set id for a particular AMF */
-struct amf_set_id_s {
-  uint16_t amf_set_id;
-  STAILQ_ENTRY(amf_set_id_s) next;
-};
-
-/* Served amf pointer for a particular AMF */
-struct amf_pointer_s {
-  uint8_t amf_pointer;
-  STAILQ_ENTRY(amf_pointer_s) next;
-};
-
-
-/* Served guami element */
+/* ServedGUAMIItem: GUAMI per TS 38.413 §9.3.3.3 */
 struct served_guami_s {
-  /* Number of AMF served PLMNs */
-  uint8_t nb_served_plmns;
-  /* List of served PLMNs by AMF */
-  STAILQ_HEAD(served_plmns_s, plmn_identity_s) served_plmns;
-
-  /* Number of region id in list */
-  uint8_t nb_region_id;
-  /* Served group id list */
-  STAILQ_HEAD(served_region_ids_s, served_region_id_s) served_region_ids;
-
-  /* Number of AMF set id */
-  uint8_t nb_amf_set_id;
-  /* AMF Set id to uniquely identify an AMF within an AMF pool area */
-  STAILQ_HEAD(amf_set_ids_s, amf_set_id_s) amf_set_ids;
-
-  /* Number of AMF pointer */
-  uint8_t nb_amf_pointer;
-  /* AMF pointer to uniquely identify an AMF within an AMF pool area */
-  STAILQ_HEAD(amf_pointers_s, amf_pointer_s) amf_pointers;
-    
-  /* Next GUAMI element */
+  nr_guami_t guami;
   STAILQ_ENTRY(served_guami_s) next;
 };
-
-/* NSSAI element */
-struct slice_support_s{
-  uint8_t sST;
-  uint8_t sD_flag;
-  uint8_t sD[3];
-  
-  /* Next slice element */
-  STAILQ_ENTRY(slice_support_s) next;
-};
-
-
-/* plmn support element */
-struct plmn_support_s {
-  struct plmn_identity_s plmn_identity;
-
-  /* Number of slice support in list */
-  uint8_t nb_slice_s;
-  /* Served group id list */
-  STAILQ_HEAD(slice_supports_s, slice_support_s) slice_supports;
-
-  /* Next plmn support element */
-  STAILQ_ENTRY(plmn_support_s) next;
-};
-
 
 struct ngap_gNB_instance_s;
 
@@ -151,10 +79,7 @@ typedef struct ngap_gNB_amf_data_s {
   /* AMF NGAP IP address */
   net_ip_address_t amf_s1_ip;
 
-  /* List of served GUAMI per AMF. There is one GUAMI per RAT with a max
-   * number of 8 RATs but in our case only one is used. The LTE related pool
-   * configuration is included on the first place in the list.
-   */
+  /* Served GUAMIs from NG Setup Response (items carry GUAMI §9.3.3.3) */
   STAILQ_HEAD(served_guamis_s, served_guami_s) served_guami;
 
   /* Relative processing capacity of an AMF with respect to the other AMFs
@@ -162,12 +87,6 @@ typedef struct ngap_gNB_amf_data_s {
    * in TS 23.401.
    */
   uint8_t relative_amf_capacity;
-
-  /*
-   * List of PLMN Support per AMF.
-   *
-   */
-  STAILQ_HEAD(plmn_supports_s, plmn_support_s) plmn_supports;
 
   /* Current AMF overload information (if any). */
   ngap_overload_state_t overload_state;
@@ -190,8 +109,7 @@ typedef struct ngap_gNB_amf_data_s {
   /* This is served PLMN IDs communicated to the AMF via an index over the
    * MCC/MNC array in ngap_gNB_instance */
   uint8_t  broadcast_plmn_num;
-  uint8_t  broadcast_plmn_index[PLMN_LIST_MAX_SIZE];
-
+  uint8_t broadcast_plmn_index[NR_MAX_NB_PLMNS];
 
   /* Only meaningfull in virtual mode */
   struct ngap_gNB_instance_s *ngap_gNB_instance;
@@ -218,10 +136,7 @@ typedef struct ngap_gNB_instance_s {
   /* Displayable name of gNB */
   char *gNB_name;
 
-  /* Unique gNB_id to identify the gNB within EPC.
-   * In our case the gNB is a macro gNB so the id will be 20 bits long.
-   * For Home gNB id, this field should be 36 bits long.
-   */
+  /* gNB identifier within a PLMN (22..32 bits) */
   uint32_t gNB_id;
   /* The type of the cell */
   enum cell_type_e cell_type;
@@ -236,7 +151,7 @@ typedef struct ngap_gNB_instance_s {
    * Mobile Network Code
    */
   uint8_t num_plmn;
-  ngap_plmn_t plmn[PLMN_LIST_MAX_SIZE];
+  ngap_plmn_t plmn[NR_MAX_NB_PLMNS];
 
   /* Default Paging DRX of the gNB as defined in TS 38.304 */
   ngap_paging_drx_t default_drx;

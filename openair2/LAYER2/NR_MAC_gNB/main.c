@@ -39,9 +39,6 @@
 #include "system.h"
 #include "time_meas.h"
 #include "utils.h"
-#ifdef E3_AGENT
-#include "openair2/E3AP/ran_func_spectrum_extern.h"
-#endif /* E3_AGENT */
 
 #define MACSTATSSTRLEN 36256
 
@@ -60,11 +57,9 @@ void *nrmac_stats_thread(void *arg) {
   while (oai_exit == 0) {
     char *p = output;
     NR_SCHED_LOCK(&gNB->sched_lock);
-    for (int i = 0; i < NR_MAX_CELLS; i++) {
-      nr_cell_sched_t *cell = &gNB->cells[i];
-      if (!cell->common_channels.ServingCellConfigCommon)
-        continue;
-      p += snprintf(p, end - p, "=== Cell %d ===\n", i);
+    FOR_EACH_SEQ_ARR(nr_cell_sched_t *, cell, &gNB->cells) {
+      const size_t i = nr_mac_get_cell_idx(gNB, cell);;
+      p += snprintf(p, end - p, "=== Cell %zu ===\n", i);
       p += dump_mac_stats(gNB, cell, p, end - p, false);
       p += snprintf(p, end - p, "\n");
       p += print_meas_log(&cell->gNB_scheduler, "gNB_scheduler", NULL, NULL, p, end - p);
@@ -79,7 +74,7 @@ void *nrmac_stats_thread(void *arg) {
     }
     NR_SCHED_UNLOCK(&gNB->sched_lock);
     size_t len = p - output;
-    if (fwrite(output, len, 1, file) != 1 || fflush(file) != 0) {
+    if (len > 0 && (fwrite(output, len, 1, file) != 1 || fflush(file) != 0)) {
       LOG_E(NR_MAC, "error while writing nrMAC_stats.log: %d, %s\n", errno, strerror(errno));
       break;
     }
@@ -119,7 +114,8 @@ size_t dump_mac_stats(gNB_MAC_INST *gNB, const nr_cell_sched_t *cell, char *outp
     const int avg_rsrp = stats->num_rsrp_meas > 0 ? stats->cumul_rsrp / (int)stats->num_rsrp_meas : 0;
     const int avg_sinrx10 = stats->num_sinr_meas > 0 ? stats->cumul_sinrx10 / (int)stats->num_sinr_meas : 0;
 
-    output = st_append(output, end, "UE RNTI %04x CU-UE-ID ", UE->rnti);
+    const int pci = *cell->common_channels.ServingCellConfigCommon->physCellId;
+    output = st_append(output, end, "UE RNTI %04x PCI %d CellID %"PRIu64" CU-UE-ID ", UE->rnti, pci, cell->nr_cellid);
     if (du_exists_f1_ue_data(UE->rnti)) {
       f1_ue_data_t ued = du_get_f1_ue_data(UE->rnti);
       output = st_append(output, end, "%d", ued.secondary_ue);
@@ -251,32 +247,19 @@ static void mac_rrc_init(gNB_MAC_INST *mac, ngran_node_t node_type)
   }
 }
 
-gNB_MAC_INST *mac_top_init_gNB(ngran_node_t node_type, const nr_rlc_configuration_t *default_rlc_config, nr_cell_sched_t **cell_ptr)
+gNB_MAC_INST *mac_top_init_gNB(ngran_node_t node_type, const nr_rlc_configuration_t *default_rlc_config)
 {
-  AssertFatal(RC.nb_nr_macrlc_inst == 1, "what is the point of calling %s() if you don't need exactly one MAC?\n", __func__);
-
   RC.nrmac = calloc_or_fail(1, sizeof(gNB_MAC_INST *));
   RC.nrmac[0] = calloc_or_fail(1, sizeof(gNB_MAC_INST));
   gNB_MAC_INST *nrmac = RC.nrmac[0];
 
-  // TODO: handle multiple cells later, for now there's only one cell ever initialized and used
-  // the current work only adds the structure and updates the references to use the cell pointer
-  *cell_ptr = &nrmac->cells[0];
-  nr_cell_sched_t *cell = *cell_ptr;
-  nr_mac_pcch_queue_init(&cell->common_channels);
+  seq_arr_init(&nrmac->cells, sizeof(nr_cell_sched_t));
   nrmac->Mod_id = 0;
 
   nrmac->tag = (NR_TAG_t*)malloc(sizeof(NR_TAG_t));
   memset((void*)nrmac->tag,0,sizeof(NR_TAG_t));
-  for(int n = 0; n < MAX_NUM_OF_SSB; n++)
-    cell->sib1_pdsch[n].time_domain_allocation = -1;
 
   nrmac->rlc_config = *default_rlc_config;
-
-  cell->num_scheduled_prach_rx = 0;
-
-  cell->cset0_bwp_start = 0;
-  cell->cset0_bwp_size = 0;
 
   nrmac->print_ue_stats = true;
 
@@ -348,11 +331,6 @@ periodic_ue_sched_t create_period_structure(nr_cell_sched_t *cell, nr_periodic_c
   return p;
 }
 
-static void destroy_periodic_sched(periodic_ue_sched_t p)
-{
-  free(p.list);
-}
-
 void ind_delete_nr_ue_data(void *p)
 {
   // access_ue_list has pointers to NR_UE_info_t, and this functions gets a
@@ -363,20 +341,6 @@ void ind_delete_nr_ue_data(void *p)
 
 void mac_top_destroy_gNB(gNB_MAC_INST *mac)
 {
-  for (size_t i = 0; i < sizeofArray(mac->cells); i++) {
-    nr_cell_sched_t *cell = &mac->cells[i];
-    free(cell->radio_config.ssb_beams);
-    if (cell->common_channels.ServingCellConfigCommon == NULL)
-      continue;
-    NR_COMMON_channels_t *cc = &cell->common_channels;
-    nr_mac_pcch_queue_free(cc);
-    ASN_STRUCT_FREE(asn_DEF_NR_BCCH_BCH_Message, cc->mib);
-    ASN_STRUCT_FREE(asn_DEF_NR_BCCH_DL_SCH_Message, cc->sib1);
-    ASN_STRUCT_FREE(asn_DEF_NR_ServingCellConfigCommon, cc->ServingCellConfigCommon);
-#ifdef E3_AGENT
-    e3_spectrum_mac_detach_cell(cell);
-#endif /* E3_AGENT */
-  }
   NR_UEs_t *UE_info = &mac->UE_info;
   hashtable_destroy(&UE_info->connected_ues, delete_nr_ue_data);
   seq_arr_free(&UE_info->connected_ues_list, NULL);
@@ -387,10 +351,7 @@ void mac_top_destroy_gNB(gNB_MAC_INST *mac)
   free(mac->f1_config.setup_resp);
   free(mac->positioning_config);
 
-  for (size_t i = 0; i < sizeofArray(mac->cells); i++) {
-    nr_cell_sched_t *cell = &mac->cells[i];
-    destroy_periodic_sched(cell->periodic_srs_config);
-  }
+  seq_arr_free(&mac->cells, seq_arr_cell_free);
 }
 
 void nr_mac_send_f1_setup_req(void)
@@ -400,11 +361,12 @@ void nr_mac_send_f1_setup_req(void)
   mac->mac_rrc.f1_setup_request(mac->f1_config.setup_req);
 }
 
-void nr_mac_send_config_req(gNB_MAC_INST *nrmac, nfapi_nr_config_request_scf_t *cfg)
+void nr_mac_send_config_req(gNB_MAC_INST *nrmac, nfapi_nr_config_request_scf_t *cfg, const int phy_id)
 {
+  AssertFatal(phy_id == 0, "Can only be called for phy_id=0, called with phy_id=%d\n", phy_id);
   if (NFAPI_MODE == NFAPI_MONOLITHIC) {
     // nothing to be sent in the other cases
-    NR_PHY_Config_t phycfg = {.phy_id = 0, .cfg = cfg};
+    NR_PHY_Config_t phycfg = {.phy_id = phy_id, .cfg = cfg};
     DevAssert(nrmac->if_inst->NR_PHY_config_req);
     nrmac->if_inst->NR_PHY_config_req(&phycfg);
   }

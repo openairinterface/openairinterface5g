@@ -283,6 +283,7 @@ void nr_init_frame_parms(nfapi_nr_config_request_scf_t* cfg, NR_DL_FRAME_PARMS *
   AssertFatal (cfg, "Null pointer to cfg!\n");
 
   fp->frame_type = cfg->cell_config.frame_duplex_type.value;
+  fp->Nid_cell = cfg->cell_config.phy_cell_id.value;
   fp->L_ssb = (((uint64_t) cfg->ssb_table.ssb_mask_list[0].ssb_mask.value) << 32) | cfg->ssb_table.ssb_mask_list[1].ssb_mask.value;
   fp->N_RB_DL = cfg->carrier_config.dl_grid_size[cfg->ssb_config.scs_common.value].value;
   fp->N_RB_UL = cfg->carrier_config.ul_grid_size[cfg->ssb_config.scs_common.value].value;

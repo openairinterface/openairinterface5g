@@ -115,7 +115,7 @@ static bool e1_decode_up_tnl_info(UP_TL_information_t *out, const E1AP_UP_TNL_In
   _EQ_CHECK_INT(in->present, E1AP_UP_TNL_Information_PR_gTPTunnel);
   BIT_STRING_TO_TRANSPORT_LAYER_ADDRESS_IPv4(&gTPTunnel->transportLayerAddress, out->tlAddress);
   // GTP-TEID
-  OCTET_STRING_TO_INT32(&gTPTunnel->gTP_TEID, out->teId);
+  OCTET_STRING_TO_UINT32(&gTPTunnel->gTP_TEID, out->teId);
   return true;
 }
 
@@ -528,7 +528,7 @@ void free_pdu_session_to_setup_item(const pdu_session_to_setup_t *msg)
 static bool eq_up_tl_info(const UP_TL_information_t *a, const UP_TL_information_t *b)
 {
   _EQ_CHECK_INT(a->tlAddress, b->tlAddress);
-  _EQ_CHECK_INT(a->teId, b->teId);
+  _EQ_CHECK_UINT32(a->teId, b->teId);
   return true;
 }
 

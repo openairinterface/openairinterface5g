@@ -13,6 +13,7 @@
 #include "common/utils/assertions.h"
 #include "common/utils/oai_asn1.h"
 #include "LAYER2/NR_MAC_gNB/mac_proto.h"
+#include "LAYER2/NR_MAC_gNB/nr_mac_cell.h"
 #include "LAYER2/NR_MAC_gNB/nr_mac_gNB.h"
 #include "LAYER2/NR_MAC_gNB/nr_radio_config.h"
 #include "NR_PHY_INTERFACE/NR_IF_Module.h"
@@ -66,10 +67,10 @@ int test_other_sib_ssb_index(uint64_t ssb_bitmap)
   };
   const nr_rlc_configuration_t rlc_config = {0};
   RC.nb_nr_macrlc_inst = 1;
-  nr_cell_sched_t *cell;
 
   // config MAC
-  mac_top_init_gNB(ngran_gNB, &rlc_config, &cell);
+  gNB_MAC_INST *mac = mac_top_init_gNB(ngran_gNB, &rlc_config);
+  nr_cell_sched_t *cell = nr_mac_cell_alloc(mac, scc);
   nr_mac_cell_config_scc(cell, scc, &conf);
 
   const plmn_id_t plmn = {.mcc = 1, .mnc = 1, .mnc_digit_length = 2};

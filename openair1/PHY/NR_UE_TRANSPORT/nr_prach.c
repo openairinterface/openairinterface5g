@@ -32,12 +32,13 @@ int32_t generate_nr_prach(PHY_VARS_NR_UE *ue, uint8_t gNB_id, int frame, uint8_t
   fapi_nr_ul_config_prach_pdu *prach_pdu = &ue->prach_vars[gNB_id]->prach_pdu;
 
   const int fd_occasion = prach_pdu->num_ra;
+  fapi_nr_num_prach_fd_occasions_t *occ = nrUE_config->prach_config.num_prach_fd_occasions_list + fd_occasion;
   const int prach_sequence_length = nrUE_config->prach_config.prach_sequence_length;
-  const int N_ZC = (prach_sequence_length == 0) ? 839 : 139;
+  const int N_ZC = prach_sequence_length ? 139 : 839;
   const int mu = nrUE_config->prach_config.prach_sub_c_spacing;
   const int restricted_set = prach_pdu->restricted_set;
   const int rootSequenceIndex = prach_pdu->root_seq_id;
-  const int n_ra_prb = nrUE_config->prach_config.num_prach_fd_occasions_list[fd_occasion].k1; // prach_pdu->freq_msg1;
+  const int n_ra_prb = occ->k1; // prach_pdu->freq_msg1;
   const int NCS = prach_pdu->num_cs;
   const int prach_fmt_id = prach_pdu->prach_format;
   const int preamble_index = prach_pdu->ra_PreambleIndex;
@@ -48,8 +49,8 @@ int32_t generate_nr_prach(PHY_VARS_NR_UE *ue, uint8_t gNB_id, int frame, uint8_t
 
   if (nrUE_config->prach_config.root_seq_computed == 0) {
     compute_nr_prach_seq(nrUE_config->prach_config.prach_sequence_length,
-                         nrUE_config->prach_config.num_prach_fd_occasions_list[fd_occasion].num_root_sequences,
-                         nrUE_config->prach_config.num_prach_fd_occasions_list[fd_occasion].prach_root_sequence_index,
+                         occ->num_root_sequences,
+                         occ->prach_root_sequence_index,
                          ue->X_u);
     nrUE_config->prach_config.root_seq_computed = 1;
   }
@@ -122,12 +123,12 @@ int32_t generate_nr_prach(PHY_VARS_NR_UE *ue, uint8_t gNB_id, int frame, uint8_t
         n_shift_ra     = nr_du[u]/NCS;
         d_start        = (nr_du[u]<<1) + (n_shift_ra * NCS);
         n_group_ra     = N_ZC/d_start;
-        n_shift_ra_bar = max(0,(N_ZC-(nr_du[u]<<1)-(n_group_ra*d_start))/N_ZC);
-      } else if  ( (nr_du[u]>=(N_ZC/3)) && (nr_du[u]<=((N_ZC - NCS)>>1)) ) {
-        n_shift_ra     = (N_ZC - (nr_du[u]<<1))/NCS;
-        d_start        = N_ZC - (nr_du[u]<<1) + (n_shift_ra * NCS);
+        n_shift_ra_bar = max(0, (N_ZC - nr_du[u] * 2 - n_group_ra * d_start) / N_ZC);
+      } else if (nr_du[u] >= N_ZC / 3 && nr_du[u] <= (N_ZC - NCS) / 2) {
+        n_shift_ra = (N_ZC - nr_du[u] * 2) / NCS;
+        d_start = N_ZC - nr_du[u] * 2 + n_shift_ra * NCS;
         n_group_ra     = nr_du[u]/d_start;
-        n_shift_ra_bar = min(n_shift_ra,max(0,(nr_du[u]- (n_group_ra*d_start))/NCS));
+        n_shift_ra_bar = min(n_shift_ra, max(0, (nr_du[u] - n_group_ra * d_start) / NCS));
       } else {
         n_shift_ra     = 0;
         n_shift_ra_bar = 0;
@@ -185,7 +186,7 @@ int32_t generate_nr_prach(PHY_VARS_NR_UE *ue, uint8_t gNB_id, int frame, uint8_t
         slot,
         k * 2,
         n_ra_prb,
-        nrUE_config->prach_config.num_prach_fd_occasions_list[fd_occasion].k1,
+        occ->k1,
         preamble_offset,
         first_nonzero_root_idx,
         prach_pdu->ra_PreambleIndex);
@@ -285,7 +286,7 @@ int32_t generate_nr_prach(PHY_VARS_NR_UE *ue, uint8_t gNB_id, int frame, uint8_t
   /********************************************************
    *
    * In function init_prach_tables:
-   * to compute quantized roots of unity ru(n) = 32767 * exp j*[ (2 * PI * n) / N_ZC ]
+   * to compute quantized roots of unity ru(n) = INT16_MAX * exp j*[ (2 * PI * n) / N_ZC ]
    *
    * In compute_prach_seq:
    * to calculate Xu = DFT xu = xu (inv_u*k) * Xu[0] (This is a Zadoff-Chou sequence property: DFT ZC sequence is another ZC
@@ -312,7 +313,7 @@ int32_t generate_nr_prach(PHY_VARS_NR_UE *ue, uint8_t gNB_id, int frame, uint8_t
         offset2 -= N_ZC;
       const c16_t Xu_t = c16xmulConstShift(Xu[offset], tx_amp, 15);
       const double w = 2 * M_PI * (double)offset2 / N_ZC;
-      const c16_t ru = {.r = (int16_t)(floor(32767.0 * cos(w))), .i = (int16_t)(floor(32767.0 * sin(w)))};
+      const c16_t ru = {.r = (int16_t)(floor(INT16_MAX * cos(w))), .i = (int16_t)(floor(INT16_MAX * sin(w)))};
       const c16_t p = c16mulShift(Xu_t, ru, 15);
       prachF[k++] = p;
       if (k == dftlen)

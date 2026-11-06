@@ -2,6 +2,7 @@
  * SPDX-License-Identifier: LicenseRef-CSSL-1.0
  */
 
+#include <math.h>
 #include <stdlib.h>
 #include "test_channel_pipeline_tools.h"
 #include "channel_pipeline.h"
@@ -18,6 +19,16 @@ void destroy_tpool(void *tpool)
 {
   abortTpool((tpool_t *)tpool);
   free(tpool);
+}
+
+// Round to nearest and saturate to int16, the output conversion of the pipeline.
+static int16_t sat_round_s16(float v)
+{
+  if (v >= 32767.0f)
+    return 32767;
+  if (v <= -32768.0f)
+    return -32768;
+  return (int16_t)lrintf(v);
 }
 
 void channel_convolution_cpu(const cf_t **channel,
@@ -56,12 +67,11 @@ void channel_convolution_cpu(const cf_t **channel,
         }
       }
 
+      c16_t out = {sat_round_s16(rx_r), sat_round_s16(rx_i)};
       if (i < num_samples_rx_sig0) {
-        rx_sig0[rx_ant][i].r = (int16_t)rx_r;
-        rx_sig0[rx_ant][i].i = (int16_t)rx_i;
+        rx_sig0[rx_ant][i] = out;
       } else {
-        rx_sig1[rx_ant][i - num_samples_rx_sig0].r = (int16_t)rx_r;
-        rx_sig1[rx_ant][i - num_samples_rx_sig0].i = (int16_t)rx_i;
+        rx_sig1[rx_ant][i - num_samples_rx_sig0] = out;
       }
     }
   }

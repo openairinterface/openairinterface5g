@@ -411,6 +411,8 @@ static __attribute__((always_inline)) inline void mult_complex_vectors(const c16
                                                                3,
                                                                2);
   const simde__m256i conj256 = simde_mm256_set_epi16(-1, 1, -1, 1, -1, 1, -1, 1, -1, 1, -1, 1, -1, 1, -1, 1);
+  // shift count in a register: on Arm, slli maps to vshlq_n, which clang only accepts with a constant count
+  const simde__m128i shift_im = simde_mm_cvtsi32_si128(16 - shift);
   int i;
   // do 8 multiplications at a time
   for (i = 0; i < size - 7; i += 8) {
@@ -420,9 +422,8 @@ static __attribute__((always_inline)) inline void mult_complex_vectors(const c16
     const simde__m256i i2conj = simde_mm256_sign_epi16(i2, conj256);
     const simde__m256i re = simde_mm256_madd_epi16(i1, i2conj);
     const simde__m256i im = simde_mm256_madd_epi16(i1, i2swap);
-    simde_mm256_storeu_si256(
-        (simde__m256i *)(out + i),
-        simde_mm256_blend_epi16(simde_mm256_srai_epi32(re, shift), simde_mm256_slli_epi32(im, 16 - shift), 0xAA));
+    simde_mm256_storeu_si256((simde__m256i *)(out + i),
+                             simde_mm256_blend_epi16(simde_mm256_srai_epi32(re, shift), simde_mm256_sll_epi32(im, shift_im), 0xAA));
   }
   if (size - i > 4) {
     const simde__m128i i1 = simde_mm_loadu_si128((simde__m128i *)(in1 + i));
@@ -432,7 +433,7 @@ static __attribute__((always_inline)) inline void mult_complex_vectors(const c16
     const simde__m128i re = simde_mm_madd_epi16(i1, i2conj);
     const simde__m128i im = simde_mm_madd_epi16(i1, i2swap);
     simde_mm_storeu_si128((simde__m128i *)(out + i),
-                          simde_mm_blend_epi16(simde_mm_srai_epi32(re, shift), simde_mm_slli_epi32(im, 16 - shift), 0xAA));
+                          simde_mm_blend_epi16(simde_mm_srai_epi32(re, shift), simde_mm_sll_epi32(im, shift_im), 0xAA));
     i += 4;
   }
   for (; i < size; i++)
@@ -845,6 +846,16 @@ static inline c16_t c16mulShiftSat(const c16_t a, const c16_t b, const int shift
   int32_t im = ((int32_t)a.r * b.i + (int32_t)a.i * b.r) >> shift;
   return (c16_t){.r = (int16_t)(r > INT16_MAX ? INT16_MAX : r < INT16_MIN ? INT16_MIN : r),
                  .i = (int16_t)(im > INT16_MAX ? INT16_MAX : im < INT16_MIN ? INT16_MIN : im)};
+}
+
+// Narrows a wide value to int16_t by clamping to [INT16_MIN, INT16_MAX]
+static inline int16_t saturate_int16(int64_t v)
+{
+  if (v > INT16_MAX)
+    return INT16_MAX;
+  if (v < INT16_MIN)
+    return INT16_MIN;
+  return (int16_t)v;
 }
 
 /*!\fn int32_t rotate_cpx_vector(c16_t *x,c16_t alpha,c16_t *y,uint32_t N,uint16_t output_shift)
