@@ -72,7 +72,7 @@ XNAP_XnAP_PDU_t *encode_xn_setup_request(const xnap_setup_req_t *msg)
     const xnap_amf_region_info_t *amf = &msg->amf_region_info[i];
     asn1cSequenceAdd(ieC3->value.choice.AMF_Region_Information.list, XNAP_GlobalAMF_Region_Information_t, amfItem);
     MCC_MNC_TO_PLMNID(amf->plmn.mcc, amf->plmn.mnc, amf->plmn.mnc_digit_length, &amfItem->plmn_ID);
-    INT8_TO_OCTET_STRING(amf->amf_region_id, &amfItem->amf_region_id);
+    AMF_REGION_TO_BIT_STRING(amf->amf_region_id, &amfItem->amf_region_id);
   }
 
   return pdu;
@@ -162,7 +162,7 @@ bool decode_xn_setup_request(xnap_setup_req_t *out, const XNAP_XnAP_PDU_t *pdu)
                             out->amf_region_info[a].plmn.mcc,
                             out->amf_region_info[a].plmn.mnc,
                             out->amf_region_info[a].plmn.mnc_digit_length);
-          OCTET_STRING_TO_INT8(&amf->amf_region_id, out->amf_region_info[a].amf_region_id);
+          out->amf_region_info[a].amf_region_id = BIT_STRING_to_uint8(&amf->amf_region_id);
         }
       } break;
 
