@@ -466,7 +466,10 @@ int nr_ul_proportional_fair(const nr_ul_sched_params_t *params, nr_ul_candidate_
     if (block_len < min_rb)
       continue;
 
-    COMMIT_UL_ALLOC(params, cand, rbStart, min_rb, cand->sched_pusch.mcs, n_scheduled);
+    // min_rb without data. A UE past the UL inactivity limit, or with a small BSR and an SR, can have data: these RBs
+    // are left over by the UEs with data, so size the grant for it, within the free block
+    const int rbSize = ul_needed_rbs(cand, min_rb, block_len);
+    COMMIT_UL_ALLOC(params, cand, rbStart, rbSize, cand->sched_pusch.mcs, n_scheduled);
   }
 
   return n_scheduled;
