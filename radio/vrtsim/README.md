@@ -53,7 +53,8 @@ the model names are slightly different: the server expects a model named
 Without CUDA, the convolution runs on the CPU thread pool (`vrtsim.tpool`). The CPU
 pipeline picks, per call, between a direct convolution and an FFT overlap-save
 convolution (faster for longer channels and more antennas). Its kernels are NEON on
-aarch64 and AVX2 + FMA elsewhere, chosen at build time.
+aarch64, AVX512F on x86 builds with the `AVX512` CMake option and AVX2 + FMA otherwise,
+chosen at build time.
 
 Additionally, `taps_client` is available in vrtsim. This allows to connect to
 channel emulation server and receive external taps (or channel impulse responses).

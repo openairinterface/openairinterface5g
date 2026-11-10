@@ -4,7 +4,8 @@
 
 // Internal interface between the CPU channel pipeline driver (channel_pipeline.c), the work it
 // splits into units (channel_pipeline_simd.c) and the kernels (channel_pipeline_<isa>.c). The ISA
-// is fixed at build time: NEON on aarch64, otherwise AVX2 + FMA written with simde.
+// is fixed at build time: NEON on aarch64, AVX512F on x86 builds that target AVX512, otherwise AVX2
+// + FMA written with simde.
 //
 // The driver plans a call (method, block size, number of units) and fills a channel_pipeline_call_t;
 // each job then runs channel_pipeline_run_units().

@@ -8,7 +8,8 @@
 // ---------------------------------------------------------------------------------------------
 // What one call computes
 // ---------------------------------------------------------------------------------------------
-// B = BATCHED_FFT_BATCH_SIZE, the floats in one vector: 8 (AVX2), 4 (NEON on aarch64). A call
+// B = BATCHED_FFT_BATCH_SIZE, the floats in one vector: 16 (AVX512), 8 (AVX2), 4 (NEON on
+// aarch64). A call
 // always transforms all B sequences.
 //
 // Memory: two float arrays, re and im, of B * N floats each ("lane-major"). Complex element n of
@@ -75,8 +76,9 @@
 // The transforms have no state and are reentrant. batched_fft_twiddles() builds all tables on
 // its first call (thread-safe) and returns shared read-only memory valid for the whole process.
 //
-// ISA, fixed at build time: NEON on aarch64 (batched_fft_neon.c), otherwise AVX2 + FMA written
-// with simde (batched_fft_avx2.c), which elsewhere than x86 is correct but slow.
+// ISA, fixed at build time: NEON on aarch64 (batched_fft_neon.c), AVX512F on x86 builds that target
+// AVX512 (batched_fft_avx512.c), otherwise AVX2 + FMA written with simde (batched_fft_avx2.c), which
+// elsewhere than x86 is correct but slow.
 
 #ifndef BATCHED_FFT_H
 #define BATCHED_FFT_H
@@ -92,6 +94,8 @@ extern "C" {
 
 #if defined(__aarch64__)
 #define BATCHED_FFT_BATCH_SIZE 4
+#elif defined(__AVX512F__)
+#define BATCHED_FFT_BATCH_SIZE 16
 #else
 #define BATCHED_FFT_BATCH_SIZE 8
 #endif

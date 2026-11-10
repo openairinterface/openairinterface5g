@@ -13,7 +13,8 @@
 // frequency response for the FFT method) depends only on the taps, so it lives in a caller-owned
 // channel_pipeline_channel_t, rebuilt when the caller sets new taps.
 //
-// Kernels are NEON on aarch64 and AVX2 + FMA (simde) elsewhere, chosen at build time.
+// Kernels are NEON on aarch64, AVX512F on x86 builds that target AVX512 and AVX2 + FMA (simde)
+// elsewhere, chosen at build time.
 //
 // All other state (method, scratch memory, noise device) lives in the instance.
 
