@@ -173,7 +173,7 @@ typedef struct {
   /// Max position in OFDM symbol related to time shift estimation based on DMRS-PDSCH/PUSCH
   int delay_max_pos;
   /// Max value related to time shift estimation based on DMRS-PDSCH/PUSCH
-  int delay_max_val;
+  int64_t delay_max_val;
 } delay_t;
 
 typedef struct {

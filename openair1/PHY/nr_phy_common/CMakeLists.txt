@@ -6,12 +6,12 @@ set(NR_PHY_COMMON_SRC src/nr_phy_common.c
                       src/nr_layer_demapping.c)
 
 add_library(nr_phy_common ${NR_PHY_COMMON_SRC})
-target_link_libraries(nr_phy_common PRIVATE UTIL PHY_COMMON)
+target_link_libraries(nr_phy_common PRIVATE UTIL PHY_COMMON m)
 target_include_directories(nr_phy_common PUBLIC inc/)
 
 # same as nr_phy_common but limited to 128-bit SIMD, to test the non-AVX2 paths on x86
 add_library(nr_phy_common_no_avx_256 ${NR_PHY_COMMON_SRC})
-target_link_libraries(nr_phy_common_no_avx_256 PRIVATE UTIL PHY_COMMON)
+target_link_libraries(nr_phy_common_no_avx_256 PRIVATE UTIL PHY_COMMON m)
 target_include_directories(nr_phy_common_no_avx_256 PUBLIC inc/)
 target_compile_definitions(nr_phy_common_no_avx_256 PRIVATE USE_128BIT)
 

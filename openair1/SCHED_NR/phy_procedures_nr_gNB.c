@@ -872,6 +872,7 @@ nr_srs_info_t nr_srs_rx_procedures(PHY_VARS_gNB *gNB,
     memset(pow_per_prg, 0, sizeof(pow_per_prg));
 
     for (int ant_rx_ind = 0; ant_rx_ind < nb_antennas_rx; ant_rx_ind++) {
+      int idft_shift[N_ap];
       for (int p_ind = 0; p_ind < N_ap; p_ind++) {
         uint32_t signal_power = 0;
         nr_srs_channel_interpolation(p_ind,
@@ -886,6 +887,7 @@ nr_srs_info_t nr_srs_rx_procedures(PHY_VARS_gNB *gNB,
                                      srs_estimated_channel_time[ant_rx_ind][p_ind],
                                      srs_estimated_channel_time_shifted[ant_rx_ind][p_ind],
                                      &signal_power,
+                                     &idft_shift[p_ind],
                                      frame_parms->delay_table);
 
         signal_power_avg += signal_power;
@@ -925,6 +927,18 @@ nr_srs_info_t nr_srs_rx_procedures(PHY_VARS_gNB *gNB,
           T_INT(p_ind),
           T_BUFFER(srs_estimated_channel_time_shifted[ant_rx_ind][p_ind],
                    NR_SRS_IDFT_OVERSAMP_FACTOR * ofdm_symbol_size * sizeof(c16_t)));
+      }
+      // the TA sums the ports of an antenna: same IDFT input scale for all of them
+      int max_shift = 0;
+      for (int p_ind = 0; p_ind < N_ap; p_ind++)
+        max_shift = max(max_shift, idft_shift[p_ind]);
+      for (int p_ind = 0; p_ind < N_ap; p_ind++) {
+        const int s = max_shift - idft_shift[p_ind];
+        if (!s)
+          continue;
+        c16_t *t = srs_estimated_channel_time[ant_rx_ind][p_ind];
+        for (int k = 0; k < NR_SRS_IDFT_OVERSAMP_FACTOR * ofdm_symbol_size; k++)
+          t[k] = (c16_t){t[k].r >> s, t[k].i >> s};
       }
     }
 
