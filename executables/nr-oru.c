@@ -120,7 +120,7 @@
 #define HLP_DU_MAC_ADDRESSES "DU MAC addreses, used to prepare Ethernet headers."
 #define HLP_MTU "MTU for RX and TX."
 #define HLP_PRACH_EAXC_OFFSET "PRACH eAxC offset."
-#define HLP_PRACH_KBAR "PRACH kbar offset."
+#define HLP_PRACH_KBAR "PRACH sequence offset in the PRACH PRBs, in int16; default: 2 * k_bar of TS 38.211 Table 6.3.3.2-1"
 #define HLP_COMP_TYPE         "DL U-plane compression method: none, bfp, blkscale, or ulaw."
 #define HLP_CLOCK_TIMEBASE \
   "Timescale of CLOCK_REALTIME for FH GPS mapping: utc (default, GPS = unix - epoch + 18) or tai (GPS = unix - epoch - 19)."
@@ -151,7 +151,7 @@
   {CONFIG_STRING_T2A_UP,                     "",                    0,                      .iptr=NULL,       .defintarrayval=NULL,         TYPE_INTARRAY,     0}, \
   {CONFIG_STRING_T2A_CP,                     "",                    0,                      .iptr=NULL,       .defintarrayval=NULL,         TYPE_INTARRAY,     0}, \
   {CONFIG_STRING_PRACH_EAXC_OFFSET,          HLP_PRACH_EAXC_OFFSET, 0,                      .u8ptr=NULL,      .defuintval=0,                TYPE_UINT8,        0}, \
-  {CONFIG_STRING_PRACH_KBAR,                 HLP_PRACH_KBAR,        0,                      .uptr=NULL,       .defuintval=4,                TYPE_UINT,         0}, \
+  {CONFIG_STRING_PRACH_KBAR,                 HLP_PRACH_KBAR,        0,                      .uptr=NULL,       .defuintval=0,                TYPE_UINT,         0}, \
   {CONFIG_STRING_COMP_TYPE,                  HLP_COMP_TYPE,         0,                      .strptr=NULL,     .defstrval="none",           TYPE_STRING,       0, COMP_TYPE_CHECK}, \
   {CONFIG_STRING_CLOCK_TIMEBASE,             HLP_CLOCK_TIMEBASE,    0,                      .strptr=NULL,     .defstrval="utc",            TYPE_STRING,       0, CLOCK_TIMEBASE_CHECK}  \
 }
@@ -546,7 +546,8 @@ int get_oru_options(ORU_t *oru)
   fh_cfg->num_prbs = oru->bw_tx[0];
   fh_cfg->numerology = oru->numerology;
   fh_cfg->prach_eaxc_offset = *gpd(fh_param, nump, CONFIG_STRING_PRACH_EAXC_OFFSET)->u8ptr;
-  fh_cfg->prach_kbar = *gpd(fh_param, nump, CONFIG_STRING_PRACH_KBAR)->uptr;
+  const paramdef_t *kbar = gpd(fh_param, nump, CONFIG_STRING_PRACH_KBAR);
+  fh_cfg->prach_kbar = kbar->paramflags & PARAMFLAG_PARAMSET ? *kbar->uptr : -1;
 
   AssertFatal(gpd(fh_param, nump, CONFIG_STRING_T2A_UP)->numelt == 2, "Two parameters required for %s\n", CONFIG_STRING_T2A_UP);
   fh_cfg->T2a_up_min_uS = gpd(fh_param, nump, CONFIG_STRING_T2A_UP)->iptr[0];
