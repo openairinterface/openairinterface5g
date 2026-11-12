@@ -142,13 +142,13 @@ int nr_pnf_p7_get_msgs(pnf_p7_t* pnf_p7,
                        nfapi_nr_ul_dci_request_t* ret_ul_dci,
                        nfapi_nr_tx_data_request_t* ret_tx_data);
 int pnf_p7_subframe_ind(pnf_p7_t* config, uint16_t phy_id, uint16_t sfn_sf);
-int nfapi_pnf_p7_nr_slot_ind(nfapi_pnf_p7_config_t* config, nfapi_nr_slot_indication_scf_t* ind);
-int nfapi_pnf_p7_nr_rx_data_ind(nfapi_pnf_p7_config_t* config, nfapi_nr_rx_data_indication_t* ind);
-int nfapi_pnf_p7_nr_crc_ind(nfapi_pnf_p7_config_t* config, nfapi_nr_crc_indication_t* ind);
-int nfapi_pnf_p7_nr_srs_ind(nfapi_pnf_p7_config_t* config, nfapi_nr_srs_indication_t* ind);
-int nfapi_pnf_p7_nr_srs_toa_vendor_ext_ind(nfapi_pnf_p7_config_t* config, nfapi_nr_srs_toa_vendor_ext_indication_t* ind);
-int nfapi_pnf_p7_nr_uci_ind(nfapi_pnf_p7_config_t* config, nfapi_nr_uci_indication_t* ind);
-int nfapi_pnf_p7_nr_rach_ind(nfapi_pnf_p7_config_t* config, nfapi_nr_rach_indication_t* ind);
+int nfapi_pnf_p7_nr_slot_ind(nfapi_pnf_p7_config_t* config, const nfapi_nr_slot_indication_scf_t* ind);
+int nfapi_pnf_p7_nr_rx_data_ind(nfapi_pnf_p7_config_t* config, const nfapi_nr_rx_data_indication_t* ind);
+int nfapi_pnf_p7_nr_crc_ind(nfapi_pnf_p7_config_t* config, const nfapi_nr_crc_indication_t* ind);
+int nfapi_pnf_p7_nr_srs_ind(nfapi_pnf_p7_config_t* config, const nfapi_nr_srs_indication_t* ind);
+int nfapi_pnf_p7_nr_srs_toa_vendor_ext_ind(nfapi_pnf_p7_config_t* config, const nfapi_nr_srs_toa_vendor_ext_indication_t* ind);
+int nfapi_pnf_p7_nr_uci_ind(nfapi_pnf_p7_config_t* config, const nfapi_nr_uci_indication_t* ind);
+int nfapi_pnf_p7_nr_rach_ind(nfapi_pnf_p7_config_t* config, const nfapi_nr_rach_indication_t* ind);
 pnf_p7_rx_message_t* pnf_p7_rx_reassembly_queue_add_segment(pnf_p7_t* pnf_p7, pnf_p7_rx_reassembly_queue_t* queue, uint32_t rx_hr_time, uint16_t sequence_number, uint16_t segment_number, uint8_t m, uint8_t* data, uint16_t data_len);
 void pnf_p7_rx_reassembly_queue_remove_msg(pnf_p7_t* pnf_p7, pnf_p7_rx_reassembly_queue_t* queue, pnf_p7_rx_message_t* msg);
 void pnf_p7_rx_reassembly_queue_remove_old_msgs(pnf_p7_t* pnf_p7, pnf_p7_rx_reassembly_queue_t* queue, uint32_t rx_hr_time, uint32_t delta);

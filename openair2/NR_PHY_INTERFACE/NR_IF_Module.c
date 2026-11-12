@@ -276,7 +276,7 @@ static void pnf_send_slot_ind(const nfapi_nr_slot_indication_scf_t *ind, NR_Sche
   module_id_t module_id = 0;
   int phy_id = 0;
   reset_sched_response(rsp, ind->sfn, ind->slot, module_id, phy_id);
-  handle_nr_slot_ind(ind->sfn, ind->slot, rsp);
+  handle_nr_slot_ind(ind, rsp);
 }
 
 static void NR_UL_indication(NR_UL_IND_t *UL_info)

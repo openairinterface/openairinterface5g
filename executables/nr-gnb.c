@@ -102,7 +102,9 @@ static void tx_func(processingData_L1tx_t *info)
 
   clear_slot_beamid(gNB, slot_tx);
 
-  nfapi_nr_slot_indication_scf_t ind = {.header = {.phy_id = 0}, .sfn = frame_tx, .slot = slot_tx};
+  nfapi_nr_slot_indication_scf_t ind = {.header = {.phy_id = 0, .message_id = NFAPI_NR_PHY_MSG_TYPE_SLOT_INDICATION},
+                                        .sfn = frame_tx,
+                                        .slot = slot_tx};
   start_meas(&gNB->slot_indication_stats);
   // this variable is very big (multiple MB), so we put it into static storage
   // to not overflow the stack while still having it in local (function) scope
@@ -175,6 +177,11 @@ void *L1_tx_thread(void *arg) {
   return NULL;
 }
 
+static nfapi_nr_p7_message_header_t fapi_get_header(int phy_id, uint16_t message_id)
+{
+  return (nfapi_nr_p7_message_header_t){.phy_id = phy_id, .message_id = message_id};
+}
+
 static void rx_func(processingData_L1_t *info)
 {
   PHY_VARS_gNB *gNB = info->gNB;
@@ -190,19 +197,25 @@ static void rx_func(processingData_L1_t *info)
     LOG_D(NR_PHY, "%d.%d Starting RX processing\n", frame_rx, slot_rx);
 
     // UE-specific RX processing for subframe n
+    int phy_id = 0;
     // Intentionally not zero-initialized: each indication fills only its used PDUs.
     NR_UL_IND_t UL_INFO;
     UL_INFO.frame = frame_rx;
     UL_INFO.slot = slot_rx;
     UL_INFO.module_id = gNB->Mod_id;
     UL_INFO.phy_id = 0;
+    UL_INFO.uci_ind.header = fapi_get_header(phy_id, NFAPI_NR_PHY_MSG_TYPE_UCI_INDICATION);
     UL_INFO.uci_ind.uci_list = UL_INFO.uci_pdu_list;
+    UL_INFO.crc_ind.header = fapi_get_header(phy_id, NFAPI_NR_PHY_MSG_TYPE_CRC_INDICATION);
     UL_INFO.crc_ind.crc_list = UL_INFO.crc_pdu_list;
+    UL_INFO.rx_ind.header = fapi_get_header(phy_id, NFAPI_NR_PHY_MSG_TYPE_RX_DATA_INDICATION);
     UL_INFO.rx_ind.pdu_list = UL_INFO.rx_pdu_list;
+    UL_INFO.srs_ind.header = fapi_get_header(phy_id, NFAPI_NR_PHY_MSG_TYPE_SRS_INDICATION);
     UL_INFO.srs_ind.pdu_list = UL_INFO.srs_pdu_list;
+    UL_INFO.srs_toa_vendor_ext_ind.header = fapi_get_header(phy_id, NFAPI_NR_PHY_MSG_TYPE_SRS_TOA_VENDOR_EXTENSION_INDICATION);
     UL_INFO.srs_toa_vendor_ext_ind.pdu_list = UL_INFO.srs_toa_vendor_ext_pdu_list;
     // Do PRACH RU processing
-    UL_INFO.rach_ind.header.transmit_timestamp = 0;
+    UL_INFO.rach_ind.header = fapi_get_header(phy_id, NFAPI_NR_PHY_MSG_TYPE_RACH_INDICATION);
     UL_INFO.rach_ind.pdu_list = UL_INFO.prach_pdu_indication_list;
     UL_INFO.rach_ind.number_of_pdus = 0;
     // even if processing is late, we might collect all PRACH

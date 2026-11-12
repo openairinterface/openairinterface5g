@@ -236,7 +236,7 @@ int nfapi_pnf_ue_release_resp(nfapi_pnf_p7_config_t* config, nfapi_ue_release_re
 
 //NR UPLINK INDICATION
 
-int nfapi_pnf_p7_nr_slot_ind(nfapi_pnf_p7_config_t* config, nfapi_nr_slot_indication_scf_t* ind)
+int nfapi_pnf_p7_nr_slot_ind(nfapi_pnf_p7_config_t* config, const nfapi_nr_slot_indication_scf_t* ind)
 {
   if (config == NULL || ind == NULL) {
     NFAPI_TRACE(NFAPI_TRACE_ERROR, "%s: invalid input params\n", __FUNCTION__);
@@ -248,7 +248,7 @@ int nfapi_pnf_p7_nr_slot_ind(nfapi_pnf_p7_config_t* config, nfapi_nr_slot_indica
   return _this->_public.send_p7_msg(_this, (nfapi_nr_p7_message_header_t*)ind, sizeof(nfapi_nr_slot_indication_scf_t));
 }
 
-int nfapi_pnf_p7_nr_rx_data_ind(nfapi_pnf_p7_config_t* config, nfapi_nr_rx_data_indication_t* ind)
+int nfapi_pnf_p7_nr_rx_data_ind(nfapi_pnf_p7_config_t* config, const nfapi_nr_rx_data_indication_t* ind)
 {
 	if(config == NULL || ind == NULL)
 	{
@@ -266,7 +266,7 @@ int nfapi_pnf_p7_nr_rx_data_ind(nfapi_pnf_p7_config_t* config, nfapi_nr_rx_data_
   return ret;
 }
 
-int nfapi_pnf_p7_nr_crc_ind(nfapi_pnf_p7_config_t* config, nfapi_nr_crc_indication_t* ind)
+int nfapi_pnf_p7_nr_crc_ind(nfapi_pnf_p7_config_t* config, const nfapi_nr_crc_indication_t* ind)
 {
 	if(config == NULL || ind == NULL)
 	{
@@ -279,7 +279,7 @@ int nfapi_pnf_p7_nr_crc_ind(nfapi_pnf_p7_config_t* config, nfapi_nr_crc_indicati
 	return _this->_public.send_p7_msg(_this, (nfapi_nr_p7_message_header_t*)ind, sizeof(nfapi_nr_crc_indication_t));
 }
 
-int nfapi_pnf_p7_nr_srs_ind(nfapi_pnf_p7_config_t* config, nfapi_nr_srs_indication_t* ind)
+int nfapi_pnf_p7_nr_srs_ind(nfapi_pnf_p7_config_t* config, const nfapi_nr_srs_indication_t* ind)
 {
 	if(config == NULL || ind == NULL)
 	{
@@ -292,7 +292,7 @@ int nfapi_pnf_p7_nr_srs_ind(nfapi_pnf_p7_config_t* config, nfapi_nr_srs_indicati
 	return _this->_public.send_p7_msg(_this, (nfapi_nr_p7_message_header_t*)ind, sizeof(nfapi_nr_srs_indication_t));
 }
 
-int nfapi_pnf_p7_nr_srs_toa_vendor_ext_ind(nfapi_pnf_p7_config_t* config, nfapi_nr_srs_toa_vendor_ext_indication_t* ind)
+int nfapi_pnf_p7_nr_srs_toa_vendor_ext_ind(nfapi_pnf_p7_config_t* config, const nfapi_nr_srs_toa_vendor_ext_indication_t* ind)
 {
   if (config == NULL || ind == NULL) {
     NFAPI_TRACE(NFAPI_TRACE_ERROR, "%s: invalid input params\n", __FUNCTION__);
@@ -304,7 +304,7 @@ int nfapi_pnf_p7_nr_srs_toa_vendor_ext_ind(nfapi_pnf_p7_config_t* config, nfapi_
   return _this->_public.send_p7_msg(_this, (nfapi_nr_p7_message_header_t*)ind, sizeof(nfapi_nr_srs_toa_vendor_ext_indication_t));
 }
 
-int nfapi_pnf_p7_nr_uci_ind(nfapi_pnf_p7_config_t* config, nfapi_nr_uci_indication_t* ind)
+int nfapi_pnf_p7_nr_uci_ind(nfapi_pnf_p7_config_t* config, const nfapi_nr_uci_indication_t* ind)
 {
 	if(config == NULL || ind == NULL)
 	{
@@ -317,7 +317,7 @@ int nfapi_pnf_p7_nr_uci_ind(nfapi_pnf_p7_config_t* config, nfapi_nr_uci_indicati
 	return _this->_public.send_p7_msg(_this, (nfapi_nr_p7_message_header_t*)ind, sizeof(nfapi_nr_uci_indication_t));
 }
 
-int nfapi_pnf_p7_nr_rach_ind(nfapi_pnf_p7_config_t* config, nfapi_nr_rach_indication_t* ind)
+int nfapi_pnf_p7_nr_rach_ind(nfapi_pnf_p7_config_t* config, const nfapi_nr_rach_indication_t* ind)
 {
 	if(config == NULL || ind == NULL)
 	{
