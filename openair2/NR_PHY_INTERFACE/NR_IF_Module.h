@@ -94,11 +94,6 @@ typedef struct NR_IF_Module_s {
   void (*NR_UL_indication)(NR_UL_IND_t *UL_INFO);
   void (*NR_slot_indication)(const nfapi_nr_slot_indication_scf_t *ind, NR_Sched_Rsp_t *rsp);
   void (*NR_PHY_config_req)(NR_PHY_Config_t *config_INFO);
-  uint32_t CC_mask;
-  uint16_t current_frame;
-  uint8_t current_slot;
-  pthread_mutex_t if_mutex;
-  int sl_ahead;
 } NR_IF_Module_t;
 
 /*Initial */

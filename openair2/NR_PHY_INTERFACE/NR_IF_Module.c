@@ -477,7 +477,6 @@ NR_IF_Module_t *NR_IF_Module_init(int Mod_id) {
 
     LOG_D(MAC, "Allocating shared L1/L2 interface structure for instance %d @ %p\n", Mod_id, nr_if_inst[Mod_id]);
 
-    nr_if_inst[Mod_id]->CC_mask=0;
     nr_if_inst[Mod_id]->NR_UL_indication = NR_UL_indication;
     if (NFAPI_MODE == NFAPI_MONOLITHIC) {
       nr_if_inst[Mod_id]->NR_slot_indication = run_scheduler_monolithic;
@@ -487,8 +486,6 @@ NR_IF_Module_t *NR_IF_Module_init(int Mod_id) {
       DevAssert(NFAPI_MODE == NFAPI_MODE_VNF || NFAPI_MODE == NFAPI_MODE_AERIAL);
       nr_if_inst[Mod_id]->NR_slot_indication = run_scheduler_monolithic;
     }
-    AssertFatal(pthread_mutex_init(&nr_if_inst[Mod_id]->if_mutex,NULL)==0,
-                "allocation of nr_if_inst[%d]->if_mutex fails\n",Mod_id);
   }
 
   return nr_if_inst[Mod_id];

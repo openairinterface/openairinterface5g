@@ -431,7 +431,9 @@ void init_nr_transport(PHY_VARS_gNB *gNB)
     nb_ul_slots_period = fp->slots_per_frame;
 
   int buffer_ul_slots; // the UL channels are scheduled sl_ahead before they are transmitted
-  int slot_ahead = gNB->if_inst ? gNB->if_inst->sl_ahead : 6;
+  // sl_ahead is a RU property. we should not base off this here.
+  int slot_ahead = RC.ru ? RC.ru[0]->sl_ahead : 6;
+  DevAssert(slot_ahead > 0);
   if (slot_ahead > nb_slots_per_period)
     buffer_ul_slots = nb_ul_slots_period + (slot_ahead - nb_slots_per_period);
   else

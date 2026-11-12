@@ -625,9 +625,6 @@ int main(int argc, char *argv[])
 
   gNB->chest_freq = chest_type[0];
   gNB->chest_time = chest_type[1];
-  if (gNB->if_inst) {
-    gNB->if_inst->sl_ahead = 6;
-  }
 
   phy_init_nr_gNB(gNB);
   /* RU handles rxdataF, and gNB just has a pointer. Here, we don't have an RU,
