@@ -1595,7 +1595,7 @@ void handle_nr_srs_measurements(const module_id_t module_id,
                                 const int cell_id,
                                 const frame_t frame,
                                 const slot_t slot,
-                                nfapi_nr_srs_indication_pdu_t *srs_ind)
+                                const nfapi_nr_srs_indication_pdu_t *srs_ind)
 {
   gNB_MAC_INST *nrmac = RC.nrmac[module_id];
   nr_cell_sched_t *cell = nr_mac_get_cell_by_phy_id(nrmac, cell_id);
@@ -1629,7 +1629,9 @@ void handle_nr_srs_measurements(const module_id_t module_id,
   }
 
   NR_mac_stats_t *stats = &UE->mac_stats;
-  nfapi_srs_report_tlv_t *report_tlv = &srs_ind->report_tlv;
+  // cast const away: the unpack functions all are not const-aware, and we want
+  // to avoid a cascade of changes.
+  nfapi_srs_report_tlv_t *report_tlv = (nfapi_srs_report_tlv_t *)&srs_ind->report_tlv;
 
   switch (srs_ind->srs_usage) {
     case NR_SRS_ResourceSet__usage_beamManagement: {

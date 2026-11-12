@@ -388,7 +388,7 @@ void handle_nr_srs_measurements(const module_id_t module_id,
                                 const int cell_id,
                                 const frame_t frame,
                                 const slot_t slot,
-                                nfapi_nr_srs_indication_pdu_t *srs_ind);
+                                const nfapi_nr_srs_indication_pdu_t *srs_ind);
 
 void handle_nr_srs_toa_vendor_ext_measurements(const module_id_t module_id,
                                                const frame_t frame,
