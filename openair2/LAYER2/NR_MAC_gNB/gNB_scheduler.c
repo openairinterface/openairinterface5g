@@ -128,22 +128,15 @@ static void nr_fill_pusch_fapi_groups(nfapi_nr_ul_tti_request_t *UL_tti_req)
   }
 }
 
-void gNB_dlsch_ulsch_scheduler(module_id_t module_idP, const int cell_id, frame_t frame, slot_t slot, NR_Sched_Rsp_t *sched_info)
+void gNB_dlsch_ulsch_scheduler(gNB_MAC_INST *gNB, nr_cell_sched_t *cell, frame_t frame, slot_t slot, NR_Sched_Rsp_t *sched_info)
 {
-  protocol_ctxt_t ctxt = {0};
-  PROTOCOL_CTXT_SET_BY_MODULE_ID(&ctxt, module_idP, ENB_FLAG_YES, NOT_A_RNTI, frame, slot,module_idP);
-
-  gNB_MAC_INST *gNB = RC.nrmac[module_idP];
-  nr_cell_sched_t *cell = nr_mac_get_cell_by_phy_id(gNB, cell_id);
   NR_COMMON_channels_t *cc = &cell->common_channels;
   NR_ServingCellConfigCommon_t *scc = cc->ServingCellConfigCommon;
 
-  NR_SCHED_LOCK(&gNB->sched_lock);
   int slots_frame = cell->frame_structure.numb_slots_frame;
   clear_beam_information(&cell->beam_info, frame, slot, slots_frame);
 
   gNB->frame = frame;
-  start_meas(&cell->gNB_scheduler);
 
   int num_beams = 1;
   if (cell->beam_info.config.bf_method != BF_METHOD_STRAIGHT_WIRE)
@@ -250,7 +243,4 @@ void gNB_dlsch_ulsch_scheduler(module_id_t module_idP, const int cell_id, frame_
   copy_ul_tti_req(&sched_info->UL_tti_req, &cell->UL_tti_req_ahead[current_index]);
 
   nr_fill_pusch_fapi_groups(&sched_info->UL_tti_req);
-
-  stop_meas(&cell->gNB_scheduler);
-  NR_SCHED_UNLOCK(&gNB->sched_lock);
 }

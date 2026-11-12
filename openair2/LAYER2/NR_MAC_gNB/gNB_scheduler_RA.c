@@ -763,8 +763,8 @@ static unsigned int get_slot_RA(const NR_ServingCellConfigCommon_t *scc,
   return slot_RA;
 }
 
-void nr_initiate_ra_proc(module_id_t module_idP,
-                         int phy_id,
+void nr_initiate_ra_proc(gNB_MAC_INST *nr_mac,
+                         nr_cell_sched_t *cell,
                          frame_t frame,
                          int slot,
                          uint16_t preamble_index,
@@ -773,15 +773,11 @@ void nr_initiate_ra_proc(module_id_t module_idP,
                          int16_t timing_offset,
                          uint32_t preamble_power)
 {
-  gNB_MAC_INST *nr_mac = RC.nrmac[module_idP];
-  nr_cell_sched_t* cell = nr_mac_get_cell_by_phy_id(nr_mac, phy_id);
-  NR_SCHED_LOCK(&nr_mac->sched_lock);
   /* check if preamble exists (NSA, HO cases) */
   NR_UE_info_t *UE = get_existing_ra(nr_mac, cell, preamble_index);
   if ((get_softmodem_params()->nsa || get_softmodem_params()->do_ra) && !UE) {
     /* we are in NSA, but no UE has been configured => we ignore it */
     LOG_W(NR_MAC, "random access with preamble %d: no pre-configured RA process found\n", preamble_index);
-    NR_SCHED_UNLOCK(&nr_mac->sched_lock);
     return;
   }
 
@@ -830,7 +826,6 @@ void nr_initiate_ra_proc(module_id_t module_idP,
     bool rnti_found = nr_mac_get_new_rnti(&nr_mac->UE_info, &rnti);
     if (!rnti_found) {
       LOG_E(NR_MAC, "initialisation random access: no more available RNTIs for new UE\n");
-      NR_SCHED_UNLOCK(&nr_mac->sched_lock);
       return;
     }
 
@@ -838,7 +833,6 @@ void nr_initiate_ra_proc(module_id_t module_idP,
     if (!add_new_ra_ue(&nr_mac->UE_info, UE)) {
       LOG_E(NR_MAC, "FAILURE: %4d.%2d initiating RA procedure for preamble index %d: no free RA process\n", frame, slot, preamble_index);
       release_nr_ue_inst(&nr_mac->UE_info.uid_allocator, UE);
-      NR_SCHED_UNLOCK(&nr_mac->sched_lock);
       return;
     }
   }
@@ -886,8 +880,6 @@ void nr_initiate_ra_proc(module_id_t module_idP,
 
   // Configure RA BWP
   configure_UE_BWP(cell, scc, UE, true, NR_SearchSpace__searchSpaceType_PR_common, -1, -1);
- 
-  NR_SCHED_UNLOCK(&nr_mac->sched_lock);
 }
 
 static void start_ra_contention_resolution_timer(NR_RA_t *ra, const long ra_ContentionResolutionTimer, const int K2, const int scs)
