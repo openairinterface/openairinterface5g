@@ -1036,7 +1036,6 @@ void handle_nr_uci_pucch_2_3_4(module_id_t mod_id, int cell_id, frame_t frame, s
   if (uci_234->pduBitmap & 0x1) {
     if (uci_234->sr.sr_payload && uci_234->sr.sr_payload[0])
       nr_mac_sr_received(UE, cell);
-    free(uci_234->sr.sr_payload);
   }
 
   if ((uci_234->pduBitmap >> 1) & 0x01) {
@@ -1063,7 +1062,6 @@ void handle_nr_uci_pucch_2_3_4(module_id_t mod_id, int cell_id, frame_t frame, s
       }
       handle_dl_harq(cell, UE, pid, success, cell->dl_bler.harq_round_max);
     }
-    free(uci_234->harq.harq_payload);
   }
   if ((uci_234->pduBitmap >> 2) & 0x01) {
     LOG_D(NR_MAC, "CSI CRC %d\n", uci_234->csi_part1.csi_part1_crc);
@@ -1074,11 +1072,9 @@ void handle_nr_uci_pucch_2_3_4(module_id_t mod_id, int cell_id, frame_t frame, s
         extract_pucch_csi_report(csi_MeasConfig, uci_234, frame, slot, UE, nrmac, cell);
       }
     }
-    free(uci_234->csi_part1.csi_part1_payload);
   }
   if ((uci_234->pduBitmap >> 3) & 0x01) {
     //@TODO:Handle CSI Report 2
-    // nothing to free (yet)
   }
   NR_SCHED_UNLOCK(&nrmac->sched_lock);
 }

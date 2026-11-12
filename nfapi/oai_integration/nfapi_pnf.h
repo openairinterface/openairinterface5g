@@ -12,7 +12,7 @@ void configure_nr_nfapi_pnf(char *vnf_ip_addr, int vnf_p5_port, char *pnf_ip_add
 
 void oai_subframe_ind(uint16_t sfn, uint16_t sf);
 struct NR_Sched_Rsp;
-void handle_nr_slot_ind(const nfapi_nr_slot_indication_scf_t *ind, struct NR_Sched_Rsp *resp);
+int handle_nr_slot_ind(const nfapi_nr_slot_indication_scf_t *ind, struct NR_Sched_Rsp *resp);
 void sfnslot_add_slot(int mu, uint16_t *sfn, uint16_t *slot, int offset);
 
 int oai_nfapi_nr_slot_indication(const nfapi_nr_slot_indication_scf_t *ind);

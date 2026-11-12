@@ -27,15 +27,6 @@
 #define MAX_NUM_NR_SRS_PDUS 8
 #define MAX_NUM_NR_UCI_PDUS MAX_MOBILES_PER_GNB
 typedef struct {
-  /// Module ID
-  module_id_t module_id;
-  /// PHY ID
-  int phy_id;
-  /// frame
-  frame_t frame;
-  /// slot
-  slot_t slot;
-
   /// crc indication list
   nfapi_nr_crc_indication_t crc_ind;
   /// RX indication
@@ -60,9 +51,6 @@ typedef struct {
   nfapi_nr_prach_indication_pdu_t prach_pdu_indication_list[MAX_NUM_NR_RX_RACH_PDUS];
 
 } NR_UL_IND_t;
-
-// Downlink slot P7
-
 
 typedef struct NR_Sched_Rsp {
   /// Module ID
@@ -90,10 +78,16 @@ typedef struct {
 } NR_PHY_Config_t;
 
 typedef struct NR_IF_Module_s {
-  //define the function pointer
-  void (*NR_UL_indication)(NR_UL_IND_t *UL_INFO);
-  void (*NR_slot_indication)(const nfapi_nr_slot_indication_scf_t *ind, NR_Sched_Rsp_t *rsp);
   void (*NR_PHY_config_req)(NR_PHY_Config_t *config_INFO);
+
+  int (*nr_slot_indication)(const nfapi_nr_slot_indication_scf_t *ind, NR_Sched_Rsp_t *rsp);
+
+  int (*nr_rx_data_indication)(const nfapi_nr_rx_data_indication_t *ind);
+  int (*nr_crc_indication)(const nfapi_nr_crc_indication_t *ind);
+  int (*nr_uci_indication)(const nfapi_nr_uci_indication_t *ind);
+  int (*nr_srs_indication)(const nfapi_nr_srs_indication_t *ind);
+  int (*nr_srs_toa_vendor_ext_indication)(const nfapi_nr_srs_toa_vendor_ext_indication_t *ind);
+  int (*nr_rach_indication)(const nfapi_nr_rach_indication_t *ind);
 } NR_IF_Module_t;
 
 /*Initial */

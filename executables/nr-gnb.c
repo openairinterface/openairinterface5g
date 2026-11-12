@@ -110,7 +110,7 @@ static void tx_func(processingData_L1tx_t *info)
   // to not overflow the stack while still having it in local (function) scope
   // also, tx_func() is only executed by one thread, serially
   static NR_Sched_Rsp_t sched_response;
-  ifi->NR_slot_indication(&ind, &sched_response);
+  ifi->nr_slot_indication(&ind, &sched_response);
   stop_meas(&gNB->slot_indication_stats);
 
   info->gNB = gNB;
@@ -200,10 +200,6 @@ static void rx_func(processingData_L1_t *info)
     int phy_id = 0;
     // Intentionally not zero-initialized: each indication fills only its used PDUs.
     NR_UL_IND_t UL_INFO;
-    UL_INFO.frame = frame_rx;
-    UL_INFO.slot = slot_rx;
-    UL_INFO.module_id = gNB->Mod_id;
-    UL_INFO.phy_id = 0;
     UL_INFO.uci_ind.header = fapi_get_header(phy_id, NFAPI_NR_PHY_MSG_TYPE_UCI_INDICATION);
     UL_INFO.uci_ind.uci_list = UL_INFO.uci_pdu_list;
     UL_INFO.crc_ind.header = fapi_get_header(phy_id, NFAPI_NR_PHY_MSG_TYPE_CRC_INDICATION);
@@ -255,7 +251,18 @@ static void rx_func(processingData_L1_t *info)
 
     // Call the scheduler
     START_MEAS_FULL_SLOT(&gNB->ul_indication_stats, rx_slot_type, NR_UPLINK_SLOT);
-    gNB->if_inst->NR_UL_indication(&UL_INFO);
+    if (UL_INFO.rach_ind.number_of_pdus > 0)
+      gNB->if_inst->nr_rach_indication(&UL_INFO.rach_ind);
+    if (UL_INFO.uci_ind.num_ucis > 0)
+      gNB->if_inst->nr_uci_indication(&UL_INFO.uci_ind);
+    if (UL_INFO.crc_ind.number_crcs > 0)
+      gNB->if_inst->nr_crc_indication(&UL_INFO.crc_ind);
+    if (UL_INFO.rx_ind.number_of_pdus > 0)
+      gNB->if_inst->nr_rx_data_indication(&UL_INFO.rx_ind);
+    if (UL_INFO.srs_ind.number_of_pdus > 0)
+      gNB->if_inst->nr_srs_indication(&UL_INFO.srs_ind);
+    if (UL_INFO.srs_toa_vendor_ext_ind.number_of_pdus > 0)
+      gNB->if_inst->nr_srs_toa_vendor_ext_indication(&UL_INFO.srs_toa_vendor_ext_ind);
     STOP_MEAS_FULL_SLOT(&gNB->ul_indication_stats, rx_slot_type, NR_UPLINK_SLOT);
 
     // Signal the ru_thread on completion of using rxdataF in this slot

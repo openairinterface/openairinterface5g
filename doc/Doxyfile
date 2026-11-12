@@ -950,9 +950,7 @@ INPUT                  = \
 @CMAKE_CURRENT_SOURCE_DIR@/../common/platform_constants.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../common/ngran_types.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../common/ran_context.h \
-@CMAKE_CURRENT_SOURCE_DIR@/../nfapi/oai_integration/gnb_ind_vars.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../nfapi/oai_integration/nfapi_vnf.h \
-@CMAKE_CURRENT_SOURCE_DIR@/../nfapi/oai_integration/gnb_ind_vars.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../nfapi/oai_integration/vendor_ext.h \
 @CMAKE_CURRENT_SOURCE_DIR@/../nfapi/oai_integration/nfapi_vnf.c \
 @CMAKE_CURRENT_SOURCE_DIR@/../nfapi/oai_integration/nfapi_pnf.c \
