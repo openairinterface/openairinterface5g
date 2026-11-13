@@ -1991,6 +1991,7 @@ uint8_t unpack_nr_crc_indication(uint8_t **ppReadPackedMsg, uint8_t *end, void *
         && pull16(ppReadPackedMsg, &pNfapiMsg->number_crcs, end)))
     return 0;
 
+  pNfapiMsg->crc_list = NULL;
   if (pNfapiMsg->number_crcs > 0) {
     pNfapiMsg->crc_list = calloc(pNfapiMsg->number_crcs, sizeof(*pNfapiMsg->crc_list));
   }
@@ -2708,6 +2709,7 @@ uint8_t unpack_nr_rach_indication(uint8_t **ppReadPackedMsg, uint8_t *end, void 
     return 0;
   }
 
+  pNfapiMsg->pdu_list = NULL;
   if (pNfapiMsg->number_of_pdus > 0) {
     pNfapiMsg->pdu_list = calloc(pNfapiMsg->number_of_pdus, sizeof(*pNfapiMsg->pdu_list));
     for (int i = 0; i < pNfapiMsg->number_of_pdus; i++) {
