@@ -261,7 +261,7 @@ void vnf_handle_nr_rach_indication(void *pRecvMsg, int recvMsgLen, vnf_p7_t* vnf
 		}
 		else
 		{
-		        NFAPI_TRACE(NFAPI_TRACE_INFO, "%s: Handling RACH Indication\n", __FUNCTION__);
+		        NFAPI_TRACE(NFAPI_TRACE_DEBUG, "%s: Handling RACH Indication\n", __FUNCTION__);
 			if(vnf_p7->_public.nr_rach_indication)
 			{
 				(vnf_p7->_public.nr_rach_indication)(&ind);
