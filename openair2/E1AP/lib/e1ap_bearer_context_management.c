@@ -1884,11 +1884,11 @@ bool decode_E1_bearer_context_mod_request(const E1AP_E1AP_PDU_t *pdu, e1ap_beare
         _EQ_CHECK_INT(ie->value.present,
                       E1AP_BearerContextModificationRequestIEs__value_PR_System_BearerContextModificationRequest);
         E1AP_System_BearerContextModificationRequest_t *modReq = &ie->value.choice.System_BearerContextModificationRequest;
-        DevAssert(ie->value.choice.System_BearerContextModificationRequest.choice.nG_RAN_BearerContextModificationRequest != NULL);
         // System IE can contain either UTRAN or NG-RAN
         switch (modReq->present) {
           case E1AP_System_BearerContextModificationRequest_PR_NOTHING:
-            PRINT_ERROR("System Bearer Context Setup Request: no choice present\n");
+            PRINT_ERROR("System Bearer Context Modification Request: no choice present\n");
+            return false;
             break;
           case E1AP_System_BearerContextModificationRequest_PR_e_UTRAN_BearerContextModificationRequest:
             PRINT_ERROR("UTRAN in E1 Setup Modification Request not supported\n");
@@ -1896,8 +1896,10 @@ bool decode_E1_bearer_context_mod_request(const E1AP_E1AP_PDU_t *pdu, e1ap_beare
             break;
           case E1AP_System_BearerContextModificationRequest_PR_nG_RAN_BearerContextModificationRequest:
             // NG-RAN
+            _EQ_CHECK_INT(modReq->present,
+                          E1AP_System_BearerContextModificationRequest_PR_nG_RAN_BearerContextModificationRequest);
             AssertFatal(modReq->choice.nG_RAN_BearerContextModificationRequest != NULL,
-                        "System_BearerContextSetupRequest->choice.nG_RAN_BearerContextSetupRequest shall not be null");
+                        "System_BearerContextModificationRequest->choice.nG_RAN_BearerContextModificationRequest shall not be null");
             E1AP_ProtocolIE_Container_4932P26_t *msgNGRAN_list =
                 (E1AP_ProtocolIE_Container_4932P26_t *)modReq->choice.nG_RAN_BearerContextModificationRequest;
             // loop through all items in the NG-RAN list (to setup, to modify, etc)
