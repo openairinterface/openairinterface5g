@@ -707,7 +707,8 @@ static int get_nl_for_cw(int Nl, int cw_idx)
   }
 }
 
-static bool get_cw_info(NR_UE_DL_HARQ_STATUS_t *current_harq,
+static bool get_cw_info(NR_UE_MAC_INST_t *mac,
+                        NR_UE_DL_HARQ_STATUS_t *current_harq,
                         fapi_nr_dl_config_dlsch_pdu_rel15_t *dlsch_pdu,
                         uint8_t pdu_type,
                         fapi_nr_dl_cw_info_t *cw_info,
@@ -723,6 +724,17 @@ static bool get_cw_info(NR_UE_DL_HARQ_STATUS_t *current_harq,
   for (int i = 0; i < 12; i++) { // max 12 ports
     if ((dlsch_pdu->dmrs_ports >> i) & 0x01)
       Nl += 1;
+  }
+
+  // Bound the total before splitting layers or changing HARQ history.
+  int max_mimo_layers = NR_MAX_NB_LAYERS;
+  if (mac->uecap_maxMIMO_PDSCH_layers > 0)
+    max_mimo_layers = min(max_mimo_layers, mac->uecap_maxMIMO_PDSCH_layers);
+  if (mac->sc_info.maxMIMO_Layers_PDSCH)
+    max_mimo_layers = min(max_mimo_layers, *mac->sc_info.maxMIMO_Layers_PDSCH);
+  if (Nl == 0 || Nl > max_mimo_layers) {
+    LOG_W(NR_MAC, "Rejecting DCI configuring PDSCH with %d layers (maximum %d)\n", Nl, max_mimo_layers);
+    return false;
   }
 
   cw_info->mcs = mcs;
@@ -818,7 +830,8 @@ static int nr_ue_process_dci_dl_10_p_rnti(NR_UE_MAC_INST_t *mac,
 
   const int nb_rb_oh = mac->sc_info.xOverhead_PDSCH ? 6 * (1 + *mac->sc_info.xOverhead_PDSCH) : 0;
   const int nb_re_dmrs = ((dlsch_pdu->dmrsConfigType == NFAPI_NR_DMRS_TYPE1) ? 6 : 4) * dlsch_pdu->n_dmrs_cdm_groups;
-  if (!get_cw_info(&prnti_harq,
+  if (!get_cw_info(mac,
+                   &prnti_harq,
                    dlsch_pdu,
                    FAPI_NR_DL_CONFIG_TYPE_P_DLSCH,
                    &dlsch_pdu->cw_info[0],
@@ -1114,7 +1127,8 @@ static int nr_ue_process_dci_dl_10(NR_UE_MAC_INST_t *mac,
     current_harq->last_ndi = -1;
     mac->ra.t_crnti_dl_assigned = true;
   }
-  if (!get_cw_info(current_harq,
+  if (!get_cw_info(mac,
+                   current_harq,
                    dlsch_pdu,
                    dl_conf_req->pdu_type,
                    &dlsch_pdu->cw_info[0],
@@ -1520,7 +1534,8 @@ static int nr_ue_process_dci_dl_11(NR_UE_MAC_INST_t *mac,
   NR_UE_DL_HARQ_STATUS_t *current_harq = NULL;
   if (cw0) {
     current_harq = &mac->dl_harq_info[dci->harq_pid.val][0];
-    if (get_cw_info(current_harq,
+    if (get_cw_info(mac,
+                    current_harq,
                     dlsch_pdu,
                     dl_conf_req->pdu_type,
                     &dlsch_pdu->cw_info[0],
@@ -1554,7 +1569,8 @@ static int nr_ue_process_dci_dl_11(NR_UE_MAC_INST_t *mac,
 
   if (cw1) {
     current_harq = &mac->dl_harq_info[dci->harq_pid.val][cw_idx];
-    if (get_cw_info(current_harq,
+    if (get_cw_info(mac,
+                    current_harq,
                     dlsch_pdu,
                     dl_conf_req->pdu_type,
                     &dlsch_pdu->cw_info[1],

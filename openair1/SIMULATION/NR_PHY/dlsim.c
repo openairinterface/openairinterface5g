@@ -823,6 +823,10 @@ int main(int argc, char **argv)
   const NR_feature_set_ids_t uecap_fs_ids = {.dl_feature_set_percc_id = 1,
                                              .ul_feature_set_percc_id = 1};
   NR_CellGroupConfig_t *scg = get_default_secondaryCellGroup(scc, UE_Capability_nr, &uecap_fs_ids, 0, 1, &conf, cell, uid, ssb_index);
+  // Keep the simulated RRC layer limit consistent with the command-line rank.
+  NR_PDSCH_ServingCellConfig_t *pdsch_serving_cell =
+      scg->spCellConfig->spCellConfigDedicated->pdsch_ServingCellConfig->choice.setup;
+  *pdsch_serving_cell->ext1->maxMIMO_Layers = g_nrOfLayers;
   scg->spCellConfig->reconfigurationWithSync = get_reconfiguration_with_sync(g_rnti, uid, scc, frame);
   NR_BWP_Downlink_t *bwp = scg->spCellConfig->spCellConfigDedicated->downlinkBWP_ToAddModList->list.array[0];
 
