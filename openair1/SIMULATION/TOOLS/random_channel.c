@@ -1611,6 +1611,7 @@ int modelid_fromstrtype(char *modeltype) {
 void init_channelmod(void) {
   paramdef_t channelmod_params[] = CHANNELMOD_PARAMS_DESC;
   int numparams = sizeofArray(channelmod_params);
+  modellist_name = NULL; // freed by end_configmodule(): a stale pointer would be reused as a buffer
   int ret = config_get(config_get_if(), channelmod_params, numparams, CHANNELMOD_SECTION);
   AssertFatal(ret >= 0, "configuration couldn't be performed");
   if (defined_channels == NULL) {
