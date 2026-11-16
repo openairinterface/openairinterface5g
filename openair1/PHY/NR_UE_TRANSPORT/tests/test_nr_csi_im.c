@@ -6,6 +6,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include "SCHED_NR_UE/defs.h"
 #include "radio/COMMON/common_lib.h"
 
@@ -53,16 +54,29 @@ static uint32_t reference_power(const c16_t *samples, int count)
   return (uint32_t)(power_re / count) + (uint32_t)(power_im / count);
 }
 
-static int check_power(const char *name, const c16_t pattern[4], int bwp_start)
+typedef struct {
+  const char *name;
+  c16_t pattern[4];
+  uint16_t bwp_start;
+  uint16_t bwp_size;
+  uint16_t start_rb;
+  uint16_t nr_of_rbs;
+  int expected_start_rb;
+  int expected_nr_of_rbs;
+} csi_im_test_case_t;
+
+static int check_power(const csi_im_test_case_t *test)
 {
-  enum { carrier_n_rb = 36, bwp_size = 32, n_rb = 24, fft_size = 512, samples_per_slot = 14 * fft_size };
+  enum { carrier_n_rb = 64, fft_size = 1024, samples_per_slot = 14 * fft_size };
   PHY_VARS_NR_UE *ue = calloc(1, sizeof(*ue));
   if (ue == NULL) {
-    fprintf(stderr, "%s: cannot allocate UE\n", name);
+    fprintf(stderr, "%s: cannot allocate UE\n", test->name);
     return 1;
   }
 
-  nr_csi_info_t csi_info = {0};
+  const bool expected_measured = test->expected_nr_of_rbs > 0;
+  // Empty resources must clear a previous measurement's validity without replacing its power.
+  nr_csi_info_t csi_info = {.csi_im_meas_computed = !expected_measured, .interference_plus_noise_power = UINT32_MAX};
   ue->nr_csi_info = &csi_info;
   ue->frame_parms.nb_antennas_rx = 1;
   ue->frame_parms.N_RB_DL = carrier_n_rb;
@@ -70,39 +84,40 @@ static int check_power(const char *name, const c16_t pattern[4], int bwp_start)
   ue->frame_parms.samples_per_slot_wCP = samples_per_slot;
 
   // Pattern 1 (TS 38.331 section 6.3.2, CSI-IM-Resource): four subcarriers in one symbol.
-  // Offsets 4..7 avoid the DC exclusion, giving exactly 96 measured REs.
+  // Offsets 4..7 avoid the DC exclusion, giving four measured REs per RB.
   const fapi_nr_dl_config_csiim_pdu_rel15_t pdu = {
-      .bwp_size = bwp_size,
-      .bwp_start = bwp_start,
-      .start_rb = bwp_start,
-      .nr_of_rbs = n_rb,
+      .bwp_size = test->bwp_size,
+      .bwp_start = test->bwp_start,
+      .start_rb = test->start_rb,
+      .nr_of_rbs = test->nr_of_rbs,
       .k_csiim = {4, 5, 6, 7},
       .l_csiim = {0, 0, 0, 0},
   };
   c16_t rxdataF[1][samples_per_slot] = {0};
   for (int sc = 0; sc < fft_size; sc++)
     rxdataF[0][sc] = (c16_t){1234, -1234};
-  c16_t samples[4 * n_rb];
-  for (int rb = 0; rb < n_rb; rb++) {
+  c16_t samples[4 * carrier_n_rb];
+  DevAssert(test->expected_start_rb + test->expected_nr_of_rbs <= carrier_n_rb);
+  for (int rb = 0; rb < test->expected_nr_of_rbs; rb++) {
     for (int k = 0; k < 4; k++) {
-      c16_t sample = pattern[k];
+      c16_t sample = test->pattern[k];
       // Vary energy by RB so incorrect resource bounds cannot preserve the average.
-      if (bwp_start != 0) {
+      if (test->bwp_start != 0) {
         sample.r += 2 * rb;
         sample.i -= 2 * rb;
       }
       samples[4 * rb + k] = sample;
       // startingRB is relative to CRB0 (TS 38.331 section 6.3.2, CSI-FrequencyOccupation).
-      rxdataF[0][(pdu.start_rb + rb) * NR_NB_SC_PER_RB + pdu.k_csiim[k]] = sample;
+      rxdataF[0][(test->expected_start_rb + rb) * NR_NB_SC_PER_RB + pdu.k_csiim[k]] = sample;
     }
   }
-  const uint32_t expected = reference_power(samples, 4 * n_rb);
+  const uint32_t expected = expected_measured ? reference_power(samples, 4 * test->expected_nr_of_rbs) : UINT32_MAX;
 
   nr_ue_csi_im_procedures(ue, rxdataF, &pdu);
-  const int failed = !csi_info.csi_im_meas_computed || csi_info.interference_plus_noise_power != expected;
+  const int failed = csi_info.csi_im_meas_computed != expected_measured || csi_info.interference_plus_noise_power != expected;
   printf("%s: %s, expected=%" PRIu32 ", actual=%" PRIu32 ", measured=%d\n",
          failed ? "FAIL" : "PASS",
-         name,
+         test->name,
          expected,
          csi_info.interference_plus_noise_power,
          csi_info.csi_im_meas_computed);
@@ -110,24 +125,46 @@ static int check_power(const char *name, const c16_t pattern[4], int bwp_start)
   return failed;
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
-  int failures = 0;
-  failures += check_power("zero", (c16_t[]){{0, 0}, {0, 0}, {0, 0}, {0, 0}}, 0);
-  failures += check_power("low amplitude", (c16_t[]){{100, 50}, {-100, 50}, {100, -50}, {-100, -50}}, 0);
-  failures += check_power("nonzero mean", (c16_t[]){{100, -50}, {200, -50}, {100, 50}, {200, 50}}, 0);
+  const csi_im_test_case_t tests[] = {
+      {"zero", {{0, 0}, {0, 0}, {0, 0}, {0, 0}}, 0, 32, 0, 24, 0, 24},
+      {"low amplitude", {{100, 50}, {-100, 50}, {100, -50}, {-100, -50}}, 0, 32, 0, 24, 0, 24},
+      {"nonzero mean", {{100, -50}, {200, -50}, {100, 50}, {200, 50}}, 0, 32, 0, 24, 0, 24},
+      // Each component's sum of squares is 96 * 5000^2 = 2,400,000,000 > INT32_MAX.
+      {"real accumulation", {{5000, 0}, {-5000, 0}, {5000, 0}, {-5000, 0}}, 0, 32, 0, 24, 0, 24},
+      {"imaginary accumulation", {{0, 5000}, {0, 5000}, {0, -5000}, {0, -5000}}, 0, 32, 0, 24, 0, 24},
+      {"complex accumulation", {{5000, 5000}, {-5000, 5000}, {5000, -5000}, {-5000, -5000}}, 0, 32, 0, 24, 0, 24},
+      {"constant signal", {{5000, 5000}, {5000, 5000}, {5000, 5000}, {5000, 5000}}, 0, 32, 0, 24, 0, 24},
+      {"large nonzero mean", {{6000, -50}, {-4000, -50}, {6000, 50}, {-4000, 50}}, 0, 32, 0, 24, 0, 24},
+      {"full-scale complex signal", {{32767, 32767}, {-32767, 32767}, {32767, -32767}, {-32767, -32767}}, 0, 32, 0, 24, 0, 24},
+      {"minimum int16 constant", {{-32768, -32768}, {-32768, -32768}, {-32768, -32768}, {-32768, -32768}}, 0, 32, 0, 24, 0, 24},
+      {"nonzero BWP start", {{5000, 5000}, {-5000, 5000}, {5000, -5000}, {-5000, -5000}}, 4, 32, 4, 24, 4, 24},
+      {"BWP upper boundary", {{5000, 5000}, {-5000, 5000}, {5000, -5000}, {-5000, -5000}}, 4, 24, 4, 24, 4, 24},
+      {"BWP start equals size", {{5000, 5000}, {-5000, 5000}, {5000, -5000}, {-5000, -5000}}, 24, 24, 24, 24, 24, 24},
+      {"BWP start above size", {{5000, 5000}, {-5000, 5000}, {5000, -5000}, {-5000, -5000}}, 32, 24, 32, 24, 32, 24},
+      {"resource crosses BWP end", {{5000, 5000}, {-5000, 5000}, {5000, -5000}, {-5000, -5000}}, 4, 24, 20, 24, 20, 8},
+      {"resource at BWP end", {{0}}, 4, 24, 28, 24, 28, 0},
+      {"resource beyond BWP end", {{0}}, 4, 24, 32, 24, 32, 0},
+      {"zero-length resource", {{0}}, 4, 24, 4, 0, 4, 0},
+      {"zero-size BWP", {{0}}, 4, 0, 4, 24, 4, 0},
+  };
+  if (argc > 2) {
+    fprintf(stderr, "Usage: %s [test name]\n", argv[0]);
+    return EXIT_FAILURE;
+  }
 
-  // Each component's sum of squares is 96 * 5000^2 = 2,400,000,000 > INT32_MAX.
-  // The expected variances remain representable in the uint32_t output.
-  failures += check_power("real accumulation", (c16_t[]){{5000, 0}, {-5000, 0}, {5000, 0}, {-5000, 0}}, 0);
-  failures += check_power("imaginary accumulation", (c16_t[]){{0, 5000}, {0, 5000}, {0, -5000}, {0, -5000}}, 0);
-  failures += check_power("complex accumulation", (c16_t[]){{5000, 5000}, {-5000, 5000}, {5000, -5000}, {-5000, -5000}}, 0);
-  failures += check_power("constant signal", (c16_t[]){{5000, 5000}, {5000, 5000}, {5000, 5000}, {5000, 5000}}, 0);
-  failures += check_power("large nonzero mean", (c16_t[]){{6000, -50}, {-4000, -50}, {6000, 50}, {-4000, 50}}, 0);
-  failures +=
-      check_power("full-scale complex signal", (c16_t[]){{32767, 32767}, {-32767, 32767}, {32767, -32767}, {-32767, -32767}}, 0);
-  failures +=
-      check_power("minimum int16 constant", (c16_t[]){{-32768, -32768}, {-32768, -32768}, {-32768, -32768}, {-32768, -32768}}, 0);
-  failures += check_power("nonzero BWP start", (c16_t[]){{5000, 5000}, {-5000, 5000}, {5000, -5000}, {-5000, -5000}}, 4);
+  int failures = 0;
+  int selected = 0;
+  for (size_t i = 0; i < sizeof(tests) / sizeof(tests[0]); i++) {
+    if (argc == 2 && strcmp(argv[1], tests[i].name) != 0)
+      continue;
+    selected++;
+    failures += check_power(&tests[i]);
+  }
+  if (selected == 0) {
+    fprintf(stderr, "Unknown test: %s\n", argv[1]);
+    return EXIT_FAILURE;
+  }
   return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }
