@@ -39,11 +39,7 @@ void free_gNB_dlsch(NR_gNB_DLSCH_t *dlsch, uint16_t N_RB, const NR_DL_FRAME_PARM
   }
 
   if (dlsch->b) {
-#ifdef LDPC_CUDA
-    gpuFreeHost(dlsch->b);
-#else
-    free16(dlsch->b, a_segments * 1056);
-#endif
+    free16(dlsch->b, a_segments * 1056); // allocated with malloc16() in all builds, used only on the host
     dlsch->b = NULL;
   }
   if (dlsch->f) {
