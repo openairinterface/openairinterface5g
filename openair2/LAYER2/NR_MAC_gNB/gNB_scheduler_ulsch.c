@@ -1069,6 +1069,11 @@ static void _nr_rx_sdu_crc(gNB_MAC_INST *gNB_mac,
       nr_mac_trigger_ul_failure(&UE->UE_sched_ctrl, UE->current_UL_BWP.scs);
     }
   }
+
+  // Note: don't call handle_nr_ul_harq() here yet. RX_data.indication handling
+  // needs the HARQ PID for power control-related changes, which we can
+  // therefore not free here. I leave this for future work, it has been like
+  // this for years.
 }
 
 static void _nr_rx_sdu_rx(gNB_MAC_INST *gNB_mac,
@@ -1105,6 +1110,9 @@ static void _nr_rx_sdu_rx(gNB_MAC_INST *gNB_mac,
 
   UE->mac_stats.ul.total_bytes += rx->pdu_length;
   nr_ul_harq_cleanup_stale(cell, UE, frameP, slotP);
+  // TODO: the only reason this is here is that nr_process_mac_pdu() needs HARQ
+  // PDU for power control -- can we move this to the sending side?
+  // ideally, free the HARQ process in CRC handling.
   handle_nr_ul_harq(cell, UE, UE->rnti, rx->harq_id, !crc_ok);
 }
 
