@@ -94,7 +94,7 @@ uicc_t * checkUicc(int Mod_id) {
     sprintf(uiccName,"uicc%d",  Mod_id);
     uiccArray[Mod_id]=(void*)init_uicc(uiccName);
     uicc_t *uicc = uiccArray[Mod_id];
-    uicc->n_pdu_sessions = get_pdu_session_configs(uiccName, uicc->pdu_sessions, sizeof(uicc->pdu_sessions));
+    uicc->n_pdu_sessions = get_pdu_session_configs(uiccName, uicc->pdu_sessions, sizeofArray(uicc->pdu_sessions));
     if (uicc->n_pdu_sessions < 0)
       LOG_W(SIM,
             "could not load PDU session parameters. Make sure to define %s.pdu_sessions option in config file\n"

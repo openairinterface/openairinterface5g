@@ -15,12 +15,14 @@
 #include "common/config/config_paramdesc.h"
 #include "common/config/config_userapi.h"
 
+// PDU session identity values 1..15 (TS 24.007 11.2.3.1b)
+#define MAX_PDU_SESSION_ID 15
 
 // clang-format off
 // Note: Default PDU session ID 0 does not exist and will be replaced with PDU
 // session index if not set to a parameter > 0!
 #define PDU_SESS_PARAMS_DESC {                                              \
-    {"id",        "PDU session ID\n",             .defintval=0,        .type=TYPE_INT,    .chkPptr=&(checkedparam_t){.s2 = {config_check_intrange, {0, 255}}}}, \
+    {"id",        "PDU session ID\n",             .defintval=0,        .type=TYPE_INT,    .chkPptr=&(checkedparam_t){.s2 = {config_check_intrange, {0, MAX_PDU_SESSION_ID}}}}, \
     {"type",      "PDU session type\n",           .defstrval="IPv4",   .type=TYPE_STRING, \
       .chkPptr=&(checkedparam_t){.s3a = {config_checkstr_assign_integer, {"IPv4", "IPv6", "IPv4v6", "Ethernet"}, \
                                                                          {     1,      2,        3,          5},   4}}}, \
@@ -96,6 +98,7 @@ int get_pdu_session_configs(const char *uiccName, pdu_session_config_t *configs,
     paramdef_t *p = pdu_sess_list.paramarray[i];
     int id = *gpd(p, npsp, "id")->iptr;
     pdu->id = id > 0 ? id : i + 1; // if not user-specified ID, use PDU session index
+    AssertFatal(pdu->id <= MAX_PDU_SESSION_ID, "PDU session %d: ID %d is above %d\n", i, pdu->id, MAX_PDU_SESSION_ID);
     pdu->type = config_get_processedint(config_get_if(), (paramdef_t *)gpd(p, npsp, "type"));
     pdu->nssai.sst = *gpd(p, npsp, "nssai_sst")->iptr;
     pdu->nssai.sd = *gpd(p, npsp, "nssai_sd")->iptr;
