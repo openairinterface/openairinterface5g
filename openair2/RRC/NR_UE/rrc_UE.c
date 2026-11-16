@@ -2811,8 +2811,16 @@ static void nr_rrc_ue_process_rrcReestablishment(NR_UE_RRC_INST_t *rrc,
   // stop timer T301
   NR_UE_Timers_Constants_t *timers = &rrc->timers_and_constants;
   nr_timer_stop(&timers->T301);
+
+  if (!rrcReestablishment
+      || rrcReestablishment->criticalExtensions.present != NR_RRCReestablishment__criticalExtensions_PR_rrcReestablishment
+      || !rrcReestablishment->criticalExtensions.choice.rrcReestablishment) {
+    RRCLOG_E("Invalid or unsupported RRCReestablishment message\n");
+    nr_rrc_going_to_IDLE(rrc, RRC_CONNECTION_FAILURE, NULL);
+    return;
+  }
+
   NR_RRCReestablishment_IEs_t *ies = rrcReestablishment->criticalExtensions.choice.rrcReestablishment;
-  AssertFatal(ies, "Not expecting RRCReestablishment_IEs to be NULL\n");
 
   // Update KgNB based on the current K gNB key or the NH,
   // using the received nextHopChainingCount (per 33.501 6.9.2.3.4)
