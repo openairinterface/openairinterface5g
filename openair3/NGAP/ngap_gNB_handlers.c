@@ -858,11 +858,23 @@ static int ngap_gNB_handle_ue_context_release_command(sctp_assoc_t assoc_id, uin
             gnb_ue_ngap_id);
         return -1;
       } else {
-        message_p = itti_alloc_new_message(TASK_NGAP, 0, NGAP_UE_CONTEXT_RELEASE_COMMAND);
+        if (ue_desc_p->amf_ref != amf_desc_p) {
+          NGAP_ERROR("[SCTP %u] UE context release command from a different AMF for UE %lu\n", assoc_id, gnb_ue_ngap_id);
+          return -1;
+        }
+        if (ue_desc_p->amf_ue_ngap_id != NGAP_AMF_UE_NGAP_ID_UNSET && ue_desc_p->amf_ue_ngap_id != amf_ue_ngap_id) {
+          NGAP_ERROR("[SCTP %u] UE context release AMF UE NGAP ID mismatch (%lu != %lu)\n",
+                     assoc_id,
+                     amf_ue_ngap_id,
+                     ue_desc_p->amf_ue_ngap_id);
+          return -1;
+        }
 
-        if (ue_desc_p->amf_ue_ngap_id == 0) { // case of Detach Request and switch off from RRC_IDLE mode
+        // A release may be the first AMF response to a detach from RRC_IDLE.
+        if (ue_desc_p->amf_ue_ngap_id == NGAP_AMF_UE_NGAP_ID_UNSET) {
           ue_desc_p->amf_ue_ngap_id = amf_ue_ngap_id;
         }
+        message_p = itti_alloc_new_message(TASK_NGAP, 0, NGAP_UE_CONTEXT_RELEASE_COMMAND);
 
         NGAP_UE_CONTEXT_RELEASE_COMMAND(message_p).gNB_ue_ngap_id = gnb_ue_ngap_id;
         itti_send_msg_to_task(TASK_RRC_GNB, ue_desc_p->gNB_instance->instance, message_p);
@@ -1386,12 +1398,18 @@ static int ngap_gNB_handle_pdusession_release_command(sctp_assoc_t assoc_id, uin
     return -1;
   }
 
-  ue_desc_p->rx_stream = stream;
-
-  if (ue_desc_p->amf_ue_ngap_id != amf_ue_ngap_id) {
-    NGAP_WARN("UE context amf_ue_ngap_id is different form that of the message (%lu != %lu)",
-              (uint64_t)ue_desc_p->amf_ue_ngap_id, amf_ue_ngap_id);
+  if (ue_desc_p->amf_ref != amf_desc_p) {
+    NGAP_ERROR("[SCTP %u] PDU session release command from a different AMF for UE %lu\n", assoc_id, gnb_ue_ngap_id);
+    return -1;
   }
+  if (ue_desc_p->amf_ue_ngap_id == NGAP_AMF_UE_NGAP_ID_UNSET || ue_desc_p->amf_ue_ngap_id != amf_ue_ngap_id) {
+    NGAP_ERROR("[SCTP %u] PDU session release with unbound or mismatched AMF UE NGAP ID (%lu != %lu)\n",
+               assoc_id,
+               amf_ue_ngap_id,
+               ue_desc_p->amf_ue_ngap_id);
+    return -1;
+  }
+  ue_desc_p->rx_stream = stream;
 
   NGAP_DEBUG("[SCTP %u] Received pdu session release command for gNB_UE_NGAP_ID %lu amf_ue_ngap_id %lu\n",
              assoc_id, gnb_ue_ngap_id, amf_ue_ngap_id);

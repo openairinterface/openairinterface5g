@@ -167,9 +167,10 @@ int ngap_gNB_handle_nas_first_req(instance_t instance, ngap_nas_first_req_t *UEf
 
   /* Create and store NGAP UE context */
   ngap_gNB_ue_context_t ue_desc_p = {
-    .amf_ref = amf,
-    .gNB_ue_ngap_id = UEfirstReq->gNB_ue_ngap_id,
-    .gNB_instance = instance_p,
+      .amf_ref = amf,
+      .gNB_ue_ngap_id = UEfirstReq->gNB_ue_ngap_id,
+      .amf_ue_ngap_id = NGAP_AMF_UE_NGAP_ID_UNSET,
+      .gNB_instance = instance_p,
   };
 
   // RAN UE NGAP ID (M)
@@ -334,7 +335,7 @@ int ngap_gNB_handle_nas_downlink(sctp_assoc_t assoc_id, uint32_t stream, NGAP_NG
   /* Is it the first outcome of the AMF for this UE ? If so store the amf
    * UE ngap id.
    */
-  if (ue_desc_p->amf_ue_ngap_id == 0) {
+  if (ue_desc_p->amf_ue_ngap_id == NGAP_AMF_UE_NGAP_ID_UNSET) {
     ue_desc_p->amf_ue_ngap_id = amf_ue_ngap_id;
   } else {
     /* We already have a amf ue ngap id check the received is the same */

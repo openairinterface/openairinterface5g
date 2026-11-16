@@ -13,6 +13,9 @@
 #ifndef NGAP_GNB_UE_CONTEXT_H_
 #define NGAP_GNB_UE_CONTEXT_H_
 
+// TS 38.413 clause 9.3.3.1 permits every 40-bit value, including zero.
+#define NGAP_AMF_UE_NGAP_ID_UNSET UINT64_MAX
+
 // Forward declarations
 struct ngap_gNB_amf_data_s;
 struct gNB_amf_desc_s;
