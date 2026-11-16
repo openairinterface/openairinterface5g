@@ -4,6 +4,7 @@
 
 #include "nr_mac_fapi.h"
 #include "mac_proto.h"
+#include "openair2/LAYER2/nr_rlc/nr_rlc_oai_api.h"
 
 int nr_mac_handle_slot_indication(const nfapi_nr_slot_indication_scf_t *ind, NR_Sched_Rsp_t *rsp)
 {
@@ -94,9 +95,34 @@ int nr_mac_handle_crc_indication(const nfapi_nr_crc_indication_t *crc_ind)
 
 int nr_mac_handle_rx_data_indication(const nfapi_nr_rx_data_indication_t *rx_ind)
 {
-  module_id_t mod_id = 0;
-  for (const nfapi_nr_rx_data_pdu_t *rx = rx_ind->pdu_list; rx < rx_ind->pdu_list + rx_ind->number_of_pdus; ++rx) {
-    nr_rx_sdu_rx(mod_id, rx_ind->header.phy_id, rx_ind->sfn, rx_ind->slot, rx);
+  if (rx_ind->number_of_pdus == 0)
+    return 0;
+
+  /* RLC PDUs of all UEs, delivered once sched_lock is released; entries point
+   * into the PDUs of rx_ind. */
+  struct rlc_ind {
+    nr_rlc_data_ind_t data[MAX_NUM_DATA_IND];
+    int num_data;
+    rnti_t rnti;
+  } rlc_ind[64];
+  DevAssert(rx_ind->number_of_pdus < 64);
+  gNB_MAC_INST *nrmac = RC.nrmac[0];
+  NR_SCHED_LOCK(&nrmac->sched_lock);
+  nr_cell_sched_t *cell = nr_mac_get_cell_by_phy_id(nrmac, rx_ind->header.phy_id);
+  start_meas(&cell->rx_ulsch_sdu);
+  for (int i = 0; i < rx_ind->number_of_pdus; ++i) {
+    const nfapi_nr_rx_data_pdu_t *rx = &rx_ind->pdu_list[i];
+    struct rlc_ind *rlci = &rlc_ind[i];
+    rlci->num_data = 0; // initialize to "no data"
+    rlci->rnti = nr_rx_sdu_rx(nrmac, cell, rx_ind->sfn, rx_ind->slot, rx, rlci->data, &rlci->num_data);
+  }
+  stop_meas(&cell->rx_ulsch_sdu);
+  NR_SCHED_UNLOCK(&nrmac->sched_lock);
+
+  // RLC has its own lock: deliver outside sched_lock, one call per UE
+  for (int i = 0; i < rx_ind->number_of_pdus; ++i) {
+    struct rlc_ind *rlci = &rlc_ind[i];
+    nr_mac_rlc_data_ind(nrmac->Mod_id, rlci->rnti, true, rlci->data, rlci->num_data);
   }
   return 0;
 }

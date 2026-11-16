@@ -369,13 +369,20 @@ void nr_rx_sdu_crc(gNB_MAC_INST *gNB_mac,
                    const slot_t slotP,
                    const nfapi_nr_crc_t *crc);
 
+/* Upper bound of RLC PDUs collected from one RX_DATA.indication */
+#define MAX_NUM_DATA_IND 1024
+struct nr_rlc_data_ind;
+
 /* \brief Handle an RX_DATA.indication PDU (MAC PDU decoding, UL HARQ, RA
-   progression). rx->pdu is NULL if the CRC failed. */
-void nr_rx_sdu_rx(const module_id_t gnb_mod_idP,
-                  const int CC_idP,
-                  const frame_t frameP,
-                  const slot_t slotP,
-                  const nfapi_nr_rx_data_pdu_t *rx);
+   progression).
+   \return the RNTI under which the appended RLC PDUs are to be delivered */
+rnti_t nr_rx_sdu_rx(gNB_MAC_INST *gNB_mac,
+                    nr_cell_sched_t *cell,
+                    const frame_t frameP,
+                    const slot_t slotP,
+                    const nfapi_nr_rx_data_pdu_t *rx,
+                    struct nr_rlc_data_ind *data_ind,
+                    int *num_data_ind);
 
 void reset_dl_harq_list(NR_UE_sched_ctrl_t *sched_ctrl);
 

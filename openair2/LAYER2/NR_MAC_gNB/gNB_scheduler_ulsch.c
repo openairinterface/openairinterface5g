@@ -30,7 +30,6 @@ static const uint16_t NR_TRANSFORM_PRECODE_RB_LUT[274] = {
     250, 250, 250, 250, 250, 250, 256, 256, 256, 256, 256, 256, 256, 256, 256, 256, 256, 256, 256, 256, 270, 270, 270, 270};
 
 //#define SRS_IND_DEBUG
-#define MAX_NUM_DATA_IND 1024
 
 // With SC-FDMA the scheduler in uplink needs to schedule N_PRB=2^x3^y5^z
 // Check 6.3.1.4 of 38.211
@@ -1124,31 +1123,23 @@ void nr_rx_sdu_crc(gNB_MAC_INST *mac,
   }
 }
 
-void nr_rx_sdu_rx(const module_id_t gnb_mod_idP,
-                  const int CC_idP,
-                  const frame_t frameP,
-                  const slot_t slotP,
-                  const nfapi_nr_rx_data_pdu_t *rx)
+rnti_t nr_rx_sdu_rx(gNB_MAC_INST *mac,
+                    nr_cell_sched_t *cell,
+                    const frame_t frameP,
+                    const slot_t slotP,
+                    const nfapi_nr_rx_data_pdu_t *rx,
+                    nr_rlc_data_ind_t *data_ind,
+                    int *num_data_ind)
 {
-  gNB_MAC_INST *gNB_mac = RC.nrmac[gnb_mod_idP];
-  NR_SCHED_LOCK(&gNB_mac->sched_lock);
-  nr_cell_sched_t *cell = nr_mac_get_cell_by_phy_id(gNB_mac, CC_idP);
-  nr_rlc_data_ind_t data_ind[MAX_NUM_DATA_IND];
-  int num_data_ind = 0;
   rnti_t rlc_rnti = 0;
-  start_meas(&cell->rx_ulsch_sdu);
-  NR_UE_info_t *UE = find_connected_nr_ue(&gNB_mac->UE_info, rx->rnti);
+  NR_UE_info_t *UE = find_connected_nr_ue(&mac->UE_info, rx->rnti);
   if (UE) {
     DevAssert(UE->rnti == rx->rnti);
-    _nr_rx_sdu_rx(gNB_mac, cell, frameP, slotP, UE, rx, data_ind, &num_data_ind, &rlc_rnti);
+    _nr_rx_sdu_rx(mac, cell, frameP, slotP, UE, rx, data_ind, num_data_ind, &rlc_rnti);
   } else {
-    nr_rx_ra_sdu_rx(gNB_mac, cell, frameP, slotP, rx, data_ind, &num_data_ind, &rlc_rnti);
+    nr_rx_ra_sdu_rx(mac, cell, frameP, slotP, rx, data_ind, num_data_ind, &rlc_rnti);
   }
-  stop_meas(&cell->rx_ulsch_sdu);
-  NR_SCHED_UNLOCK(&gNB_mac->sched_lock);
-  // RLC has its own lock: deliver outside sched_lock. data_ind[] points into sduP.
-  if (num_data_ind > 0)
-    nr_mac_rlc_data_ind(gNB_mac->Mod_id, rlc_rnti, true, data_ind, num_data_ind);
+  return rlc_rnti;
 }
 
 static uint32_t calc_power_complex(const int16_t *x, const int16_t *y, const uint32_t size)
