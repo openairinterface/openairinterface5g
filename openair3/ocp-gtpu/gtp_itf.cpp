@@ -1332,9 +1332,6 @@ static int Gtpv1uHandleSupportedExt()
   return rc;
 }
 
-// When end marker arrives, we notify the client with buffer size = 0
-// The client will likely call "delete tunnel"
-// nevertheless we don't take the initiative
 static int Gtpv1uHandleEndMarker(int h, uint8_t *msgBuf)
 {
   Gtpv1uMsgHeaderT *msgHdr = (Gtpv1uMsgHeaderT *)msgBuf;
@@ -1345,42 +1342,16 @@ static int Gtpv1uHandleEndMarker(int h, uint8_t *msgBuf)
   }
 
   pthread_mutex_lock(&globGtp.gtp_lock);
-  // the socket Linux file handler is the instance id
-  getInstRetInt(h);
+  const bool known_teid = globGtp.te2ue_mapping.find(ntohl(msgHdr->teid)) != globGtp.te2ue_mapping.end();
+  pthread_mutex_unlock(&globGtp.gtp_lock);
 
-  auto tunnel = globGtp.te2ue_mapping.find(ntohl(msgHdr->teid));
-
-  if (tunnel == globGtp.te2ue_mapping.end()) {
+  if (!known_teid) {
     LOG_E(GTPU, "[%d] Received a incoming packet on unknown TEID (0x%x) Dropping!\n", h, msgHdr->teid);
-    pthread_mutex_unlock(&globGtp.gtp_lock);
     return GTPNOK;
   }
 
-  // This context is not good for gtp
-  // frame, ... has no meaning
-  // manyother attributes may come from create tunnel
-  protocol_ctxt_t ctxt;
-  ctxt.module_id = 0;
-  ctxt.enb_flag = 1;
-  ctxt.instance = inst->addr.originInstance;
-  ctxt.rntiMaybeUEid = tunnel->second.ue_id;
-  ctxt.frame = 0;
-  ctxt.subframe = 0;
-  ctxt.eNB_index = 0;
-  ctxt.brOption = 0;
-  const srb_flag_t srb_flag = SRB_FLAG_NO;
-  const rb_id_t rb_id = tunnel->second.incoming_rb_id;
-  const mui_t mui = RLC_MUI_UNDEFINED;
-  const confirm_t confirm = RLC_SDU_CONFIRM_NO;
-  const pdcp_transmission_mode_t mode = PDCP_TRANSMISSION_MODE_DATA;
-  const uint32_t sourceL2Id = 0;
-  const uint32_t destinationL2Id = 0;
-  pthread_mutex_unlock(&globGtp.gtp_lock);
-
-  if (!tunnel->second.callBack(&ctxt, srb_flag, rb_id, mui, confirm, 0, NULL, mode, &sourceL2Id, &destinationL2Id))
-    LOG_E(GTPU, "[%d] down layer refused incoming packet\n", h);
-
-  LOG_D(GTPU, "[%d] Received END marker packet for: TEID:0x%x\n", h, ntohl(msgHdr->teid));
+  /* End Marker is a GTP-U signalling message without T-PDU (TS 29.281 §7.1, §7.3.2.1): nothing to pass to PDCP */
+  LOG_W(GTPU, "[%d] TEID 0x%x: End Marker received but procedure not implemented, dropping\n", h, ntohl(msgHdr->teid));
   return !GTPNOK;
 }
 

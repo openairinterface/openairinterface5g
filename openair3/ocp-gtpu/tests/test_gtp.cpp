@@ -311,6 +311,76 @@ TEST(gtp, basic_conn)
   run_basic_test(ue_id, pdu_id, noqfi, num_send, &recv_count, recv_basic_conn, NULL);
 }
 
+static int recv_count_end_marker = 0;
+static bool recv_end_marker(protocol_ctxt_t *ctxt,
+                            const srb_flag_t srb_flagP,
+                            const rb_id_t rb_idP,
+                            const mui_t muiP,
+                            const confirm_t confirmP,
+                            const sdu_size_t size,
+                            unsigned char *const buf,
+                            const pdcp_transmission_mode_t modeP,
+                            const uint32_t *sourceL2Id,
+                            const uint32_t *destinationL2Id)
+{
+  UNUSED(ctxt);
+  UNUSED(srb_flagP);
+  UNUSED(rb_idP);
+  UNUSED(muiP);
+  UNUSED(confirmP);
+  UNUSED(modeP);
+  UNUSED(sourceL2Id);
+  UNUSED(destinationL2Id);
+  EXPECT_EQ(size, 3);
+  EXPECT_NE(buf, nullptr);
+  recv_count_end_marker++;
+  return true;
+}
+
+/* Only G-PDUs carry a T-PDU (TS 29.281 §7.1): an End Marker (§7.3.2) must not reach PDCP, a following G-PDU must */
+TEST(gtp, end_marker_not_delivered)
+{
+  const char *ip1 = "127.0.0.1";
+  const char *ip2 = "127.0.0.2";
+  uint16_t port = 4567;
+  uint32_t ue_id = 30;
+  long pdu_id = 2;
+
+  instance_t ep1 = init_gtp(ip1, port);
+  ASSERT_GE(ep1, 1);
+  instance_t ep2 = init_gtp(ip2, port);
+  ASSERT_GE(ep2, 1);
+
+  transport_layer_addr_t null_addr = {.length = 32};
+  teid_t t1 = newGtpuCreateTunnel(ep1, ue_id, pdu_id, pdu_id, -1, null_addr, recv_end_marker, NULL, NULL);
+  transport_layer_addr_t tl_addr1 = get_tl_addr(AF_INET, ip1);
+  teid_t t2 = newGtpuCreateTunnel(ep2, ue_id, pdu_id, pdu_id, t1, tl_addr1, NULL, NULL, NULL);
+  GtpuUpdateTunnelOutgoingAddressAndTeid(ep1, ue_id, pdu_id, get_addr(AF_INET, ip2), t2);
+
+  const int fd = socket(AF_INET, SOCK_DGRAM, 0);
+  ASSERT_GE(fd, 0);
+  test_sockaddr_t src = get_sock_addr(ip2, 0);
+  ASSERT_EQ(bind(fd, &src.sa, sizeof(src.sin)), 0);
+  test_sockaddr_t dst = get_sock_addr(ip1, port);
+
+  /* TS 29.281 §5.1: 8-octet header, no optional fields, no payload */
+  const uint8_t end_marker[] = {0x30, 254, 0x00, 0x00, (uint8_t)(t1 >> 24), (uint8_t)(t1 >> 16), (uint8_t)(t1 >> 8), (uint8_t)t1};
+  ASSERT_EQ(sendto(fd, end_marker, sizeof(end_marker), 0, &dst.sa, sizeof(dst.sin)), (ssize_t)sizeof(end_marker));
+  usleep(100 * 1000);
+  EXPECT_EQ(recv_count_end_marker, 0);
+
+  uint8_t data[3] = {1, 2, 3};
+  gtpv1uSendDirect(ep2, ue_id, pdu_id, data, sizeof(data), false, false);
+  usleep(100 * 1000);
+  EXPECT_EQ(recv_count_end_marker, 1);
+
+  close(fd);
+  EXPECT_EQ(newGtpuDeleteAllTunnels(ep1, ue_id), 0);
+  EXPECT_EQ(newGtpuDeleteAllTunnels(ep2, ue_id), 0);
+  EXPECT_EQ(gtpv1Term(ep1), 0);
+  EXPECT_EQ(gtpv1Term(ep2), 0);
+}
+
 static int build_gtpu_nrup(uint8_t *out, int out_len, uint32_t teid, gtpu_extension_header_t *ext)
 {
   /* TS 29.281: 8-octet GTP-U header + 4 octets (seq / N-PDU / next ext) because E=1 */
