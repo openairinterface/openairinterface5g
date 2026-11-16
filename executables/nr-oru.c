@@ -56,9 +56,9 @@
 #define HLP_CODEBOOK_NB_BEAMS "number of beams in the O-RU codebook"
 #define HLP_CODEBOOK_WEIGHTS                                                                         \
   "Q15 codebook weights: nb_beams * nb_tx * nb_fh_streams interleaved Re/Im pairs; per beam, the tx" \
-  " antenna row, conjugated, is also the UL Rx combine weight for that RX antenna unless ul_codebook_weights is set"
+  " antenna row is also the UL Rx combine weight for that RX antenna unless ul_codebook_weights is set"
 #define HLP_UL_CODEBOOK_WEIGHTS                                                                                               \
-  "optional UL Rx combine weights, same layout as codebook_weights (conjugated per RX antenna); unset: use codebook_weights." \
+  "optional UL Rx combine weights, same layout as codebook_weights (one weight per RX antenna); unset: use codebook_weights." \
   " Lets DL fan one stream out to all antennas while UL keeps one stream per antenna"
 #define HLP_ORU_THREEQUARTER_FS "set the 3/4 sampling frequency"
 

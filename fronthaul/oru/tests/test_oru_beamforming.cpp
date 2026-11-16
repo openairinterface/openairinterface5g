@@ -255,7 +255,7 @@ static c16_t conj16(c16_t w)
 }
 
 // UL Rx beamforming: per-antenna FFT output combined into one beam stream in the frequency
-// domain, out[k] = conj(w[0])*X0[k] + conj(w[1])*X1[k], the same saturating multiply-accumulate as
+// domain, out[k] = w[0]*X0[k] + w[1]*X1[k], the same saturating multiply-accumulate as
 // the DL codebook path. The inputs are FFT windows (what nr_symbol_fep_ul() produces per antenna).
 TEST(oru_beamforming, ul_combine_two_antennas)
 {
@@ -273,8 +273,8 @@ TEST(oru_beamforming, ul_combine_two_antennas)
   combine_ul_beam_fd(fft, 2, 0, N_SC, &cb, 0, 0, out);
 
   for (int i = 0; i < N_SC; i++) {
-    c16_t term0 = c16mulShift(((c16_t *)buf0)[i], conj16(cb.w[0][0][0]), 15);
-    c16_t term1 = c16mulShift(((c16_t *)buf1)[i], conj16(cb.w[0][1][0]), 15);
+    c16_t term0 = c16mulShift(((c16_t *)buf0)[i], cb.w[0][0][0], 15);
+    c16_t term1 = c16mulShift(((c16_t *)buf1)[i], cb.w[0][1][0], 15);
     EXPECT_EQ(out[i].r, (int16_t)(term0.r + term1.r));
     EXPECT_EQ(out[i].i, (int16_t)(term0.i + term1.i));
   }
@@ -300,8 +300,8 @@ TEST(oru_beamforming, ul_combine_two_beams)
   combine_ul_beam_fd(fft, 1, 0, N_SC, &cb, 1, 0, out1);
 
   for (int i = 0; i < N_SC; i++) {
-    c16_t exp0 = c16mulShift(((c16_t *)buf)[i], conj16(cb.w[0][0][0]), 15);
-    c16_t exp1 = c16mulShift(((c16_t *)buf)[i], conj16(cb.w[1][0][0]), 15);
+    c16_t exp0 = c16mulShift(((c16_t *)buf)[i], cb.w[0][0][0], 15);
+    c16_t exp1 = c16mulShift(((c16_t *)buf)[i], cb.w[1][0][0], 15);
     EXPECT_EQ(out0[i].r, exp0.r);
     EXPECT_EQ(out0[i].i, exp0.i);
     EXPECT_EQ(out1[i].r, exp1.r);
@@ -331,16 +331,16 @@ TEST(oru_beamforming, ul_combine_fallbacks)
   c16_t out_beam[N_SC];
   combine_ul_beam_fd(fft, 1, 0, N_SC, &cb, 99, 0, out_beam); // beam out of range
   for (int i = 0; i < N_SC; i++) {
-    c16_t expected = c16mulShift(((c16_t *)buf)[i], conj16(cb.w[0][0][0]), 15);
+    c16_t expected = c16mulShift(((c16_t *)buf)[i], cb.w[0][0][0], 15);
     EXPECT_EQ(out_beam[i].r, expected.r);
     EXPECT_EQ(out_beam[i].i, expected.i);
   }
 }
 
-// Beam direction, not just arithmetic: a UE in the direction of DL beam 1 is received through a
-// channel proportional to beam 1's weights, X_a = w1[a] * s. Combining with beam 1 must recover s
-// at full array gain, and the orthogonal beam 2 must null it. (Combining with w instead of w^H
-// swaps the two: beam 1 would null the UE it serves.)
+// Beam direction, not just arithmetic: DL beam 1 reaches a UE with channel h when w1 is
+// proportional to conj(h), and the UL channel is the same h, so X_a = conj(w1[a]) * s. Combining
+// with beam 1 must recover s at full array gain, and the orthogonal beam 2 must null it.
+// (Combining with w^H instead of w swaps the two: beam 1 would null the UE it serves.)
 TEST(oru_beamforming, ul_combine_steers_to_dl_beam_direction)
 {
   const int16_t a = 23170; // 1/sqrt(2): unit-norm 2-element beams
@@ -355,8 +355,8 @@ TEST(oru_beamforming, ul_combine_steers_to_dl_beam_direction)
   const c16_t sig = {.r = 12000, .i = -7000};
   c16_t x0[N_SC], x1[N_SC];
   for (int i = 0; i < N_SC; i++) {
-    x0[i] = c16mulShift(sig, cb.w[0][0][0], 15);
-    x1[i] = c16mulShift(sig, cb.w[0][1][0], 15);
+    x0[i] = c16mulShift(sig, conj16(cb.w[0][0][0]), 15);
+    x1[i] = c16mulShift(sig, conj16(cb.w[0][1][0]), 15);
   }
   const c16_t *fft[2] = {x0, x1};
 
@@ -390,7 +390,7 @@ TEST(oru_beamforming, ul_combine_bin_range_only)
   const int k0 = 6, nk = 10;
   combine_ul_beam_fd(fft, 1, k0, nk, &cb, 0, 0, out);
   for (int i = 0; i < N_SC; i++) {
-    c16_t expected = i >= k0 && i < k0 + nk ? c16mulShift(((c16_t *)buf)[i], conj16(cb.w[0][0][0]), 15) : sentinel;
+    c16_t expected = i >= k0 && i < k0 + nk ? c16mulShift(((c16_t *)buf)[i], cb.w[0][0][0], 15) : sentinel;
     EXPECT_EQ(out[i].r, expected.r) << i;
     EXPECT_EQ(out[i].i, expected.i) << i;
   }

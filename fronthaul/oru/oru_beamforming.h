@@ -43,9 +43,9 @@ void combine_dl_streams(c16_t **txDataF,
                         c16_t rotation);
 
 // UL Rx beamforming: combine per-antenna FFT output into one beam stream over bins [k0, k0 + nk),
-// out[k] = sum_a conj(w[beam][a][stream]) * fft_data[a][k]. The codebook holds transmit weights: a
-// UE in the direction of DL beam w is received through a channel proportional to w, so the matched
-// receive combiner for the same beam is w^H. Bins outside the range are left untouched.
+// out[k] = sum_a w[beam][a][stream] * fft_data[a][k]. The codebook holds transmit weights: DL beam w
+// reaches a UE with channel h when w is proportional to conj(h), and the UL channel is the same h, so
+// the matched receive combiner for the same beam is w itself. Bins outside the range are left untouched.
 void combine_ul_beam_fd(const c16_t *const rxdataF[],
                         int nb_rx,
                         int k0,
