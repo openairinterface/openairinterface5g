@@ -249,6 +249,7 @@ void reset_mac_inst(NR_UE_MAC_INST_t *nr_mac)
 
   // cancel any triggered Buffer Status Reporting procedure
   nr_mac->scheduling_info.BSR_reporting_active = NR_BSR_TRIGGER_NONE;
+  nr_mac->scheduling_info.regularBSR_trigger_lcid = 0;
 
   // cancel any triggered Power Headroom Reporting procedure
   nr_mac->scheduling_info.phr_info.phr_reporting = 0;
