@@ -44,10 +44,22 @@ static inline uint8_t mkDigit(unsigned char in) {
   return 0;
 }
 
-static inline void to_hex(char *in, uint8_t *out, int size) {
-  for (size_t i=0; in[i]!=0 && i < size*2 ; i+=2) {
-    *out++=(mkDigit(in[i]) << 4) | mkDigit(in[i+1]);
-  }
+/* converts the hex string of USIM parameter name into at most size bytes. If exact is false,
+ * a shorter string is accepted and the remaining bytes stay zero */
+static void to_hex(const char *name, const char *in, uint8_t *out, int size, bool exact)
+{
+  const size_t len = strlen(in);
+  const size_t max = (size_t)size * 2;
+  AssertFatal(len % 2 == 0 && len <= max && (!exact || len == max),
+              "USIM %s: expected %s%zu hex digits, got %zu\n",
+              name,
+              exact ? "" : "an even number of at most ",
+              max,
+              len);
+  for (size_t i = 0; i < len; i++)
+    AssertFatal(isxdigit((unsigned char)in[i]), "USIM %s: character %zu is not a hex digit\n", name, i);
+  for (size_t i = 0; i < len; i += 2)
+    *out++ = (mkDigit(in[i]) << 4) | mkDigit(in[i + 1]);
 }
 
 uicc_t *init_uicc(char *sectionName) {
@@ -60,11 +72,15 @@ uicc_t *init_uicc(char *sectionName) {
   int ret = config_get(config_get_if(), uicc_params, sizeofArray(uicc_params), sectionName);
   AssertFatal(ret >= 0, "configuration couldn't be performed for uicc name: %s", sectionName);
   LOG_I(SIM, "UICC simulation: IMSI=%s, IMEISV=%s, Ki=%s, OPc=%s\n", uicc->imsiStr, uicc->imeisvStr, uicc->keyStr, uicc->opcStr);
-  to_hex(uicc->keyStr,uicc->key, sizeof(uicc->key) );
-  to_hex(uicc->opcStr,uicc->opc, sizeof(uicc->opc) );
-  to_hex(uicc->sqnStr,uicc->sqn, sizeof(uicc->sqn) );
-  to_hex(uicc->amfStr,uicc->amf, sizeof(uicc->amf) );
-  to_hex(uicc->home_network_public_keyStr, uicc->home_network_public_key, sizeof(uicc->home_network_public_key));
+  to_hex("key", uicc->keyStr, uicc->key, sizeof(uicc->key), true);
+  to_hex("opc", uicc->opcStr, uicc->opc, sizeof(uicc->opc), true);
+  to_hex("sqn", uicc->sqnStr, uicc->sqn, sizeof(uicc->sqn), false);
+  to_hex("amf", uicc->amfStr, uicc->amf, sizeof(uicc->amf), false);
+  to_hex("home_network_public_key",
+         uicc->home_network_public_keyStr,
+         uicc->home_network_public_key,
+         sizeof(uicc->home_network_public_key),
+         false);
   return uicc;
 }
 
