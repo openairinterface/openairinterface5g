@@ -1559,6 +1559,7 @@ int main(int argc, char **argv)
   free(nrPHY_vars_UE_g);
 
   free_nrLDPC_coding_interface(&gNB->nrLDPC_coding_interface);
+  end_configmodule(uniqCfg);
 
   if (output_fd)
     fclose(output_fd);

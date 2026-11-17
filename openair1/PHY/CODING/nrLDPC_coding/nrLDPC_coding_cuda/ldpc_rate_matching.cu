@@ -6,6 +6,7 @@
 #include "PHY/gpu_compat.h"
 #include "PHY/gpu_simd_intrin_compat.h"
 #include "openair1/PHY/CODING/nrLDPC_coding/nrLDPC_coding_segment/nr_rate_matching.h"
+#include "openair1/PHY/CODING/nrLDPC_decoder/nrLDPCdecoder_defs.h"
 
 __device__ __forceinline__ int clamp_i16_to_i8(int x)
 {
@@ -330,7 +331,7 @@ extern "C" int nr_rate_matching_ldpc_rx_cuda(uint32_t Tbslbrm,
                                              gpuStream_t *s,
                                              int8_t sidx)
 {
-  if (C == 0 || C > 132) {
+  if (C == 0 || C > NR_LDPC_MAX_NUM_CB) {
     printf("nr_rate_matching: invalid parameter C %d\n", C);
     exit(-1);
   }

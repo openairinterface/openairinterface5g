@@ -86,6 +86,7 @@ __device__ __forceinline__ void bnProcKernel_BG1_int8_Gn_Node_R13(const int8_t *
   }
 
   uint32_t saturated_llr = saturate_and_pack(MsgSumLo, MsgSumHi);
+  ((int32_t *)(d_llrRes))[lane] = saturated_llr; // posterior, for early termination
 
   uint32_t BricksToBeGet;
   if (BnGrpIdx == 1) {
@@ -161,6 +162,7 @@ __device__ __forceinline__ void bnProcKernel_BG1_int8_Gn_Node_R23(const int8_t *
   }
 
   uint32_t saturated_llr = saturate_and_pack(MsgSumLo, MsgSumHi);
+  ((int32_t *)(d_llrRes))[lane] = saturated_llr; // posterior, for early termination
 
   uint32_t BricksToBeGet;
   if (BnGrpIdx == 1) {
@@ -236,6 +238,7 @@ __device__ __forceinline__ void bnProcKernel_BG1_int8_Gn_Node_R89(const int8_t *
   }
 
   uint32_t saturated_llr = saturate_and_pack(MsgSumLo, MsgSumHi);
+  ((int32_t *)(d_llrRes))[lane] = saturated_llr; // posterior, for early termination
 
   uint32_t BricksToBeGet;
   if (BnGrpIdx == 1) {
@@ -368,6 +371,8 @@ __device__ __forceinline__ void bnProcKernel_BG1_int8_Gn_Edge(const int8_t *__re
   }
 
   uint32_t saturated_llr = saturate_and_pack(MsgSumLo, MsgSumHi);
+  if (MsgIdx == 0) // posterior, for early termination
+    ((int32_t *)(d_llrRes))[lane] = saturated_llr;
 
   uint32_t BricksToBeGet;
   if (GrpIdx == 1) {

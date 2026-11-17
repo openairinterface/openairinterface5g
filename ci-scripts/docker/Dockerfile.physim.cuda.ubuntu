@@ -32,4 +32,4 @@ RUN cmake -GNinja -DENABLE_PHYSIM_TESTS=ON -DENABLE_TESTS=ON \
         -DUSE_ATS_MEMORY=OFF \
         -DCMAKE_RUNTIME_OUTPUT_DIRECTORY=/oai-ran/cmake_targets/ran_build/build \
         .. && \
-        ninja ldpctest nr_ulsim nr_dlsim
+        ninja ldpctest nr_ulsim nr_ulschsim nr_dlsim

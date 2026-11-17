@@ -83,6 +83,8 @@ int main(int argc, char **argv)
   uint8_t Nl = 1;
   uint8_t max_ldpc_iterations = 5;
   uint8_t mcs_table = 0;
+  int nb_tb = 1; // transport blocks decoded together in one decoder call
+  int n_threads = 0; // thread pool threads, 0: decoding in the calling thread
 
   double DS_TDL = .03;
 
@@ -94,8 +96,7 @@ int main(int argc, char **argv)
   randominit();
 
   int c;
-  while ((c = getopt(argc, argv, "--:O:hg:n:s:S:py:z:M:N:R:F:m:l:q:r:W:")) != -1) {
-
+  while ((c = getopt(argc, argv, "--:O:hg:n:s:S:py:z:M:N:R:F:m:l:q:r:W:I:T:C:")) != -1) {
     /* ignore long options starting with '--', option '-O' and their arguments that are handled by configmodule */
     /* with this opstring getopt returns 1 for non-option arguments, refer to 'man 3 getopt' */
     if (c == 1 || c == '-' || c == 'O')
@@ -226,6 +227,18 @@ int main(int argc, char **argv)
         nb_symb_sch = atoi(optarg);
         break;
 
+      case 'I':
+        max_ldpc_iterations = atoi(optarg);
+        break;
+
+      case 'T':
+        nb_tb = atoi(optarg);
+        break;
+
+      case 'C':
+        n_threads = atoi(optarg);
+        break;
+
       case 'q':
         mcs_table = atoi(optarg);
         break;
@@ -242,11 +255,13 @@ int main(int argc, char **argv)
             "%s -h(elp) -g channel_model -n n_frames -s snr0 -S snr1 -p(extended_prefix) -y TXant -z RXant -M -N cell_id -R -F "
             "input_filename -m -l -r\n",
             argv[0]);
+        printf("-C Number of threads of the thread pool (default 0: decoding in the calling thread)\n");
         printf("-F Input filename (.txt format) for RX conformance testing\n");
         printf(
             "-g [A,B,C,D,E,F,G] Use 3GPP SCM (A,B,C,D) or 36-101 (E-EPA,F-EVA,G-ETU) models (ignores delay spread and Ricean "
             "factor)\n");
         printf("-h This message\n");
+        printf("-I Maximum LDPC decoder iterations\n");
         printf("-l number of symbol\n");
         printf("-m MCS\n");
         printf("-M Multiple SSB positions in burst\n");
@@ -257,6 +272,8 @@ int main(int argc, char **argv)
         printf("-R N_RB_UL\n");
         printf("-s Starting SNR, runs from SNR0 to SNR0 + 5 dB.  If n_frames is 1 then just SNR is simulated\n");
         printf("-S Ending SNR, runs from SNR0 to SNR1\n");
+        printf("-T Number of transport blocks per decoder call, each with its own noise (default 1). With more than one,\n");
+        printf("   they are also decoded one per call: decoding times compared, exit status 1 if the results differ\n");
         printf("-W number of layer\n");
         printf("-y Number of TX antennas used in eNB\n");
         printf("-z Number of RX antennas used in UE\n");
@@ -294,7 +311,7 @@ int main(int argc, char **argv)
   RC.gNB[0] = calloc_or_fail(1, sizeof(PHY_VARS_gNB));
   PHY_VARS_gNB *gNB = RC.gNB[0];
 
-  initTpool("n", &gNB->threadPool, true);
+  initFloatingCoresTpool(n_threads, &gNB->threadPool, false, "gNB-tpool");
   frame_parms = &gNB->frame_parms; //to be initialized I suppose (maybe not necessary for PBCH)
   frame_parms->N_RB_DL = N_RB_DL;
   frame_parms->N_RB_UL = N_RB_UL;
@@ -347,7 +364,6 @@ int main(int argc, char **argv)
   NR_UL_gNB_HARQ_t *harq_process_gNB = ulsch_gNB->harq_process;
   ulsch_gNB->harq_pid = 0;
   nfapi_nr_pusch_pdu_t *rel15_ul = &harq_process_gNB->ulsch_pdu;
-  NR_gNB_PUSCH *pusch_vars = &gNB->pusch_vars[UE_id];
 
   nr_phy_data_tx_t phy_data = {0};
   NR_UE_ULSCH_t *ulsch_ue = &phy_data.ulsch;
@@ -355,8 +371,7 @@ int main(int argc, char **argv)
   mod_order = nr_get_Qm_ul(Imcs, mcs_table);
   code_rate = nr_get_code_rate_ul(Imcs, mcs_table);
   available_bits = nr_get_G(nb_rb, nb_symb_sch, nb_re_dmrs, length_dmrs, 0, mod_order, Nl);
-  TBS = nr_compute_tbs(mod_order,code_rate, nb_rb, nb_symb_sch, nb_re_dmrs*length_dmrs, 0, 0, Nl);
-  pusch_vars->uci_info.G_ulsch = available_bits;
+  TBS = nr_compute_tbs(mod_order, code_rate, nb_rb, nb_symb_sch, nb_re_dmrs * length_dmrs, 0, 0, Nl);
   printf("\nAvailable bits %u TBS %u mod_order %d\n", available_bits, TBS, mod_order);
 
   /////////// setting rel15_ul parameters ///////////
@@ -377,8 +392,6 @@ int main(int argc, char **argv)
   rel15_ul->pdu_bit_map = PUSCH_PDU_BITMAP_PUSCH_DATA;
   ///////////////////////////////////////////////////
 
-  double modulated_input[16 * 68 * 384]; // [hna] 16 segments, 68*Zc
-  short channel_output_uncoded[16 * 68 * 384];
   unsigned int errors_bit_uncoded = 0;
 
   /////////////////////////[adk] preparing UL harq_process parameters/////////////////////////
@@ -429,68 +442,101 @@ int main(int argc, char **argv)
   ///////////
   ////////////////////////////////////////////////////////////////////
 
+  // nb_tb transport blocks decoded together: ULSCH 0 to nb_tb - 1, the same PUSCH, each with its own noise. With more than
+  // one, each is decoded again alone (one per decoder call): the outcome (CRC passed or not) and the payload of the
+  // transport blocks that passed must be the same. The code blocks of a failed transport block are not compared: a decoder
+  // may stop decoding them once one has failed, depending on the thread timing.
+  AssertFatal(nb_tb >= 1 && nb_tb <= gNB->max_nb_pusch, "-T %d: 1 to %d transport blocks\n", nb_tb, gNB->max_nb_pusch);
+  int ulsch_ids[nb_tb];
+  for (int k = 0; k < nb_tb; k++) {
+    ulsch_ids[k] = k;
+    gNB->ulsch[k].harq_pid = 0;
+    gNB->ulsch[k].harq_process->ulsch_pdu = *rel15_ul;
+    gNB->pusch_vars[k].uci_info.G_ulsch = available_bits;
+  }
+  const int tb_bytes = TBS >> 3;
+  uint8_t *b_together = calloc_or_fail(nb_tb, tb_bytes);
+  bool ok_together[nb_tb];
+  int n_mismatch = 0, n_mismatch_total = 0;
+  time_stats_t ts_together = {0}, ts_alone = {0};
+  if (nb_tb > 1)
+    cpu_meas_enabled = 1;
+
   for (SNR = snr0; SNR < snr1 && !stop; SNR += snr_step) {
     errors_bit_uncoded = 0;
     n_errors = 0;
     n_false_positive = 0;
+    n_mismatch = 0;
+    reset_meas(&ts_together);
+    reset_meas(&ts_alone);
+    SNR_lin = pow(10, SNR / 10.0);
+    sigma = 1.0 / sqrt(2 * SNR_lin);
 
     for (trial = 0; trial < n_trials && !stop; trial++) {
-      memset(pusch_vars->ulsch_llrs, 0, (8 * ((3 * 8 * 6144) + 12)) * sizeof(int16_t));
-      harq_process_gNB->harq_to_be_cleared = true;
-
-      for (i = 0; i < available_bits; i++) {
-
-#ifdef DEBUG_CODER
-        if ((i&0xf)==0)
-          printf("\ne %d..%d:    ",i,i+15);
-#endif
-
-        if ((harq_process_ul_ue->f[i >> 3] & (1 << (i & 7))) == 0)
-          modulated_input[i] = 1.0;        ///sqrt(2);  //QPSK
-        else
-          modulated_input[i] = -1.0;        ///sqrt(2);
-  
-#if 1
-        SNR_lin = pow(10, SNR / 10.0);
-        sigma = 1.0 / sqrt(2 * SNR_lin);
-        pusch_vars->ulsch_llrs[i] = (int16_t) quantize(sigma / 4.0 / 4.0,
-                                                modulated_input[i] + sigma * gaussdouble(0.0, 1.0),
-                                                qbits);
-#else
-        pusch_vars->ulsch_llrs[i] = (int16_t) quantize(0.01, modulated_input[i], qbits);
-#endif
-
-        //Uncoded BER
-        if (pusch_vars->ulsch_llrs[i] < 0)
-          channel_output_uncoded[i] = 1;  //QPSK demod
-        else
-          channel_output_uncoded[i] = 0;
-
-        if (channel_output_uncoded[i] != harq_process_ul_ue->f[i])
-          errors_bit_uncoded = errors_bit_uncoded + 1;
-      }
-#ifdef DEBUG_CODER
-      printf("\n");
-      exit(-1);
-#endif
-      nr_ulsch_decoding(gNB, frame_parms, frame, subframe, &UE_id, 1);
-      if (harq_process_gNB->processedSegments == harq_process_gNB->C) {
-        bool crc_valid = check_crc(harq_process_gNB->b, lenWithCrc(1, TBS << 3), crcType(1, TBS << 3));
-        if (!crc_valid) {
-          n_false_positive++;
+      for (int k = 0; k < nb_tb; k++) {
+        int16_t *llr = gNB->pusch_vars[k].ulsch_llrs;
+        memset(llr, 0, (8 * ((3 * 8 * 6144) + 12)) * sizeof(int16_t));
+        gNB->ulsch[k].harq_process->harq_to_be_cleared = true;
+        for (i = 0; i < available_bits; i++) {
+          const int bit = (harq_process_ul_ue->f[i >> 3] >> (i & 7)) & 1;
+          llr[i] = quantize(sigma / 4.0 / 4.0, (bit ? -1.0 : 1.0) + sigma * gaussdouble(0.0, 1.0), qbits); // BPSK
+          if ((llr[i] < 0) != bit)
+            errors_bit_uncoded++;
         }
-      } else {
-        n_errors++;
+      }
+
+      start_meas(&ts_together);
+      nr_ulsch_decoding(gNB, frame_parms, frame, subframe, ulsch_ids, nb_tb);
+      stop_meas(&ts_together);
+      for (int k = 0; k < nb_tb; k++) {
+        NR_UL_gNB_HARQ_t *harq = gNB->ulsch[k].harq_process;
+        ok_together[k] = harq->processedSegments == harq->C;
+        if (ok_together[k]) {
+          if (!check_crc(harq->b, lenWithCrc(1, TBS), crcType(1, TBS)))
+            n_false_positive++;
+        } else {
+          n_errors++;
+        }
+        memcpy(b_together + k * tb_bytes, harq->b, tb_bytes);
+      }
+
+      for (int k = 0; nb_tb > 1 && k < nb_tb; k++) {
+        NR_UL_gNB_HARQ_t *harq = gNB->ulsch[k].harq_process;
+        harq->harq_to_be_cleared = true;
+        start_meas(&ts_alone);
+        nr_ulsch_decoding(gNB, frame_parms, frame, subframe, &ulsch_ids[k], 1);
+        stop_meas(&ts_alone);
+        const bool ok = harq->processedSegments == harq->C;
+        if (ok != ok_together[k] || (ok && memcmp(harq->b, b_together + k * tb_bytes, tb_bytes)))
+          n_mismatch++;
       }
     }
 
+    const int n_tb = n_trials * nb_tb;
     printf("*****************************************\n");
-    printf("SNR %f, uncoded BER %f, BLER %f (false positive %f)\n", SNR,
-           (float) errors_bit_uncoded / (float) available_bits / (float) n_trials,
-           (float) n_errors / (float) n_trials,
-           (float) n_false_positive / (float) n_trials);
+    printf("SNR %f, uncoded BER %f, BLER %f (false positive %f)\n",
+           SNR,
+           (float)errors_bit_uncoded / (float)available_bits / (float)n_tb,
+           (float)n_errors / (float)n_tb,
+           (float)n_false_positive / (float)n_tb);
+    if (nb_tb > 1) {
+      const double us_together = get_time_meas_us(&ts_together); // per call of nb_tb transport blocks
+      const double us_alone = get_time_meas_us(&ts_alone) * nb_tb; // nb_tb calls of one transport block
+      printf(
+          "%d TBs per decoder call, %d threads: %.1f us per call (%.0f TB/s); "
+          "one TB per call: %.1f us (%.0f TB/s); speedup %.2f\n",
+          nb_tb,
+          n_threads,
+          us_together,
+          nb_tb * 1e6 / us_together,
+          us_alone,
+          nb_tb * 1e6 / us_alone,
+          us_alone / us_together);
+      printf("%d of %d TBs decoded differently in one call and one per call\n", n_mismatch, n_tb);
+    }
     printf("*****************************************\n");
     printf("\n");
+    n_mismatch_total += n_mismatch;
 
     if (n_errors == 0) {
       printf("PUSCH test OK\n");
@@ -499,6 +545,7 @@ int main(int argc, char **argv)
     }
     printf("\n");
   }
+  free(b_together);
 
   free_nr_ue_ul_harq(UE->ul_harq_processes, NR_MAX_HARQ_PROCESSES, UE->frame_parms.N_RB_UL, UE->frame_parms.nb_antennas_tx);
 
@@ -523,5 +570,5 @@ int main(int argc, char **argv)
   loader_reset();
   logTerm();
 
-  return (n_errors);
+  return n_mismatch_total > 0 ? 1 : n_errors;
 }

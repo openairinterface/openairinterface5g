@@ -74,4 +74,23 @@ typedef struct {
   int8_t* p_out_ptr;
 } ldpc_cuda_bridge_t;
 
+// early termination CRC kernel: threads per code block, bytes of a code block's hard decision (K = 22 Zc bits at most)
+// and bytes per thread
+#define LDPC_ET_THREADS 256
+#define LDPC_ET_MAX_KB (22 * 384 / 8)
+#define LDPC_ET_MAX_L ((LDPC_ET_MAX_KB + LDPC_ET_THREADS - 1) / LDPC_ET_THREADS)
+
+// launch-dimension slots (Kdim_* arrays), indexed by stream: up to 8 decoder contexts, then the background graph recorder
+#define LDPC_CUDA_KDIM_SLOTS 9
+#define LDPC_ET_REC_SLOT 8
+
+// Device-side early termination state, one per decoder context. The graphs are recorded for a number of code blocks
+// rounded up to a bucket; the TB parameters below are set before each decode by ldpc_et_setup_kernel().
+typedef struct {
+  uint8_t done[MAX_NUM_NR_DLSCH_SEGMENTS_PER_LAYER * 4]; // code block passed its CRC (or padding): skipped by every kernel
+  uint32_t nbytes; // bytes covered by the CRC check (Kprime / 8)
+  uint32_t crc_deg, crc_low; // CRC generator x^deg + low
+  const uint32_t* xpow; // CRC combining factors (see ldpc_et_crc_kernel())
+} ldpc_cuda_et_state_t;
+
 #endif /* NRLDPC_CUDA_SHARED_PARAM_H_ */

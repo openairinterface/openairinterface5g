@@ -165,6 +165,38 @@ $ git grep -n 'RX PUSCH time' ../
 ../openair1/SIMULATION/NR_PHY/ulsim.c:1714:      printStatIndent(&gNB->rx_pusch_stats, "RX PUSCH time");
 ```
 
+### Several transport blocks per decoder call
+
+`nr_ulschsim` can decode several transport blocks (PUSCHs) in one call to the
+LDPC coding library, as the gNB does when it receives several UEs in a slot,
+without the need of an end-to-end setup:
+
+    ./nr_ulschsim -R 106 -m9 -s2 -S3.5 -n100 -T4 -C4
+
+- `-T` sets the number of transport blocks per call (default 1). Each one gets
+  its own noise.
+- `-C` sets the number of threads of the thread pool. The default, 0, decodes
+  in the calling thread, so the transport blocks are not decoded concurrently.
+
+With more than one transport block, each is decoded again alone, one per call.
+For every SNR the simulator then prints:
+
+- the average time per call with all transport blocks, and with one per call,
+  in transport blocks per second;
+- how many transport blocks were decoded differently.
+
+The outcome (CRC passed or not) and the payload of the transport blocks that
+passed must be the same in both cases. The exit status is 1 if they are not.
+The BLER counts all the transport blocks. Output with the default library on a
+GH200:
+
+```
+4 TBs per decoder call, 4 threads: 236.7 us per call (16900 TB/s); one TB per call: 481.5 us (8307 TB/s); speedup 2.03
+0 of 400 TBs decoded differently in one call and one per call
+```
+
+Any LDPC coding library can be compared this way, e.g. `--loader.ldpc.shlibversion _cuda`.
+
 ## Adding a New Physim Test
 
 To define a new test or modify existing ones, update the following file:

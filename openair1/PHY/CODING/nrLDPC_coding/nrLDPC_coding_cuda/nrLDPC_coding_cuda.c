@@ -9,6 +9,8 @@
 #include "openair1/PHY/CODING/nrLDPC_defs.h"
 #include "openair1/PHY/CODING/nrLDPC_decoder/nrLDPC_types.h"
 #include "openair1/PHY/CODING/nrLDPC_coding/nrLDPC_coding_interface.h"
+#include "common/utils/threadPool/thread-pool.h"
+#include "common/utils/threadPool/task_ans.h"
 
 /* segment interface */
 extern int32_t LDPCinit_cuda();
@@ -110,6 +112,18 @@ int nrLDPC_coding_encoder(nrLDPC_slot_encoding_parameters_t *slot_params)
 }
 
 void nr_process_decode_segment_cuda(nrLDPC_TB_decoding_parameters_t *);
+typedef struct {
+  nrLDPC_TB_decoding_parameters_t *tb;
+  task_ans_t *ans;
+} cuda_tb_task_t;
+
+static void cuda_decode_tb_task(void *arg)
+{
+  cuda_tb_task_t *t = arg;
+  nr_process_decode_segment_cuda(t->tb);
+  completed_task_ans(t->ans);
+}
+
 int32_t nrLDPC_coding_decoder(nrLDPC_slot_decoding_parameters_t *slot_params)
 {
   // this should be the same as previous nrLDPC_coding_decoder() in nrLDPC_coding_segment_decoder.c
@@ -120,22 +134,41 @@ int32_t nrLDPC_coding_decoder(nrLDPC_slot_decoding_parameters_t *slot_params)
       .threadPool = slot_params->threadPool,
       .TBs = tbCPU,
   };
+  AssertFatal(slot_params->nb_TBs <= 32, "%d TBs, at most 32 supported\n", slot_params->nb_TBs);
   int offset[32];
+  nrLDPC_TB_decoding_parameters_t *tbGPU[32];
+  int nb_gpu = 0;
   for (int pusch_id = 0; pusch_id < slot_params->nb_TBs; pusch_id++) {
     nrLDPC_TB_decoding_parameters_t *tbp = &slot_params->TBs[pusch_id];
     if (tbp->Z >= 128 && tbp->BG == 1) {
-      nr_process_decode_segment_cuda(tbp);
+      tbGPU[nb_gpu++] = tbp;
     } else {
       // this is not handled by CUDA, handle with CPU
       offset[cpu.nb_TBs] = pusch_id;
       cpu.TBs[cpu.nb_TBs++] = *tbp;
     }
   }
+  // TBs decode concurrently, each in its own decoder context (see ldpc_cuda_ctx_acquire()), in the thread pool; the last
+  // one in this thread unless it decodes the TBs the CPU handles
+  task_ans_t ans;
+  cuda_tb_task_t tasks[32];
+  const int nb_pushed = !slot_params->threadPool ? 0 : (cpu.nb_TBs > 0 ? nb_gpu : (nb_gpu > 1 ? nb_gpu - 1 : 0));
+  if (nb_pushed > 0) {
+    init_task_ans(&ans, nb_pushed);
+    for (int i = 0; i < nb_pushed; i++) {
+      tasks[i] = (cuda_tb_task_t){.tb = tbGPU[i], .ans = &ans};
+      pushTpool(slot_params->threadPool, (task_t){.func = cuda_decode_tb_task, .args = &tasks[i]});
+    }
+  }
+  for (int i = nb_pushed; i < nb_gpu; i++)
+    nr_process_decode_segment_cuda(tbGPU[i]);
   if (cpu.nb_TBs > 0) {
     ldpc_cpu.nrLDPC_coding_decoder(&cpu);
     for (int i = 0; i < cpu.nb_TBs; ++i)
       slot_params->TBs[offset[i]] = cpu.TBs[i];
   }
+  if (nb_pushed > 0)
+    join_task_ans(&ans);
   return 0;
 }
 
