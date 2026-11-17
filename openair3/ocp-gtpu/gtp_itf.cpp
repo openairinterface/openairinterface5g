@@ -1616,12 +1616,12 @@ static bool gtpv1uReceiveHandleMessage(int h, uint8_t buf[VLEN][BUFSIZE])
     uint8_t *udpData = buf[i];
     if (udpDataLen < (int)sizeof(Gtpv1uMsgHeaderT)) {
       LOG_W(GTPU, "[%d] received malformed gtp packet \n", h);
-      return true;
+      continue;
     }
     Gtpv1uMsgHeaderT *msg = (Gtpv1uMsgHeaderT *)udpData;
     if ((int)(ntohs(msg->msgLength) + sizeof(Gtpv1uMsgHeaderT)) != udpDataLen) {
       LOG_W(GTPU, "[%d] received malformed gtp packet length\n", h);
-      return true;
+      continue;
     }
     LOG_D(GTPU, "[%d] Received GTP data, msg type: %x\n", h, msg->msgType);
     switch (msg->msgType) {
