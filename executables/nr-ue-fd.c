@@ -456,8 +456,11 @@ static void *UE_fd_thread(void *arg)
 
     if (get_nrUE_params()->num_dl_actors > 0)
       pushNotifiedFIFO(&f->dl_actors[curMsg.proc.nr_slot_rx % get_nrUE_params()->num_dl_actors].fifo, newRx);
-    else
+    else {
+      // inline: the actor thread is not there to free the message
       newRx->processingFunc(curMsgRx);
+      delNotifiedFIFO_elt(newRx);
+    }
 
     // writeBlockSize 0: processSlotTX()'s RU_write() does nothing, the Low-PHY transmits.
     notifiedFIFO_elt_t *newTx = newNotifiedFIFO_elt(sizeof(nr_rxtx_thread_data_t), 0, 0, fd_process_slot_tx);
