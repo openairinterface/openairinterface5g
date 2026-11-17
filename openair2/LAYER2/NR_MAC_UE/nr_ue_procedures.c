@@ -727,11 +727,10 @@ static bool get_cw_info(NR_UE_MAC_INST_t *mac,
   }
 
   // Bound the total before splitting layers or changing HARQ history.
-  int max_mimo_layers = NR_MAX_NB_LAYERS;
-  if (mac->uecap_maxMIMO_PDSCH_layers > 0)
-    max_mimo_layers = min(max_mimo_layers, mac->uecap_maxMIMO_PDSCH_layers);
-  if (mac->sc_info.maxMIMO_Layers_PDSCH)
-    max_mimo_layers = min(max_mimo_layers, *mac->sc_info.maxMIMO_Layers_PDSCH);
+  // The network sets maxMIMO-Layers within the UE capability (TS 38.331 6.3.2 PDSCH-ServingCellConfig),
+  // so it takes precedence; same rule as for TBS_LBRM.
+  int max_mimo_layers = mac->sc_info.maxMIMO_Layers_PDSCH ? *mac->sc_info.maxMIMO_Layers_PDSCH : mac->uecap_maxMIMO_PDSCH_layers;
+  max_mimo_layers = min(max_mimo_layers, NR_MAX_NB_LAYERS);
   if (Nl == 0 || Nl > max_mimo_layers) {
     LOG_W(NR_MAC, "Rejecting DCI configuring PDSCH with %d layers (maximum %d)\n", Nl, max_mimo_layers);
     return false;
