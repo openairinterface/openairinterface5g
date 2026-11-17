@@ -8,7 +8,11 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
+#include <linux/futex.h>
+#include <limits.h>
 #include <stdbool.h>
+#include <stdatomic.h>
 #include <string.h>
 #include <stdlib.h>
 #include <errno.h>
@@ -22,9 +26,8 @@ typedef struct {
   int magic;
   int num_antennas_tx;
   int num_antennas_rx;
-  uint64_t timestamp;
-  pthread_mutex_t mutex;
-  pthread_cond_t cond;
+  _Atomic uint64_t timestamp;
+  _Atomic uint32_t wake_seq;
 } ShmTDIQChannelData;
 
 typedef struct ShmTDIQChannel_s {
@@ -35,7 +38,7 @@ typedef struct ShmTDIQChannel_s {
   sample_t *rx_iq_data;
   int nb_tx_ant;
   int nb_rx_ant;
-  bool abort;
+  _Atomic bool abort;
 } ShmTDIQChannel;
 
 ShmTDIQChannel *shm_td_iq_channel_create(const char *name, int num_tx_ant, int num_rx_ant)
@@ -70,25 +73,6 @@ ShmTDIQChannel *shm_td_iq_channel_create(const char *name, int num_tx_ant, int n
   channel->nb_rx_ant = num_rx_ant;
   channel->data = shm_ptr;
   channel->type = IQ_CHANNEL_TYPE_SERVER;
-  pthread_mutexattr_t mutex_attr;
-  pthread_condattr_t cond_attr;
-  int ret = pthread_mutexattr_init(&mutex_attr);
-  AssertFatal(ret == 0, "pthread_mutexattr_init() failed: errno %d, %s\n", errno, strerror(errno));
-
-  ret = pthread_condattr_init(&cond_attr);
-  AssertFatal(ret == 0, "pthread_condattr_init() failed: errno %d, %s\n", errno, strerror(errno));
-
-  ret = pthread_mutexattr_setpshared(&mutex_attr, PTHREAD_PROCESS_SHARED);
-  AssertFatal(ret == 0, "pthread_mutexattr_setpshared() failed: errno %d, %s\n", errno, strerror(errno));
-
-  ret = pthread_condattr_setpshared(&cond_attr, PTHREAD_PROCESS_SHARED);
-  AssertFatal(ret == 0, "pthread_condattr_setpshared() failed: errno %d, %s\n", errno, strerror(errno));
-
-  ret = pthread_mutex_init(&shm_ptr->mutex, &mutex_attr);
-  AssertFatal(ret == 0, "pthread_mutex_init() failed: errno %d, %s\n", errno, strerror(errno));
-
-  ret = pthread_cond_init(&shm_ptr->cond, &cond_attr);
-  AssertFatal(ret == 0, "pthread_cond_init() failed: errno %d, %s\n", errno, strerror(errno));
 
   shm_ptr->magic = SHM_MAGIC_NUMBER;
   close(fd);
@@ -160,6 +144,35 @@ ShmTDIQChannel *shm_td_iq_channel_connect(const char *name, int timeout_in_secon
   return channel;
 }
 
+static int shm_futex_wait(_Atomic uint32_t *address, uint32_t expected, const struct timespec *timeout)
+{
+  if (syscall(SYS_futex, address, FUTEX_WAIT, expected, timeout, NULL, 0) == 0)
+    return 0;
+  return errno;
+}
+
+static void shm_futex_wake(_Atomic uint32_t *address)
+{
+  int ret = syscall(SYS_futex, address, FUTEX_WAKE, INT_MAX, NULL, NULL, 0);
+  AssertFatal(ret >= 0, "futex wake failed: %d %s\n", errno, strerror(errno));
+}
+
+static bool shm_remaining_timeout(const struct timespec *deadline, struct timespec *remaining)
+{
+  struct timespec now;
+  int ret = clock_gettime(CLOCK_MONOTONIC, &now);
+  AssertFatal(ret == 0, "clock_gettime failed: %d %s\n", errno, strerror(errno));
+  if (now.tv_sec > deadline->tv_sec || (now.tv_sec == deadline->tv_sec && now.tv_nsec >= deadline->tv_nsec))
+    return false;
+  remaining->tv_sec = deadline->tv_sec - now.tv_sec;
+  remaining->tv_nsec = deadline->tv_nsec - now.tv_nsec;
+  if (remaining->tv_nsec < 0) {
+    remaining->tv_sec--;
+    remaining->tv_nsec += 1000000000;
+  }
+  return true;
+}
+
 IQChannelErrorType shm_td_iq_channel_tx(ShmTDIQChannel *channel,
                                         uint64_t timestamp,
                                         uint64_t num_samples,
@@ -169,7 +182,7 @@ IQChannelErrorType shm_td_iq_channel_tx(ShmTDIQChannel *channel,
   AssertFatal(antenna < channel->nb_tx_ant, "Invalid antenna index %d num_antennas %d\n", antenna, channel->nb_tx_ant);
   ShmTDIQChannelData *data = channel->data;
   // timestamp in the past
-  uint64_t current_time = data->timestamp;
+  uint64_t current_time = atomic_load_explicit(&data->timestamp, memory_order_relaxed);
   if (timestamp < current_time) {
     return CHANNEL_ERROR_TOO_LATE;
   }
@@ -201,7 +214,7 @@ IQChannelErrorType shm_td_iq_channel_rx(ShmTDIQChannel *channel,
   AssertFatal(antenna < channel->nb_rx_ant, "Invalid antenna index %d num_antennas %d\n", antenna, channel->nb_rx_ant);
   ShmTDIQChannelData *data = channel->data;
   // timestamp in the future
-  uint64_t current_time = data->timestamp;
+  uint64_t current_time = atomic_load_explicit(&data->timestamp, memory_order_relaxed);
   if (timestamp > current_time) {
     return CHANNEL_ERROR_TOO_EARLY;
   }
@@ -230,74 +243,74 @@ IQChannelErrorType shm_td_iq_channel_rx(ShmTDIQChannel *channel,
 void shm_td_iq_channel_produce_samples(ShmTDIQChannel *channel, size_t num_samples)
 {
   ShmTDIQChannelData *data = channel->data;
-  mutexlock(data->mutex);
-  data->timestamp += num_samples;
-  condbroadcast(data->cond);
-  mutexunlock(data->mutex);
+  atomic_fetch_add_explicit(&data->timestamp, num_samples, memory_order_relaxed);
+  atomic_fetch_add_explicit(&data->wake_seq, 1, memory_order_release);
+  shm_futex_wake(&data->wake_seq);
 }
 
 int shm_td_iq_channel_wait(ShmTDIQChannel *channel, uint64_t timestamp, uint64_t timeout_uS)
 {
   ShmTDIQChannelData *data = channel->data;
-  size_t current_timestamp = data->timestamp;
-  if (current_timestamp >= timestamp) {
-    return 0;
-  }
-  if (timeout_uS == 0) {
-    mutexlock(data->mutex);
-    while (current_timestamp < timestamp && !channel->abort) {
-      condwait(data->cond, data->mutex);
-      current_timestamp = data->timestamp;
+  struct timespec deadline;
+  if (timeout_uS != 0) {
+    int ret = clock_gettime(CLOCK_MONOTONIC, &deadline);
+    AssertFatal(ret == 0, "clock_gettime failed: %d %s\n", errno, strerror(errno));
+    deadline.tv_sec += timeout_uS / 1000000;
+    deadline.tv_nsec += (timeout_uS % 1000000) * 1000;
+    if (deadline.tv_nsec >= 1000000000) {
+      deadline.tv_sec++;
+      deadline.tv_nsec -= 1000000000;
     }
-    mutexunlock(data->mutex);
-  } else {
-    struct timespec ts = {.tv_sec = 0, .tv_nsec = 0};
-    if (clock_gettime(CLOCK_REALTIME, &ts) != 0) {
-      fprintf(stderr, "Error: clock_gettime failed: %s\n", strerror(errno));
+  }
+
+  for (;;) {
+    /* The acquire load pairs with the release increment in produce and abort. Sampling the
+     * sequence before the abort check closes both orderings: an abort that landed first is
+     * visible here, and one that lands after changes the word so FUTEX_WAIT returns EAGAIN. */
+    uint32_t wake_seq = atomic_load_explicit(&data->wake_seq, memory_order_acquire);
+    if (atomic_load_explicit(&channel->abort, memory_order_relaxed))
+      return 0;
+    if (atomic_load_explicit(&data->timestamp, memory_order_relaxed) >= timestamp)
+      return 0;
+
+    struct timespec remaining;
+    const struct timespec *wait_timeout = NULL;
+    if (timeout_uS != 0) {
+      if (!shm_remaining_timeout(&deadline, &remaining))
+        return 1;
+      wait_timeout = &remaining;
+    }
+
+    int ret = shm_futex_wait(&data->wake_seq, wake_seq, wait_timeout);
+    if (ret == 0 || ret == EAGAIN || ret == EINTR)
+      continue;
+    if (ret == ETIMEDOUT)
       return 1;
-    }
-
-    ts.tv_sec += timeout_uS / 1000000; // Convert microseconds to seconds
-    ts.tv_nsec += (timeout_uS % 1000000) * 1000; // Convert remaining microseconds to nanoseconds
-
-    mutexlock(data->mutex);
-    while (current_timestamp < timestamp && !channel->abort) {
-      int ret = pthread_cond_timedwait(&data->cond, &data->mutex, &ts);
-      if (ret == ETIMEDOUT) {
-        fprintf(stderr, "Error: Timed out waiting for samples.\n");
-        mutexunlock(data->mutex);
-        return 1;
-      } else if (ret != 0) {
-        fprintf(stderr, "Error: pthread_cond_timedwait failed: %s\n", strerror(ret));
-        mutexunlock(data->mutex);
-        return 1;
-      } else {
-        current_timestamp = data->timestamp;
-      }
-    }
-    mutexunlock(data->mutex);
+    fprintf(stderr, "futex wait failed: %s\n", strerror(ret));
+    return 1;
   }
-  return 0;
 }
 
 uint64_t shm_td_iq_channel_get_current_sample(const ShmTDIQChannel *channel)
 {
   ShmTDIQChannelData *data = channel->data;
-  return data->timestamp;
+  return atomic_load_explicit(&data->timestamp, memory_order_relaxed);
 }
 
 void shm_td_iq_channel_abort(ShmTDIQChannel *channel)
 {
   ShmTDIQChannelData *data = channel->data;
-  mutexlock(data->mutex);
-  channel->abort = true;
-  condbroadcast(data->cond);
-  mutexunlock(data->mutex);
+  atomic_store_explicit(&channel->abort, true, memory_order_relaxed);
+  /* A wake on an unchanged word is lost if the waiter samples the word after this wake and
+   * before it sleeps. The increment makes that sleep return EAGAIN. With timeout 0 the
+   * waiter would otherwise stay blocked, which is the shutdown hang. */
+  atomic_fetch_add_explicit(&data->wake_seq, 1, memory_order_release);
+  shm_futex_wake(&data->wake_seq);
 }
 
 bool shm_td_iq_channel_is_aborted(const ShmTDIQChannel *channel)
 {
-  return channel->abort;
+  return atomic_load_explicit(&channel->abort, memory_order_relaxed);
 }
 
 void shm_td_iq_channel_destroy(ShmTDIQChannel *channel)

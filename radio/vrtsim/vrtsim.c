@@ -84,6 +84,7 @@ typedef enum { ROLE_SERVER = 1, ROLE_CLIENT } role;
      {"ue_id",                  "UE slot index 0..num_ues-1 (client only)\n", 0, .iptr = &vrtsim_state->ue_id, .defintval = 0,                  TYPE_INT,    0}, \
      {"thread-pool",            TPOOL_HLP, .strptr = &vrtsim_state->thread_pool_cores, .defstrval = "-1,-1,-1,-1", TYPE_STRING, 0}, \
      {"shm_channel_name",       "Shared memory channel name\n", 0, .strptr = &vrtsim_state->shm_channel_name, .defstrval = DEFAULT_CHANNEL_NAME, TYPE_STRING, 0}, \
+     {"timing-thread-core",     "clock core", 0, .iptr = &vrtsim_state->timing_thread_core, .defintval = -1, TYPE_INT, 0}, \
      {"disable-timing-thread",  "Disable timing thread for testing", 0, .iptr = &vrtsim_state->disable_timing_thread, .defintval = 0, TYPE_INT, 0} \
   };
 // clang-format on
@@ -177,6 +178,7 @@ typedef struct {
   char *thread_pool_cores;
   char *shm_channel_name;
   int disable_timing_thread;
+  int timing_thread_core;
 
   client_info_t client_info;
   pthread_t ipc_thread;
@@ -568,7 +570,12 @@ static int vrtsim_connect(openair0_device_t *device)
     vrtsim_state->last_received_sample = shm_td_iq_channel_get_current_sample(vrtsim_state->channel);
     if (!vrtsim_state->disable_timing_thread) {
       vrtsim_state->run_timing_thread = true;
-      threadCreate(&vrtsim_state->timing_thread, vrtsim_timing_job, vrtsim_state, "vrtsim_timing", -1, OAI_PRIORITY_RT_MAX);
+      threadCreate(&vrtsim_state->timing_thread,
+                   vrtsim_timing_job,
+                   vrtsim_state,
+                   "vrtsim_timing",
+                   vrtsim_state->timing_thread_core,
+                   OAI_PRIORITY_RT_MAX);
     }
   } else {
     client_info_t client_info = client_read_info(vrtsim_state->connection_descriptor, vrtsim_state->connection_timeout);
