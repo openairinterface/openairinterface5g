@@ -83,9 +83,10 @@ void nr_ue_init_mac(NR_UE_MAC_INST_t *mac)
   mac->servCellIndex = 0;
   mac->harq_ACK_SpatialBundlingPUCCH = false;
   mac->harq_ACK_SpatialBundlingPUSCH = false;
-  mac->uecap_maxMIMO_PDSCH_layers = 0;
-  mac->uecap_maxMIMO_PUSCH_layers_cb = 0;
-  mac->uecap_maxMIMO_PUSCH_layers_nocb = 0;
+  // One layer until the UE capabilities are known
+  mac->uecap_maxMIMO_PDSCH_layers = 1;
+  mac->uecap_maxMIMO_PUSCH_layers_cb = 1;
+  mac->uecap_maxMIMO_PUSCH_layers_nocb = 1;
   mac->p_Max = INT_MIN;
   mac->p_Max_alt = INT_MIN;
   mac->msg3_C_RNTI = false;
