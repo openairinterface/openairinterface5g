@@ -1105,11 +1105,24 @@ void *UE_thread(void *arg)
 
     if (stream_status == STREAM_STATUS_UNSYNC) {
       stream_status = STREAM_STATUS_SYNCING;
-      syncInFrame(UE, &sync_timestamp, duration_rx_to_tx, intialSyncOffset);
+      /* The time drift during the frames of the initial sync is compensated now, in the jump to the frame start. Left to
+         the end of the first frame, the first SSB was received with the whole drift: beyond the cyclic prefix it could
+         still be decoded, with a timing estimate that is wrong and that replaced this compensation */
+      const double time_sync_I = get_nrUE_params()->time_sync_I;
+      const int sync_drift = -round(skipped_frames * UE->max_pos_acc * time_sync_I);
+      int sync_offset = intialSyncOffset - sync_drift;
+      if (sync_offset < 0) {
+        sync_offset += fp->samples_per_frame;
+        decoded_frame_rx = (decoded_frame_rx + 1) % MAX_FRAME_NUMBER;
+      }
+      syncInFrame(UE, &sync_timestamp, duration_rx_to_tx, sync_offset);
       nrue_ru_write_reorder_clear_context(UE);
-      shiftForNextFrame = -(skipped_frames)*UE->max_pos_acc
-                          * get_nrUE_params()->time_sync_I; // compensate for the time drift that happened during initial sync
-      LOG_I(PHY, "max_pos_acc = %d, shiftForNextFrame = %d\n", UE->max_pos_acc, shiftForNextFrame);
+      shiftForNextFrame = -round(UE->max_pos_acc * time_sync_I);
+      LOG_I(PHY,
+            "max_pos_acc = %d, drift during the initial sync %d samples (%d frames)\n",
+            UE->max_pos_acc,
+            sync_drift,
+            skipped_frames);
       // read in first symbol
       int ret = nrue_ru_read(UE,
                              &sync_timestamp,
