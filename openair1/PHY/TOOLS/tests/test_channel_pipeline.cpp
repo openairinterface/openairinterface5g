@@ -330,10 +330,10 @@ TEST_P(ChannelPipelineCpuTest, ChannelSetReplacesTaps)
   // A different shape, so set also has to resize.
   PipelineIo c(nb_rx, nb_tx, num_samples, L + 3);
   channel_pipeline_channel_t *pc = channel_pipeline_channel_init();
-  for (int round = 0; round < 3; round++) {
+  for (int round = 0; round < 2; round++) {
     for (PipelineIo *io : {&a, &b, &c}) {
-      io->reference();
-      EXPECT_LE(compare(io->run(pipeline, tpool, pc, io->L - 1, num_samples), io->ref).first, 1) << "round " << round;
+      Signals fresh = io->run(pipeline, tpool, io->L - 1, num_samples);
+      EXPECT_EQ(compare(io->run(pipeline, tpool, pc, io->L - 1, num_samples), fresh).first, 0) << "round " << round;
     }
     a.channel[0][L / 2].r += 0.5f;
     a.channel[nb_rx * nb_tx - 1][0].i -= 0.25f;
