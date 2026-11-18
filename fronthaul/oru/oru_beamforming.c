@@ -108,11 +108,9 @@ void combine_ul_beam_fd(const c16_t *const fft_data[],
   }
   const int nb_ant = nb_rx < ORU_CODEBOOK_MAX_NB_TX ? nb_rx : ORU_CODEBOOK_MAX_NB_TX;
   for (int a = 0; a < nb_ant; a++) {
-    // Same per-bin saturating multiply-accumulate as the DL codebook path, with the conjugate
-    // (receive) weight: see the header for why UL uses w^H.
-    const c16_t w = cb->w[bidx][a][stream_id];
-    const c16_t w_rx = {.r = w.r, .i = w.i == INT16_MIN ? INT16_MAX : (int16_t)-w.i};
-    rotate_add_cpx_vector(&fft_data[a][k0], w_rx, &out[k0], nk, 15);
+    // Same per-bin saturating multiply-accumulate as the DL codebook path, with the same weight:
+    // see the header for why UL uses w, not conj(w).
+    rotate_add_cpx_vector(&fft_data[a][k0], cb->w[bidx][a][stream_id], &out[k0], nk, 15);
   }
 }
 
