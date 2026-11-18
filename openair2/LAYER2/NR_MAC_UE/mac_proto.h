@@ -629,8 +629,6 @@ uint32_t compute_FRIV(uint8_t sl_max_num_per_reserve,
                       uint8_t n_start_subch2,
                       uint8_t N_sl_subch);
 
-void nr_update_bsr(NR_UE_MAC_INST_t *mac, uint32_t *LCG_bytes);
-
 void nr_ue_get_sdu_mac_ce_pre(NR_UE_MAC_INST_t *mac,
                                      frame_t frame,
                                      slot_t slot,
