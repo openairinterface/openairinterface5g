@@ -92,7 +92,7 @@ static void ngap_gNB_redial_amf(ngap_gNB_amf_data_t *amf_desc_p)
 
   ngap_gNB_instance_t *inst = amf_desc_p->ngap_gNB_instance;
 
-  memcpy(&req->remote_address, &amf_desc_p->amf_s1_ip, sizeof(req->remote_address));
+  memcpy(&req->remote_address, &amf_desc_p->amf_ng_ip, sizeof(req->remote_address));
   memcpy(&req->local_address, &inst->gNB_ng_ip, sizeof(req->local_address));
 
   NGAP_INFO("[gNB %ld] Re-dial AMF cnx_id=%u (streams in=%u out=%u)\n",
@@ -143,7 +143,7 @@ static void ngap_gNB_register_amf(ngap_gNB_instance_t *instance_p,
   sctp_new_association_req_p->ulp_cnx_id = ngap_amf_data_p->cnx_id;
   ngap_amf_data_p->assoc_id          = -1;
   ngap_amf_data_p->broadcast_plmn_num = broadcast_plmn_num;
-  memcpy(&ngap_amf_data_p->amf_s1_ip,
+  memcpy(&ngap_amf_data_p->amf_ng_ip,
         amf_ip_address,
         sizeof(*amf_ip_address));
   for (int i = 0; i < broadcast_plmn_num; ++i) {
@@ -236,10 +236,10 @@ void ngap_gNB_handle_register_gNB(instance_t instance, ngap_register_gnb_req_t *
     RB_FOREACH(amf, ngap_amf_map, &new_instance->ngap_amf_head) {
       /* Compare whether IPv4 and IPv6 information is already present, in which
        * wase we do not register again */
-      if (amf->amf_s1_ip.ipv4 == amf_ip->ipv4 && (!amf_ip->ipv4
-              || strncmp(amf->amf_s1_ip.ipv4_address, amf_ip->ipv4_address, 16) == 0)
-          && amf->amf_s1_ip.ipv6 == amf_ip->ipv6 && (!amf_ip->ipv6
-              || strncmp(amf->amf_s1_ip.ipv6_address, amf_ip->ipv6_address, 46) == 0))
+      if (amf->amf_ng_ip.ipv4 == amf_ip->ipv4 && (!amf_ip->ipv4
+              || strncmp(amf->amf_ng_ip.ipv4_address, amf_ip->ipv4_address, 16) == 0)
+          && amf->amf_ng_ip.ipv6 == amf_ip->ipv6 && (!amf_ip->ipv6
+              || strncmp(amf->amf_ng_ip.ipv6_address, amf_ip->ipv6_address, 46) == 0))
         break;
     }
     if (amf)
@@ -664,6 +664,10 @@ void *ngap_gNB_process_itti_msg(void *notUsed)
 
       case NGAP_UE_CONTEXT_RELEASE_COMPLETE:
         ngap_ue_context_release_complete(instance, &NGAP_UE_CONTEXT_RELEASE_COMPLETE(received_msg));
+        break;
+
+      case NGAP_UE_CONTEXT_LOCAL_RELEASE:
+        ngap_ue_context_local_release(&NGAP_UE_CONTEXT_LOCAL_RELEASE(received_msg));
         break;
 
       case NGAP_UE_CONTEXT_RELEASE_REQ:

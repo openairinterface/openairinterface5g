@@ -2,8 +2,9 @@
 
 # Handover Tutorial for OAI
 
-This tutorial explains how to perform handovers. It covers both F1 handovers
-(intra-gNB, within a single gNB between DUs) and N2 handovers (inter-gNB).
+This tutorial explains how to perform handovers. It covers F1 handovers
+(intra-gNB, within a single gNB between DUs), N2 handovers (inter-gNB, via the
+AMF) and Xn handovers (inter-gNB, directly between gNBs).
 
 This document assumes familiarity with the F1 split architecture and basic
 OAI knowledge. Please refer to the prerequisite documentation listed below:
@@ -13,6 +14,8 @@ OAI knowledge. Please refer to the prerequisite documentation listed below:
 - [F1 split design document](./F1AP/F1-design.md)
 for details on the F1 architecture and the networking relationships between
 the CU and the associated DUs.
+- [Xn design document](./XnAP/Xn-design.md) for Xn handover (inter-gNB, prepared
+  over Xn)
 
 [[_TOC_]]
 
@@ -535,7 +538,120 @@ In this model:
 
 - outer `nr_cellid` entries should be unique
 - neighbor `physical_cellId` values are defined in inner neighbor entries
-- the same serving-cell keyed neighbor mapping is used for both F1 and N2 handover logic
+- the same serving-cell keyed neighbor mapping is used for F1, N2 and Xn
+  handover logic
 
 See the example above for `neighbour-config-ho.conf`. The same configuration
-is for both F1 and N2 handover.
+is for F1, N2 and Xn handover.
+
+## Xn Handover
+
+### Run the setup
+
+An Xn handover transfers a UE from one gNB to another, like an N2 handover,
+but the handover is prepared directly between the two gNBs over the Xn
+interface (XnAP), without the AMF. The AMF is only involved at the end, when
+the target gNB switches the N3 path with an NGAP Path Switch Request. See the
+[Xn design document](./XnAP/Xn-design.md) and the
+[Xn procedures](./XnAP/xnap_procedures.md) for details.
+
+We assume the same setup as for [N2 handover](#n2-handover), plus:
+
+* An `Xn_INTERFACE` section in both gNB configuration files, each listing the
+  other gNB as candidate.
+* The UE has an established PDU session: an Xn handover is not triggered
+  without one.
+
+The source gNB uses Xn handover towards a neighbour if the neighbour's
+`gNB_ID` in `neighbour_list` belongs to a gNB with which Xn Setup has
+completed (an "Xn candidate"). Otherwise, it falls back to N2 handover. This
+applies to the A3 event trigger. The telnet command `trigger_xn_ho` always
+uses Xn: if the neighbour is not an Xn candidate, the gNB logs `Xn HO trigger
+failed ... no Xn connection` (the telnet reply does not report it).
+
+### Xn configuration
+
+Add the following section to each gNB configuration file, inside the `gNBs`
+entry (e.g. next to `NETWORK_INTERFACES`).
+
+gNB-PCI0 (`gnb.sa.band78.fr1.106PRB.pci0.rfsim.conf`, `gNB_ID = 0xe00`):
+
+```
+Xn_INTERFACE :
+{
+  gnb_ipv4_address_for_xnc           = "127.0.0.2";
+  candidate_gnb_ipv4_address_for_xnc = ({ ip = "127.0.0.3"; });
+};
+```
+
+gNB-PCI1 (`gnb.sa.band78.fr1.106PRB.pci1.rfsim.conf`, `gNB_ID = 0xb00`):
+
+```
+Xn_INTERFACE :
+{
+  gnb_ipv4_address_for_xnc           = "127.0.0.3";
+  candidate_gnb_ipv4_address_for_xnc = ({ ip = "127.0.0.2"; });
+};
+```
+
+See the [Xn configuration](./XnAP/Xn-design.md#4-configuration) for the
+parameters. Both gNBs must have the same PLMN, and their `gNB_ID` must match
+the `gNB_ID` of the neighbour entries in `neighbour-config-rfsim.conf`, which
+is the case for these files.
+
+### Steps to run Xn handover with OAI UE
+
+Follow steps 1 to 4 of [N2 handover](#steps-to-run-n2-handover-with-oai-ue),
+with the configuration files containing the `Xn_INTERFACE` section above.
+
+Each gNB starts Xn after NG Setup with the AMF and connects to its
+candidates. A failed connection is not retried. Because the target gNB is
+started after the source gNB, the target gNB opens the connection and sends
+Xn Setup Request. On both gNBs, check that Xn Setup completed, e.g. on
+gNB-PCI0 (gNB-PCI1 shows `gNB_id 0xe00`):
+
+```
+Xn candidate gNB_id 0xb00 registered (assoc_id 3)
+```
+
+5. Trigger the Xn handover, e.g.
+
+From gNB-PCI0, trigger handover to the neighbour cell with PCI 1 for UE ID 1:
+
+```sh
+echo ci trigger_xn_ho 1,1 | nc 127.0.0.2 9090 && echo
+```
+
+where the input parameters correspond to the PCI of the neighbor cell and the
+RRC ID of the UE.
+
+With a measurement configuration (A3 event), the handover is triggered
+automatically, and Xn is used because gNB-PCI1 is an Xn candidate.
+
+6. Check the handover:
+
+* Source gNB: Handover Request sent, Handover Request Acknowledge received,
+  RRCReconfiguration with the handover command sent to the UE, SN Status
+  Transfer sent.
+* Target gNB: UE arrives (RRCReconfigurationComplete), Path Switch Request and
+  Acknowledge with the AMF, UE Context Release sent to the source gNB.
+* Source gNB: UE Context Release received, the UE is released at the source
+  without signalling to the AMF.
+* UE: data traffic continues through the target gNB, e.g. `ping` over the
+  `oaitun_ue1` interface.
+
+The RRC logs of the Xn handover start with `Xn HO source: UE <id>` or
+`Xn HO target: UE <id>`, and show the XnAP UE IDs of both sides
+(`s_xnap_ue_id`, `t_xnap_ue_id`), so that e.g. `grep "Xn HO"` shows the flow
+on each gNB. The handover ends at the target with
+`Path Switch done, sending UE Context Release to the source`, and at the
+source with `UE Context Release received ..., handover complete`. For more
+details, add `--log_config.nr_rrc_log_level debug` (each RRC step, e.g. E1 and
+F1 setup at the target) and `--log_config.xnap_log_level debug` (message
+contents and XnAP UE ID table changes).
+
+Use Wireshark with the capture filter `sctp` to see the XnAP messages on the
+loopback interface, and the NGAP messages on the interface towards the AMF.
+
+If the target gNB cannot admit the UE, it answers with a Handover Preparation
+Failure and the UE stays on the source gNB.

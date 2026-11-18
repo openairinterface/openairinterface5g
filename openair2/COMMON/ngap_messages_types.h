@@ -36,6 +36,7 @@
 #define NGAP_INITIAL_CONTEXT_SETUP_REQ(mSGpTR)  (mSGpTR)->ittiMsg.ngap_initial_context_setup_req
 #define NGAP_UE_CONTEXT_RELEASE_COMMAND(mSGpTR) (mSGpTR)->ittiMsg.ngap_ue_release_command
 #define NGAP_UE_CONTEXT_RELEASE_COMPLETE(mSGpTR) (mSGpTR)->ittiMsg.ngap_ue_release_complete
+#define NGAP_UE_CONTEXT_LOCAL_RELEASE(mSGpTR) (mSGpTR)->ittiMsg.ngap_ue_local_release
 #define NGAP_PDUSESSION_SETUP_REQ(mSGpTR)              (mSGpTR)->ittiMsg.ngap_pdusession_setup_req
 #define NGAP_PDUSESSION_MODIFY_REQ(mSGpTR)              (mSGpTR)->ittiMsg.ngap_pdusession_modify_req
 #define NGAP_PAGING_IND(mSGpTR)                 (mSGpTR)->ittiMsg.ngap_paging_ind
@@ -837,6 +838,9 @@ typedef struct ngap_initial_context_setup_req_s {
 
   uint64_t amf_ue_ngap_id;
 
+  /* Serving AMF's NG-C IP address, forwarded to RRC for use in Xn HO Request */
+  net_ip_address_t amf_ng_ip;
+
   /* UE aggregate maximum bitrate */
   bool has_ue_ambr;
   ngap_ambr_t ue_ambr;
@@ -932,6 +936,13 @@ typedef struct {
   // PDU Session ID (mandatory)
   uint8_t pdu_session_id[NR_MAX_NB_PDU_SESSIONS];
 } ngap_ue_release_complete_t;
+
+/* Remove the UE context in NGAP without signalling to the AMF
+ * (e.g. Xn handover source after UE Context Release from the target) */
+typedef struct {
+  // RAN UE NGAP ID (mandatory)
+  uint32_t gNB_ue_ngap_id;
+} ngap_ue_local_release_t;
 
 /* QoS Flow to Release Item (9.3.1.13 3GPP TS 38.413) */
 typedef struct qos_flow_to_release_s {

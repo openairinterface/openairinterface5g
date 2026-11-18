@@ -70,6 +70,8 @@
 #include "rrc_gNB_mobility.h"
 #include "rrc_gNB_du.h"
 #include "rrc_cell_management.h"
+#include "rrc_gNB_security.h"
+#include "rrc_gNB_XNAP.h"
 #include "common/utils/alg/find.h"
 #include "common/utils/nr/nr_common.h"
 #include "openair2/E1AP/lib/e1ap_bearer_context_management.h"
@@ -77,16 +79,6 @@
 #ifdef E2_AGENT
 #include "openair2/E2AP/RAN_FUNCTION/O-RAN/ran_func_rc_extern.h"
 #endif
-
-/* Masks for NGAP Encryption algorithms, NEA0 is always supported (not coded) */
-static const uint16_t NGAP_ENCRYPTION_NEA1_MASK = 0x8000;
-static const uint16_t NGAP_ENCRYPTION_NEA2_MASK = 0x4000;
-static const uint16_t NGAP_ENCRYPTION_NEA3_MASK = 0x2000;
-
-/* Masks for NGAP Integrity algorithms, NIA0 is always supported (not coded) */
-static const uint16_t NGAP_INTEGRITY_NIA1_MASK = 0x8000;
-static const uint16_t NGAP_INTEGRITY_NIA2_MASK = 0x4000;
-static const uint16_t NGAP_INTEGRITY_NIA3_MASK = 0x2000;
 
 #define INTEGRITY_ALGORITHM_NONE NR_IntegrityProtAlgorithm_nia0
 
@@ -500,6 +492,15 @@ int rrc_gNB_process_NGAP_INITIAL_CONTEXT_SETUP_REQ(MessageDef *msg_p, instance_t
 
   UE->amf_ue_ngap_id = req->amf_ue_ngap_id;
 
+  struct in_addr ipv4_bin;
+  if (req->amf_ng_ip.ipv4 && inet_pton(AF_INET, req->amf_ng_ip.ipv4_address, &ipv4_bin) == 1) {
+    memcpy(UE->amf_ng_ip.buffer, &ipv4_bin, 4);
+    UE->amf_ng_ip.length = 4;
+  } else {
+    /* the CP TNL address in the Xn Handover Request is encoded as IPv4 only */
+    LOG_W(NR_RRC, "UE %d: AMF NG-C address is not IPv4, not supported for Xn handover\n", UE->rrc_ue_id);
+  }
+
   // Directly copy the entire guami structure
   UE->ue_guami = req->guami;
 
@@ -657,72 +658,6 @@ void rrc_gNB_send_NGAP_INITIAL_CONTEXT_SETUP_FAIL(uint32_t gnb, const ngap_cause
   fail->gNB_ue_ngap_id = gnb;
   fail->cause = causeP;
   itti_send_msg_to_task(TASK_NGAP, 0, msg_p);
-}
-
-static NR_CipheringAlgorithm_t rrc_gNB_select_ciphering(const gNB_RRC_INST *rrc, uint16_t algorithms)
-{
-  int i;
-  /* preset nea0 as fallback */
-  int ret = 0;
-
-  /* Select ciphering algorithm based on gNB configuration file and
-   * UE's supported algorithms.
-   * We take the first from the list that is supported by the UE.
-   * The ordering of the list comes from the configuration file.
-   */
-  for (i = 0; i < rrc->security.ciphering_algorithms_count; i++) {
-    int nea_mask[4] = {
-      0,
-      NGAP_ENCRYPTION_NEA1_MASK,
-      NGAP_ENCRYPTION_NEA2_MASK,
-      NGAP_ENCRYPTION_NEA3_MASK
-    };
-    if (rrc->security.ciphering_algorithms[i] == 0) {
-      /* nea0 */
-      break;
-    }
-    if (algorithms & nea_mask[rrc->security.ciphering_algorithms[i]]) {
-      ret = rrc->security.ciphering_algorithms[i];
-      break;
-    }
-  }
-
-  LOG_D(RRC, "selecting ciphering algorithm %d\n", ret);
-
-  return ret;
-}
-
-static e_NR_IntegrityProtAlgorithm rrc_gNB_select_integrity(const gNB_RRC_INST *rrc, uint16_t algorithms)
-{
-  int i;
-  /* preset nia0 as fallback */
-  int ret = 0;
-
-  /* Select integrity algorithm based on gNB configuration file and
-   * UE's supported algorithms.
-   * We take the first from the list that is supported by the UE.
-   * The ordering of the list comes from the configuration file.
-   */
-  for (i = 0; i < rrc->security.integrity_algorithms_count; i++) {
-    int nia_mask[4] = {
-      0,
-      NGAP_INTEGRITY_NIA1_MASK,
-      NGAP_INTEGRITY_NIA2_MASK,
-      NGAP_INTEGRITY_NIA3_MASK
-    };
-    if (rrc->security.integrity_algorithms[i] == 0) {
-      /* nia0 */
-      break;
-    }
-    if (algorithms & nia_mask[rrc->security.integrity_algorithms[i]]) {
-      ret = rrc->security.integrity_algorithms[i];
-      break;
-    }
-  }
-
-  LOG_D(RRC, "selecting integrity algorithm %d\n", ret);
-
-  return ret;
 }
 
 /*
@@ -1679,7 +1614,7 @@ void rrc_gNB_process_HandoverCommand(gNB_RRC_INST *rrc, const ngap_handover_comm
     DevAssert(UE->ho_context);
     DevAssert(UE->ho_context->source);
     DevAssert(UE->ho_context->source->ho_cancel);
-    UE->ho_context->source->ho_cancel(rrc, UE);
+    UE->ho_context->source->ho_cancel(rrc, UE, HO_CAUSE_UNSPECIFIED);
     return;
   }
 
@@ -1763,6 +1698,13 @@ void rrc_gNB_send_NGAP_UE_CONTEXT_RELEASE_COMPLETE(instance_t instance, uint32_t
     }
   }
   itti_send_msg_to_task(TASK_NGAP, instance, msg);
+}
+
+void rrc_gNB_send_NGAP_UE_CONTEXT_LOCAL_RELEASE(uint32_t gNB_ue_ngap_id)
+{
+  MessageDef *msg = itti_alloc_new_message(TASK_RRC_GNB, 0, NGAP_UE_CONTEXT_LOCAL_RELEASE);
+  NGAP_UE_CONTEXT_LOCAL_RELEASE(msg).gNB_ue_ngap_id = gNB_ue_ngap_id;
+  itti_send_msg_to_task(TASK_NGAP, 0, msg);
 }
 
 void rrc_gNB_send_NGAP_UE_CAPABILITIES_IND(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE, const NR_UECapabilityInformation_t *const ue_cap_info)
@@ -2220,8 +2162,108 @@ int rrc_gNB_process_NGAP_DL_RAN_STATUS_TRANSFER(MessageDef *msg_p, instance_t in
           s->dl_count.sn_len == NGAP_SN_LENGTH_18 ? "18-bit" : "12-bit");
 
     // Send to PDCP layer
-    e1_notify_pdcp_status(rrc, UE, s);
+    rrc_drb_pdcp_status_t status = {
+      .drb_id   = s->drb_id,
+      .ul_count = {.sn = s->ul_count.pdcp_sn, .hfn = s->ul_count.hfn},
+      .dl_count = {.sn = s->dl_count.pdcp_sn, .hfn = s->dl_count.hfn},
+    };
+    e1_notify_pdcp_status(rrc, UE, &status);
   }
+
+  return 0;
+}
+
+void rrc_gNB_send_NGAP_PATH_SWITCH_REQUEST(gNB_RRC_INST *rrc, gNB_RRC_UE_t *UE)
+{
+  LOG_I(NR_RRC, "Xn HO target: UE %u: sending NGAP Path Switch Request\n", UE->rrc_ue_id);
+
+  nr_rrc_cell_container_t *cell = rrc_get_pcell_for_ue(rrc, UE);
+  AssertFatal(cell != NULL, "UE %u: no primary cell found for Path Switch Request\n", UE->rrc_ue_id);
+
+  MessageDef *msg_p = itti_alloc_new_message(TASK_RRC_GNB, 0, NGAP_PATH_SWITCH_REQ);
+  ngap_path_switch_req_t *req = &NGAP_PATH_SWITCH_REQ(msg_p);
+  memset(req, 0, sizeof(*req));
+
+  req->gNB_ue_ngap_id = UE->rrc_ue_id;
+  req->amf_ue_ngap_id = UE->amf_ue_ngap_id;
+  req->user_info = (user_location_information_t){
+    .nrCellIdentity = cell->info.cell_id,
+    .target_ng_ran.tac = cell->info.tac,
+    .target_ng_ran.targetgNBId = rrc->node_id,
+    .target_ng_ran.plmn_identity = cell->info.plmn,
+  };
+  req->security_capabilities = UE->security_capabilities;
+
+  req->nb_of_pdusessions = 0;
+  FOR_EACH_SEQ_ARR(rrc_pdu_session_param_t *, session, &UE->pduSessions) {
+    if (session->status != PDU_SESSION_STATUS_ESTABLISHED)
+      continue;
+    DevAssert(req->nb_of_pdusessions < NR_MAX_NB_PDU_SESSIONS);
+    int idx = req->nb_of_pdusessions++;
+    pdusession_t *p = &session->param;
+    req->pdusessions_tobeswitched[idx].pdusession_id = p->pdusession_id;
+    req->pdusessions_tobeswitched[idx].n3_outgoing = p->n3_outgoing;
+    req->pdusessions_tobeswitched[idx].nb_of_qos_flow = 0;
+    FOR_EACH_SEQ_ARR(nr_rrc_qos_t *, qp, &p->qos) {
+      DevAssert(req->pdusessions_tobeswitched[idx].nb_of_qos_flow < MAX_QOS_FLOWS);
+      int qidx = req->pdusessions_tobeswitched[idx].nb_of_qos_flow++;
+      req->pdusessions_tobeswitched[idx].associated_qos_flows[qidx].qfi = qp->qos.qfi;
+    }
+  }
+
+  itti_send_msg_to_task(TASK_NGAP, rrc->module_id, msg_p);
+}
+
+int rrc_gNB_process_NGAP_PATH_SWITCH_REQUEST_ACKNOWLEDGE(gNB_RRC_INST *rrc,
+                                                             instance_t instance,
+                                                             const ngap_path_switch_req_ack_t *msg)
+{
+  LOG_I(NR_RRC, "Xn HO target: UE %u: NGAP Path Switch Request Acknowledge received\n", msg->gNB_ue_ngap_id);
+
+  rrc_gNB_ue_context_t *ue_ctx = rrc_gNB_get_ue_context(rrc, msg->gNB_ue_ngap_id);
+  if (ue_ctx == NULL) {
+    LOG_E(NR_RRC, "[gNB %ld] Path Switch Req Ack: no UE context for gNB_ue_ngap_id %u\n",
+          instance, msg->gNB_ue_ngap_id);
+    return -1;
+  }
+  gNB_RRC_UE_t *UE = &ue_ctx->ue_context;
+
+  /* Update security context */
+  UE->nh_ncc = msg->nh_ncc;
+  memcpy(UE->nh, msg->next_security_key, SECURITY_KEY_LENGTH);
+  LOG_I(NR_RRC, "UE %u: security context updated — nh_ncc=%d\n", UE->rrc_ue_id, UE->nh_ncc);
+
+  /* Update N3 incoming tunnel per PDU session */
+  for (int i = 0; i < msg->nb_of_pdusessions; ++i) {
+    const path_switch_request_ack_pdusession_t *sw = &msg->pdusessions_switched[i];
+    bool found = false;
+    FOR_EACH_SEQ_ARR(rrc_pdu_session_param_t *, session, &UE->pduSessions) {
+      if (session->param.pdusession_id != sw->pdusession_id)
+        continue;
+      found = true;
+      /* the UL NG-U UP TNL Information is present if the core changed it (TS 38.413 9.3.4.9);
+       * kept for a later handover, but the E1 path to update the CU-UP does not exist yet */
+      const gtpu_tunnel_t *n3 = sw->pathSwitchReqAckTransfer.n3_incoming;
+      gtpu_tunnel_t *cur = &session->param.n3_incoming;
+      if (n3 != NULL
+          && (n3->teid != cur->teid || n3->addr.length != cur->addr.length
+              || memcmp(n3->addr.buffer, cur->addr.buffer, n3->addr.length) != 0)) {
+        LOG_W(NR_RRC,
+              "UE %u: PDU session %d: UL NG-U tunnel changed by the core (TEID 0x%08x -> 0x%08x), CU-UP not updated\n",
+              UE->rrc_ue_id,
+              sw->pdusession_id,
+              cur->teid,
+              n3->teid);
+        *cur = *n3;
+      }
+      break;
+    }
+    if (!found)
+      LOG_W(NR_RRC, "UE %u: PDU session %d from Path Switch Ack not found\n",
+            UE->rrc_ue_id, sw->pdusession_id);
+  }
+
+  rrc_gNB_send_XNAP_UE_CONTEXT_RELEASE(rrc, UE);
 
   return 0;
 }

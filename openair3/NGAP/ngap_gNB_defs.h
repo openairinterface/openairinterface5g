@@ -77,7 +77,7 @@ typedef struct ngap_gNB_amf_data_s {
   char *amf_name;
 
   /* AMF NGAP IP address */
-  net_ip_address_t amf_s1_ip;
+  net_ip_address_t amf_ng_ip;
 
   /* Served GUAMIs from NG Setup Response (items carry GUAMI §9.3.3.3) */
   STAILQ_HEAD(served_guamis_s, served_guami_s) served_guami;

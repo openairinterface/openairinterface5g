@@ -101,7 +101,7 @@ static bool decode_xnap_ue_history_information(const XNAP_UEHistoryInformation_t
     XNAP_LastVisitedNGRANCellInformation_t *nr = &lv->choice.nG_RAN_Cell;
     ue_history_info_t *cell = &out->ue_history_info[i];
 
-    cell->xnap_cell_type = XNAP_LastVisitedCell_Item_PR_nG_RAN_Cell;
+    cell->xnap_cell_type = XNAP_LAST_VISITED_CELL_NR;
     cell->last_visited_cell_info = create_byte_array(nr->size, nr->buf);
   }
 
@@ -311,10 +311,7 @@ XNAP_XnAP_PDU_t *encode_xnap_handover_request(const xnap_handover_req_t *req)
   ie4->id = XNAP_ProtocolIE_ID_id_GUAMI;
   ie4->criticality = XNAP_Criticality_reject;
   ie4->value.present = XNAP_HandoverRequest_IEs__value_PR_GUAMI;
-  MCC_MNC_TO_PLMNID(req->guami.plmn.mcc, req->guami.plmn.mnc, req->guami.plmn.mnc_digit_length, &ie4->value.choice.GUAMI.plmn_ID);
-  AMF_REGION_TO_BIT_STRING(req->guami.amf_region_id, &ie4->value.choice.GUAMI.amf_region_id);
-  AMF_SETID_TO_BIT_STRING(req->guami.amf_set_id, &ie4->value.choice.GUAMI.amf_set_id);
-  AMF_POINTER_TO_BIT_STRING(req->guami.amf_pointer, &ie4->value.choice.GUAMI.amf_pointer);
+  ie4->value.choice.GUAMI = encode_xnap_guami(&req->guami);
 
   /* UE Context Information (M) */
   asn1cSequenceAdd(out->protocolIEs.list, XNAP_HandoverRequest_IEs_t, ie5);
@@ -359,14 +356,15 @@ XNAP_XnAP_PDU_t *encode_xnap_handover_request(const xnap_handover_req_t *req)
   ie6->value.present = XNAP_HandoverRequest_IEs__value_PR_UEHistoryInformation;
 
   for (int i = 0; i < req->num_last_visited_cells; i++) {
+    /* an item without a cell type would make the whole PDU invalid: skip it */
+    if (req->ue_history_info[i].xnap_cell_type != XNAP_LAST_VISITED_CELL_NR)
+      continue;
     asn1cSequenceAdd(ie6->value.choice.UEHistoryInformation.list, XNAP_LastVisitedCell_Item_t, lastVisitedCellItem);
-    if (req->ue_history_info[i].xnap_cell_type == XNAP_LastVisitedCell_Item_PR_nG_RAN_Cell) {
-      lastVisitedCellItem->present = XNAP_LastVisitedCell_Item_PR_nG_RAN_Cell;
-      XNAP_LastVisitedNGRANCellInformation_t *nrInfo = &lastVisitedCellItem->choice.nG_RAN_Cell;
-      OCTET_STRING_fromBuf(nrInfo,
-                           (const char *)req->ue_history_info[i].last_visited_cell_info.buf,
-                           req->ue_history_info[i].last_visited_cell_info.len);
-    }
+    lastVisitedCellItem->present = XNAP_LastVisitedCell_Item_PR_nG_RAN_Cell;
+    XNAP_LastVisitedNGRANCellInformation_t *nrInfo = &lastVisitedCellItem->choice.nG_RAN_Cell;
+    OCTET_STRING_fromBuf(nrInfo,
+                         (const char *)req->ue_history_info[i].last_visited_cell_info.buf,
+                         req->ue_history_info[i].last_visited_cell_info.len);
   }
 
   return pdu;
@@ -418,12 +416,7 @@ bool decode_xnap_handover_request(xnap_handover_req_t *out, const XNAP_XnAP_PDU_
 
       case XNAP_ProtocolIE_ID_id_GUAMI: {
         _EQ_CHECK_INT(ie->value.present, XNAP_HandoverRequest_IEs__value_PR_GUAMI);
-        const XNAP_GUAMI_t *guami = &ie->value.choice.GUAMI;
-        plmn_id_t *plmn = &out->guami.plmn;
-        PLMNID_TO_MCC_MNC(&guami->plmn_ID, plmn->mcc, plmn->mnc, plmn->mnc_digit_length);
-        out->guami.amf_region_id = BIT_STRING_to_uint8(&guami->amf_region_id);
-        out->guami.amf_set_id = BIT_STRING_to_uint16(&guami->amf_set_id);
-        out->guami.amf_pointer = BIT_STRING_to_uint8(&guami->amf_pointer);
+        out->guami = decode_xnap_guami(&ie->value.choice.GUAMI);
       } break;
 
       case XNAP_ProtocolIE_ID_id_UEContextInfoHORequest: {
@@ -581,7 +574,7 @@ bool eq_xnap_handover_request(const xnap_handover_req_t *a, const xnap_handover_
   if (!eq_xnap_ngran_cgi(&a->target_cgi, &b->target_cgi))
     return false;
 
-  if (!eq_nr_guami(&a->guami, &b->guami))
+  if (!eq_xnap_guami(&a->guami, &b->guami))
     return false;
 
   if (!eq_xnap_ue_context_info(&a->ue_context, &b->ue_context))
@@ -608,8 +601,6 @@ static void free_xnap_qos_flow_param(xnap_qos_flow_param_t *p)
  */
 static void free_xnap_qos_tobe_setup_list(xnap_qos_flow_tobe_setup_item_t *qos_list, uint8_t num_qos)
 {
-  DevAssert(qos_list && num_qos > 0);
-
   for (int i = 0; i < num_qos; i++) {
     free_xnap_qos_flow_param(&qos_list[i].qos_params);
   }
@@ -621,8 +612,6 @@ static void free_xnap_qos_tobe_setup_list(xnap_qos_flow_tobe_setup_item_t *qos_l
  */
 static void free_xnap_pdusession_resources_tobe_setup_list(xnap_pdusession_resources_tobe_setup_item_t *pdu_list, uint16_t num_pdu)
 {
-  DevAssert(pdu_list && num_pdu > 0);
-
   for (int i = 0; i < num_pdu; i++) {
     free(pdu_list[i].nssai);
     free_xnap_qos_tobe_setup_list(pdu_list[i].qos_list, pdu_list[i].num_qos);
@@ -649,8 +638,6 @@ static void free_xnap_ue_context_info(const xnap_ue_context_info_t *ue_context)
  */
 static void free_xnap_ue_history_info_list(ue_history_info_t *history_list, uint8_t num_cells)
 {
-  DevAssert(history_list && num_cells > 0);
-
   for (int i = 0; i < num_cells; i++) {
     free_byte_array(history_list[i].last_visited_cell_info);
   }
@@ -883,8 +870,6 @@ bool eq_xnap_handover_request_acknowledge(const xnap_handover_req_ack_t *a, cons
  */
 static void free_xnap_qos_admitted_list(xnap_qos_admitted_item_t *qos_list)
 {
-  DevAssert(qos_list);
-
   /* QoS admitted items have no dynamically allocated members */
   free(qos_list);
 }
@@ -892,10 +877,8 @@ static void free_xnap_qos_admitted_list(xnap_qos_admitted_item_t *qos_list)
 /**
  * @brief Free PDU Session Resources Admitted list
  */
-static void free_xnap_pdusession_admitted_list(xnap_pdusession_admitted_item_t *pdu_list, uint8_t num_pdu)
+static void free_xnap_pdusession_admitted_list(xnap_pdusession_admitted_item_t *pdu_list, uint16_t num_pdu)
 {
-  DevAssert(pdu_list && num_pdu > 0);
-
   for (int i = 0; i < num_pdu; i++) {
     free_xnap_qos_admitted_list(pdu_list[i].qos_list);
   }
@@ -2157,10 +2140,7 @@ XNAP_XnAP_PDU_t *encode_xnap_retrieve_ue_context_response(const xnap_retrieve_ue
   ie3->id = XNAP_ProtocolIE_ID_id_GUAMI;
   ie3->criticality = XNAP_Criticality_reject;
   ie3->value.present = XNAP_RetrieveUEContextResponse_IEs__value_PR_GUAMI;
-  MCC_MNC_TO_PLMNID(msg->guami.plmn.mcc, msg->guami.plmn.mnc, msg->guami.plmn.mnc_digit_length, &ie3->value.choice.GUAMI.plmn_ID);
-  AMF_REGION_TO_BIT_STRING(msg->guami.amf_region_id, &ie3->value.choice.GUAMI.amf_region_id);
-  AMF_SETID_TO_BIT_STRING(msg->guami.amf_set_id, &ie3->value.choice.GUAMI.amf_set_id);
-  AMF_POINTER_TO_BIT_STRING(msg->guami.amf_pointer, &ie3->value.choice.GUAMI.amf_pointer);
+  ie3->value.choice.GUAMI = encode_xnap_guami(&msg->guami);
 
   /* UE Context Information – Retrieve UE Context Response (M) 9.2.1.13 */
   asn1cSequenceAdd(out->protocolIEs.list, XNAP_RetrieveUEContextResponse_IEs_t, ie4);
@@ -2207,12 +2187,7 @@ bool decode_xnap_retrieve_ue_context_response(xnap_retrieve_ue_context_response_
 
       case XNAP_ProtocolIE_ID_id_GUAMI: {
         _EQ_CHECK_INT(ie->value.present, XNAP_RetrieveUEContextResponse_IEs__value_PR_GUAMI);
-        const XNAP_GUAMI_t *guami = &ie->value.choice.GUAMI;
-        plmn_id_t *plmn = &out->guami.plmn;
-        PLMNID_TO_MCC_MNC(&guami->plmn_ID, plmn->mcc, plmn->mnc, plmn->mnc_digit_length);
-        out->guami.amf_region_id = BIT_STRING_to_uint8(&guami->amf_region_id);
-        out->guami.amf_set_id = BIT_STRING_to_uint16(&guami->amf_set_id);
-        out->guami.amf_pointer = BIT_STRING_to_uint8(&guami->amf_pointer);
+        out->guami = decode_xnap_guami(&ie->value.choice.GUAMI);
       } break;
 
       case XNAP_ProtocolIE_ID_id_UEContextInfoRetrUECtxtResp: {
@@ -2250,7 +2225,7 @@ bool eq_xnap_retrieve_ue_context_response(const xnap_retrieve_ue_context_respons
 {
   _EQ_CHECK_UINT32(a->new_ng_node_ue_xnap_id, b->new_ng_node_ue_xnap_id);
   _EQ_CHECK_UINT32(a->old_ng_node_ue_xnap_id, b->old_ng_node_ue_xnap_id);
-  if (!eq_nr_guami(&a->guami, &b->guami))
+  if (!eq_xnap_guami(&a->guami, &b->guami))
     return false;
   if (!eq_xnap_ue_context_info(&a->ue_context, &b->ue_context))
     return false;

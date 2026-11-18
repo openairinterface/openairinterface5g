@@ -98,6 +98,19 @@ typedef struct pdu_session_param_s {
   ngap_cause_t cause;
 } rrc_pdu_session_param_t;
 
+/* Protocol-neutral PDCP COUNT value — used by both N2 and Xn SN Status Transfer */
+typedef struct {
+  uint32_t sn;
+  uint32_t hfn;
+} rrc_pdcp_count_t;
+
+/* Protocol-neutral per-DRB PDCP status — used by both N2 and Xn SN Status Transfer */
+typedef struct {
+  uint8_t drb_id;
+  rrc_pdcp_count_t ul_count;
+  rrc_pdcp_count_t dl_count;
+} rrc_drb_pdcp_status_t;
+
 typedef struct drb_s {
   int status;
   int drb_id;
@@ -222,6 +235,9 @@ typedef struct gNB_RRC_UE_s {
 
   uint32_t                           rrc_ue_id;
   uint64_t amf_ue_ngap_id;
+  /* Serving AMF's NG-C transport address; populated from NGAP Initial Context
+   * Setup Request and forwarded in Xn HO Request as cp_tnl_ip_source. */
+  transport_layer_addr_t amf_ng_ip;
   // Globally Unique AMF Identifier
   nr_guami_t ue_guami;
   // Serving PLMN of the UE
@@ -250,6 +266,7 @@ typedef struct gNB_RRC_UE_s {
   uint32_t                           ue_reconfiguration_counter;
   bool ongoing_reconfiguration;
   bool an_release; // flag if core requested UE release
+  bool xn_released; // flag if the Xn handover target released the UE (UE Context Release)
 
   /* NGUEContextSetup might come with PDU sessions, but setup needs to be
    * delayed after security (and capability); PDU sessions are stored here */

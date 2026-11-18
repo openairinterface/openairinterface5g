@@ -12,9 +12,11 @@ Developer documentation, such as UE connection control flow, reestablishment, or
 
 The RRC layer controls the basic connection setup of UEs as well as additional
 procedures. It is the fundamental building block of OAI's CU-CP, and interacts
-with lower layers (DU, basically MAC and RLC) through F1AP messages, and with
-the CU-UP through E1AP messages. More information can be found in the
-respective [F1AP page](../F1AP/F1-design.md) and [E1AP page](../E1AP/E1-design.md).
+with lower layers (DU, basically MAC and RLC) through F1AP messages, with
+the CU-UP through E1AP messages, and with the RRC/CU-CP of other gNBs
+through XnAP messages. More information can be found in the respective
+[F1AP page](../F1AP/F1-design.md), [E1AP page](../E1AP/E1-design.md) and
+[XnAP page](../XnAP/Xn-design.md).
 
 ## Periodic output and interpretation
 
@@ -198,7 +200,9 @@ This same core configuration model is reused by multiple RRC procedures.
   UE `MeasConfig` measurement objects.
 - Handover-related procedures: reuse neighbour identity fields (e.g., cell ID/PCI/PLMN
   TAC, gNB ID) for target selection and for populating target-cell information carried
-  in NGAP handover messages.
+  in NGAP and XnAP handover messages. The neighbour `gNB_ID` also selects the
+  handover type: Xn handover if Xn Setup with that gNB completed, N2 handover
+  otherwise (see [Xn interface configuration](#xn-interface-configuration)).
 
 Conceptually, for each serving cell the RRC keeps:
 
@@ -295,3 +299,12 @@ neighbour_list = (
 ```
 
 Refer to the [handover tutorial](../handover-tutorial.md) for complete examples and detailed setup instructions.
+
+#### Xn interface configuration
+
+The Xn interface towards other gNBs is enabled with the `Xn_INTERFACE`
+section, see the [Xn design](../XnAP/Xn-design.md#4-configuration). After Xn
+Setup with a peer, RRC adds the peer's gNB ID to its Xn candidates. A handover
+towards a neighbour cell whose `gNB_ID` (in `neighbour_list`) is an Xn
+candidate uses Xn; otherwise, N2 is used. Refer to the
+[handover tutorial](../handover-tutorial.md#xn-handover) for an example.

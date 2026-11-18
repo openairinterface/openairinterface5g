@@ -17,7 +17,13 @@ typedef struct gNB_RRC_UE_s gNB_RRC_UE_t;
 
 typedef struct NR_CellGroupConfig NR_CellGroupConfig_t;
 
-typedef void (*ho_cancel_t)(gNB_RRC_INST *rrc, gNB_RRC_UE_t *ue);
+/* cause of a handover failure or cancel, mapped by each handover type to its protocol cause */
+typedef enum {
+  HO_CAUSE_UNSPECIFIED,
+  HO_CAUSE_FAILURE_IN_TARGET, // failure in the target 5GC/NG-RAN node or target system
+  HO_CAUSE_RADIO_INTERFACE_FAILURE, // failure in the radio interface procedure, e.g. reestablishment
+} nr_ho_cause_t;
+typedef void (*ho_cancel_t)(gNB_RRC_INST *rrc, gNB_RRC_UE_t *ue, nr_ho_cause_t cause);
 typedef int (*ho_status_transfer_t)(gNB_RRC_INST *rrc,
                                     gNB_RRC_UE_t *UE,
                                     const int n_to_mod,
@@ -50,7 +56,7 @@ typedef struct nr_ho_source_cu {
 /* acknowledgement of handover request. buf+len is the RRC Reconfiguration */
 typedef void (*ho_req_ack_t)(gNB_RRC_INST *rrc, gNB_RRC_UE_t *ue);
 typedef void (*ho_success_t)(gNB_RRC_INST *rrc, gNB_RRC_UE_t *ue);
-typedef void (*ho_failure_t)(gNB_RRC_INST *rrc, uint32_t gnb_ue_id, ngap_handover_failure_t *msg);
+typedef void (*ho_failure_t)(gNB_RRC_INST *rrc, uint32_t gnb_ue_id, nr_ho_cause_t cause);
 typedef void (*ho_trigger_t)(gNB_RRC_INST *rrc, gNB_RRC_UE_t *ue);
 
 typedef struct nr_ho_target_cu {
@@ -70,7 +76,8 @@ typedef struct nr_ho_target_cu {
   ho_req_ack_t ho_req_ack;
   /// function pointer to announce handover success
   ho_success_t ho_success;
-  /// function pointer to announce the handover failure
+  /// function pointer to announce the handover preparation failure at the target
+  /// (N2: Handover Failure to the AMF; Xn: Handover Preparation Failure to the source gNB)
   ho_failure_t ho_failure;
 } nr_ho_target_cu_t;
 
@@ -87,13 +94,15 @@ void nr_rrc_trigger_f1_ho(gNB_RRC_INST *rrc,
                           const nr_rrc_cell_container_t *source_cell,
                           const nr_rrc_cell_container_t *target_cell);
 void nr_rrc_finalize_ho(gNB_RRC_UE_t *ue);
-void nr_rrc_n2_ho_failure(gNB_RRC_INST *rrc, uint32_t gnb_ue_id, ngap_handover_failure_t *msg);
+void nr_rrc_n2_ho_failure(gNB_RRC_INST *rrc, uint32_t gnb_ue_id, nr_ho_cause_t cause);
 
 void nr_rrc_trigger_n2_ho(gNB_RRC_INST *rrc, gNB_RRC_UE_t *ue, const nr_neighbour_cell_t *neighbour_config);
+void nr_rrc_trigger_xn_ho(gNB_RRC_INST *rrc, gNB_RRC_UE_t *ue, const nr_neighbour_cell_t *neighbour_config);
 
 void rrc_gNB_trigger_reconfiguration_for_handover(gNB_RRC_INST *rrc, gNB_RRC_UE_t *ue, uint8_t *rrc_reconf, int rrc_reconf_len);
 
 void nr_rrc_trigger_n2_ho_target(gNB_RRC_INST *rrc, gNB_RRC_UE_t *ue);
+void nr_rrc_trigger_xn_ho_target(gNB_RRC_INST *rrc, gNB_RRC_UE_t *ue);
 
 byte_array_t *get_meas_timing_config(const NR_MeasurementTimingConfiguration_t *mtc, const NR_MeasConfig_t *measConfig);
 
@@ -103,11 +112,13 @@ bool nr_rrc_update_cell_assoc_after_ho(gNB_RRC_UE_t *UE);
 
 void rrc_add_xn_candidate(gNB_RRC_INST *rrc, uint32_t gnb_id, sctp_assoc_t assoc_id);
 void rrc_remove_xn_candidate(gNB_RRC_INST *rrc, uint32_t gnb_id);
+const rrc_xn_candidate_t *rrc_find_xn_candidate(const gNB_RRC_INST *rrc, uint32_t gnb_id);
 
 const nr_neighbour_cell_t *get_neighbour_cell_by_pci(const neighbour_cell_configuration_t *cell, int pci);
 const nr_neighbour_cell_t *get_neighbour_cell_by_cell_id(const neighbour_cell_configuration_t *cell, uint64_t nrcell_id);
 void nr_HO_F1_trigger_telnet(gNB_RRC_INST *rrc, uint32_t rrc_ue_id);
 void nr_HO_F1_trigger_telnet_pci(gNB_RRC_INST *rrc, uint32_t target_pci, uint32_t rrc_ue_id);
 void nr_HO_N2_trigger_telnet(gNB_RRC_INST *rrc, uint32_t neighbour_pci, uint32_t rrc_ue_id);
+void nr_HO_Xn_trigger_telnet(gNB_RRC_INST *rrc, uint32_t neighbour_pci, uint32_t rrc_ue_id);
 
 #endif /* RRC_GNB_MOBILITY_H_ */

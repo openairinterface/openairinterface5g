@@ -52,7 +52,7 @@ More general information is available in the
 - [Setting the gNB frequency](./gNB_frequency_setup.md): configure the gNB carrier frequency and bandwidth (ARFCN)
 - [5G NSA setup](./TESTING_OAI_NSA_COTS_UE.md): non-standalone setup with an OAI eNB and gNB (may be outdated)
 - [NTN setup](./ntn-configuration.md): non-terrestrial network setup for LEO and GEO satellites
-- [Handover](./handover-tutorial.md): F1 (intra-gNB) and N2 (inter-gNB) handovers
+- [Handover](./handover-tutorial.md): F1 (intra-gNB), N2 and Xn (inter-gNB) handovers
 - [F1-based NR-DC](./nr-dc.md): NR dual connectivity with one CU and FR1/FR2 DUs
 - [Positioning reference signal (PRS)](./RUN_NR_PRS.md): Rel-16 PRS positioning with the gNB and NR-UE
 - [E2 agent](../openair2/E2AP/README.md): deploy the gNB with the E2 agent and the FlexRIC near-RT RIC
@@ -102,6 +102,7 @@ These documents are unmaintained and no longer valid:
 - [L1 threads in the NR-UE](./nr-ue-design.md): UE PHY/MAC interface and multi-threading design
 - [F1AP message library](./F1AP/F1AP-lib.md): encoding, decoding and testing of F1AP messages
 - [GTP-U design](./GTP/gtp-design.md): user-plane tunnels for S1-U, N3 and F1-U
+- [Xn design](./XnAP/Xn-design.md): Xn-C between gNBs, XnAP procedures and Xn handover
 - [NRPPa call flow](./NRPPA/NRPPA-call-flow.md): UL-TDOA positioning call flow
 - [UE 5G NAS](./5Gnas.md): 5GS NAS protocol and OAI implementation status
 - [Beamforming](./beamforming.md): configuration and scheduler implementation

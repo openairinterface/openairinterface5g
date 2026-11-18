@@ -1,0 +1,294 @@
+# SPDX-License-Identifier: MIT
+# 2-gNB rfsim Xn HO deployment (2x CU-CP/CU-UP/DU, peered over Xn), Open5GS 5GC
+
+services:
+    mongo:
+        container_name: "rfsim5g-mongo"
+        image: mongo:6.0
+        volumes:
+            - ./open5gs/subscriber.js:/docker-entrypoint-initdb.d/subscriber.js
+        environment:
+            - TZ=Europe/Paris
+        healthcheck:
+            test: mongosh --quiet --eval "db.adminCommand('ping').ok" | grep -q 1
+            interval: 5s
+            timeout: 5s
+            retries: 20
+        networks:
+            public_net:
+                ipv4_address: 192.168.71.131
+    open5gs:
+        container_name: "rfsim5g-open5gs"
+        image: open5gs-ci:v2.8.0
+        build:
+            context: ./open5gs
+            args:
+                OPEN5GS_VERSION: v2.8.0
+        pull_policy: build
+        command: /opt/open5gs/start.sh
+        volumes:
+            - ./open5gs/config:/opt/open5gs/etc/open5gs
+            - ./open5gs/start.sh:/opt/open5gs/start.sh
+        environment:
+            - TZ=Europe/Paris
+        cap_add:
+            - NET_ADMIN
+        devices:
+            - /dev/net/tun:/dev/net/tun
+        sysctls:
+            - net.ipv4.ip_forward=1
+        depends_on:
+            mongo:
+                condition: service_healthy
+        healthcheck:
+            test: for nf in nrf ausf udm udr pcf bsf nssf upf smf amf; do pgrep -x open5gs-$${nf}d > /dev/null || exit 1; done
+            interval: 5s
+            timeout: 5s
+            retries: 10
+        networks:
+            public_net:
+                ipv4_address: 192.168.71.132
+            traffic_net:
+                ipv4_address: 192.168.72.134
+    oai-ext-dn:
+        privileged: true
+        container_name: rfsim5g-oai-ext-dn
+        image: oaisoftwarealliance/trf-gen-cn5g:latest
+        entrypoint: /bin/bash -c \
+              "iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE;"\
+              "ip route add 12.1.1.0/24 via 192.168.72.134 dev eth0; sleep infinity"
+        depends_on:
+            - open5gs
+        networks:
+            traffic_net:
+                ipv4_address: 192.168.72.135
+        healthcheck:
+            test: /bin/bash -c "ping -c 2 192.168.72.134"
+            interval: 10s
+            timeout: 5s
+            retries: 5
+
+    # gNB-0 (gNB_ID 0xe00, PCI 0)
+    oai-cucp-0:
+        image: ${REGISTRY-oaisoftwarealliance/}${GNB_IMG:-oai-gnb}:${TAG:-develop}
+        container_name: rfsim5g-oai-cucp-0
+        cap_drop:
+            - ALL
+        environment:
+            USE_ADDITIONAL_OPTIONS: --telnetsrv --telnetsrv.shrmod ci
+                                    --telnetsrv.listenaddr 192.168.71.150
+                                    --gNBs.[0].nr_cellid 0
+                                    --gNBs.[0].Xn_INTERFACE.gnb_ipv4_address_for_xnc 192.168.71.150
+                                    --log_config.xnap_log_level info
+                                    --log_config.global_log_options level,nocolor,time
+            ASAN_OPTIONS: detect_leaks=0:detect_odr_violation=0
+        depends_on:
+            - open5gs
+        networks:
+            public_net:
+                ipv4_address: 192.168.71.150
+        volumes:
+          - ../../conf_files/neighbour-config.conf:/opt/oai-gnb/etc/neighbour-config.conf
+          - ../../conf_files/gnb-cucp.sa.e1-ho-n2.conf:/opt/oai-gnb/etc/gnb.conf
+        healthcheck:
+            test: /bin/bash -c "pgrep nr-softmodem"
+            start_period: 10s
+            start_interval: 500ms
+            interval: 10s
+            timeout: 5s
+            retries: 5
+
+    oai-cuup-0:
+        image: ${REGISTRY-oaisoftwarealliance/}${NRCUUP_IMG:-oai-nr-cuup}:${TAG:-develop}
+        container_name: rfsim5g-oai-cuup-0
+        cap_drop:
+            - ALL
+        environment:
+            USE_ADDITIONAL_OPTIONS: --log_config.global_log_options level,nocolor,time
+                                    --gNBs.[0].E1_INTERFACE.[0].ipv4_cucp 192.168.71.150
+                                    --gNBs.[0].E1_INTERFACE.[0].ipv4_cuup 192.168.71.151
+                                    --gNBs.[0].NETWORK_INTERFACES.GNB_IPV4_ADDRESS_FOR_NGU 192.168.71.151
+                                    --gNBs.[0].local_s_address 192.168.71.151
+            ASAN_OPTIONS: detect_leaks=0
+        depends_on:
+            - oai-cucp-0
+        networks:
+            public_net:
+                ipv4_address: 192.168.71.151
+        volumes:
+            - ../../conf_files/gnb-cuup.sa.f1.conf:/opt/oai-gnb/etc/gnb.conf
+        healthcheck:
+            test: /bin/bash -c "pgrep nr-cuup"
+            start_period: 10s
+            start_interval: 500ms
+            interval: 10s
+            timeout: 5s
+            retries: 5
+
+    oai-du-0:
+        image: ${REGISTRY-oaisoftwarealliance/}${GNB_IMG:-oai-gnb}:${TAG:-develop}
+        container_name: rfsim5g-oai-du-0
+        cap_drop:
+            - ALL
+        environment:
+            USE_ADDITIONAL_OPTIONS: --rfsim
+                                    --log_config.global_log_options level,nocolor,time
+                                    --gNBs.[0].nr_cellid 0
+                                    --telnetsrv --telnetsrv.listenaddr 192.168.71.171
+                                    --telnetsrv.shrmod ci
+                                    --rfsimulator.[0].serveraddr 192.168.71.190
+            ASAN_OPTIONS: detect_leaks=0:detect_odr_violation=0
+        depends_on:
+            - oai-cucp-0
+        networks:
+            public_net:
+                ipv4_address: 192.168.71.171
+        volumes:
+            - ../../conf_files/neighbour-config.conf:/opt/oai-gnb/etc/neighbour-config.conf
+            - ../../conf_files/gnb-du.sa.band78.106prb.rfsim.conf:/opt/oai-gnb/etc/gnb.conf
+        healthcheck:
+            test: /bin/bash -c "pgrep nr-softmodem"
+            start_period: 10s
+            start_interval: 500ms
+            interval: 10s
+            timeout: 5s
+            retries: 5
+
+    oai-nr-ue:
+        image: ${REGISTRY-oaisoftwarealliance/}${NRUE_IMG:-oai-nr-ue}:${TAG:-develop}
+        container_name: rfsim5g-oai-nr-ue
+        cap_drop:
+            - ALL
+        cap_add:
+            - NET_ADMIN  # for interface bringup
+            - NET_RAW    # for ping
+        environment:
+            USE_ADDITIONAL_OPTIONS: --rfsim --rfsimulator.[0].serveraddr server
+                                    --band 78 -C 3619200000 -r 106 --numerology 1 --ssb 516
+                                    --log_config.global_log_options level,nocolor,time
+        networks:
+            public_net:
+                ipv4_address: 192.168.71.190
+        devices:
+             - /dev/net/tun:/dev/net/tun
+        volumes:
+            - ../../conf_files/nrue.uicc.conf:/opt/oai-nr-ue/etc/nr-ue.conf
+        healthcheck:
+            test: /bin/bash -c "pgrep nr-uesoftmodem"
+            interval: 10s
+            timeout: 5s
+            retries: 5
+
+    # gNB-1 (gNB_ID 0xb00, PCI 1)
+    oai-cucp-1:
+        image: ${REGISTRY-oaisoftwarealliance/}${GNB_IMG:-oai-gnb}:${TAG:-develop}
+        container_name: rfsim5g-oai-cucp-1
+        cap_drop:
+            - ALL
+        environment:
+            USE_ADDITIONAL_OPTIONS: --telnetsrv --telnetsrv.shrmod ci
+                                    --telnetsrv.listenaddr 192.168.71.180
+                                    --gNBs.[0].E1_INTERFACE.[0].ipv4_cucp 192.168.71.180
+                                    --gNBs.[0].local_s_address 192.168.71.180
+                                    --gNBs.[0].remote_s_address 192.168.71.182
+                                    --gNBs.[0].gNB_ID 0xb00
+                                    --gNBs.[0].nr_cellid 1
+                                    --gNBs.[0].NETWORK_INTERFACES.GNB_IPV4_ADDRESS_FOR_NG_AMF 192.168.71.180
+                                    --gNBs.[0].Xn_INTERFACE.gnb_ipv4_address_for_xnc 192.168.71.180
+                                    --gNBs.[0].Xn_INTERFACE.candidate_gnb_ipv4_address_for_xnc.[0].ip 192.168.71.150
+                                    --log_config.xnap_log_level info
+                                    --log_config.global_log_options level,nocolor,time
+            ASAN_OPTIONS: detect_leaks=0:detect_odr_violation=0
+        networks:
+            public_net:
+                ipv4_address: 192.168.71.180
+        volumes:
+          - ../../conf_files/neighbour-config.conf:/opt/oai-gnb/etc/neighbour-config.conf
+          - ../../conf_files/gnb-cucp.sa.e1-ho-n2.conf:/opt/oai-gnb/etc/gnb.conf
+        healthcheck:
+            test: /bin/bash -c "pgrep nr-softmodem"
+            start_period: 10s
+            start_interval: 500ms
+            interval: 10s
+            timeout: 5s
+            retries: 5
+
+    oai-cuup-1:
+        image: ${REGISTRY-oaisoftwarealliance/}${NRCUUP_IMG:-oai-nr-cuup}:${TAG:-develop}
+        container_name: rfsim5g-oai-cuup-1
+        cap_drop:
+            - ALL
+        environment:
+            USE_ADDITIONAL_OPTIONS: --log_config.global_log_options level,nocolor,time
+                                    --gNBs.[0].E1_INTERFACE.[0].ipv4_cucp 192.168.71.180
+                                    --gNBs.[0].E1_INTERFACE.[0].ipv4_cuup 192.168.71.181
+                                    --gNBs.[0].NETWORK_INTERFACES.GNB_IPV4_ADDRESS_FOR_NGU 192.168.71.181
+                                    --gNBs.[0].local_s_address 192.168.71.181
+            ASAN_OPTIONS: detect_leaks=0
+        depends_on:
+            - oai-cucp-1
+        networks:
+            public_net:
+                ipv4_address: 192.168.71.181
+        volumes:
+            - ../../conf_files/gnb-cuup.sa.f1.conf:/opt/oai-gnb/etc/gnb.conf
+        healthcheck:
+            test: /bin/bash -c "pgrep nr-cuup"
+            start_period: 10s
+            start_interval: 500ms
+            interval: 10s
+            timeout: 5s
+            retries: 5
+
+    oai-du-1:
+        image: ${REGISTRY-oaisoftwarealliance/}${GNB_IMG:-oai-gnb}:${TAG:-develop}
+        container_name: rfsim5g-oai-du-1
+        cap_drop:
+            - ALL
+        environment:
+            USE_ADDITIONAL_OPTIONS: --rfsim
+                                    --rfsimulator.[0].serveraddr 192.168.71.190
+                                    --log_config.global_log_options level,nocolor,time
+                                    --gNBs.[0].gNB_DU_ID 1234
+                                    --gNBs.[0].gNB_ID 0xb00
+                                    --gNBs.[0].nr_cellid 1
+                                    --gNBs.[0].servingCellConfigCommon.[0].physCellId 1
+                                    --gNBs.[0].servingCellConfigCommon.[0].absoluteFrequencySSB 621312
+                                    --gNBs.[0].servingCellConfigCommon.[0].dl_absoluteFrequencyPointA 620040
+                                    --gNBs.[0].servingCellConfigCommon.[0].ssb_PositionsInBurst_Bitmap 2
+                                    --MACRLCs.[0].local_n_address 192.168.71.182
+                                    --MACRLCs.[0].remote_n_address 192.168.71.180
+            ASAN_OPTIONS: detect_leaks=0:detect_odr_violation=0
+        depends_on:
+            - oai-cucp-1
+        networks:
+            public_net:
+                ipv4_address: 192.168.71.182
+        volumes:
+            - ../../conf_files/neighbour-config.conf:/opt/oai-gnb/etc/neighbour-config.conf
+            - ../../conf_files/gnb-du.sa.band78.106prb.rfsim.conf:/opt/oai-gnb/etc/gnb.conf
+        healthcheck:
+            test: /bin/bash -c "pgrep nr-softmodem"
+            start_period: 10s
+            start_interval: 500ms
+            interval: 10s
+            timeout: 5s
+            retries: 5
+
+networks:
+    public_net:
+        driver: bridge
+        name: rfsim5g-oai-public-net
+        ipam:
+            config:
+                - subnet: 192.168.71.128/26
+        driver_opts:
+            com.docker.network.bridge.name: "rfsim5g-public"
+    traffic_net:
+        driver: bridge
+        name: rfsim5g-oai-traffic-net
+        ipam:
+            config:
+                - subnet: 192.168.72.128/26
+        driver_opts:
+            com.docker.network.bridge.name: "rfsim5g-traffic"

@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: LicenseRef-CSSL-1.0
+# Open5GS UDM config for the rfsim Xn handover pipeline
+
+logger:
+  level: info
+
+udm:
+  sbi:
+    server:
+      - address: 127.0.0.12
+        port: 7777
+    client:
+      nrf:
+        - uri: http://127.0.0.10:7777

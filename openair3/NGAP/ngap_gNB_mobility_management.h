@@ -9,6 +9,8 @@
 #include "common/platform_types.h"
 #include "ngap_messages_types.h"
 
+typedef struct NGAP_NGAP_PDU NGAP_NGAP_PDU_t;
+
 NGAP_NGAP_PDU_t *encode_ng_handover_required(const ngap_handover_required_t *msg);
 NGAP_NGAP_PDU_t *encode_ng_handover_failure(const ngap_handover_failure_t *msg);
 int decode_ng_handover_request(ngap_handover_request_t *out, const NGAP_NGAP_PDU_t *pdu);

@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: LicenseRef-CSSL-1.0
+# Open5GS NSSF config for the rfsim Xn handover pipeline
+
+logger:
+  level: info
+
+nssf:
+  sbi:
+    server:
+      - address: 127.0.0.14
+        port: 7777
+    client:
+      nrf:
+        - uri: http://127.0.0.10:7777
+      nsi:
+        - uri: http://127.0.0.10:7777
+          s_nssai:
+            sst: 1

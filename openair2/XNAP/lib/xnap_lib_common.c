@@ -63,6 +63,27 @@ xnap_cause_t decode_xnap_cause(const XNAP_Cause_t *in)
    return out;
 }
 
+/* GUAMI (TS 38.423 §9.2.3.24): the AMF Region ID, Set ID and Pointer are BIT STRINGs */
+XNAP_GUAMI_t encode_xnap_guami(const nr_guami_t *in)
+{
+  XNAP_GUAMI_t out = {0};
+  MCC_MNC_TO_PLMNID(in->plmn.mcc, in->plmn.mnc, in->plmn.mnc_digit_length, &out.plmn_ID);
+  AMF_REGION_TO_BIT_STRING(in->amf_region_id, &out.amf_region_id);
+  AMF_SETID_TO_BIT_STRING(in->amf_set_id, &out.amf_set_id);
+  AMF_POINTER_TO_BIT_STRING(in->amf_pointer, &out.amf_pointer);
+  return out;
+}
+
+nr_guami_t decode_xnap_guami(const XNAP_GUAMI_t *in)
+{
+  nr_guami_t out = {0};
+  PLMNID_TO_MCC_MNC(&in->plmn_ID, out.plmn.mcc, out.plmn.mnc, out.plmn.mnc_digit_length);
+  out.amf_region_id = BIT_STRING_to_uint8(&in->amf_region_id);
+  out.amf_set_id = BIT_STRING_to_uint16(&in->amf_set_id);
+  out.amf_pointer = BIT_STRING_to_uint8(&in->amf_pointer);
+  return out;
+}
+
 XNAP_Target_CGI_t xnap_encode_target_cgi(const xnap_ngran_cgi_t *in)
 {
   DevAssert(in != NULL);
@@ -123,7 +144,7 @@ bool decode_xnap_snssai(const XNAP_S_NSSAI_t *in, nssai_t *out)
   return true;
 }
 
-bool eq_nr_guami(const nr_guami_t *a, const nr_guami_t *b)
+bool eq_xnap_guami(const nr_guami_t *a, const nr_guami_t *b)
 {
   if (!eq_xnap_plmn(&a->plmn, &b->plmn))
     return false;

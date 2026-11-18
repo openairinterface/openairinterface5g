@@ -109,6 +109,15 @@ int ngap_ue_context_release_complete(instance_t instance,
   return 0;
 }
 
+void ngap_ue_context_local_release(const ngap_ue_local_release_t *rel)
+{
+  ngap_gNB_ue_context_t *ue = ngap_detach_ue_context(rel->gNB_ue_ngap_id);
+  if (ue == NULL)
+    return;
+  LOG_I(NGAP, "UE %u: NGAP UE context released locally (AMF UE NGAP ID %lu)\n", ue->gNB_ue_ngap_id, ue->amf_ue_ngap_id);
+  free(ue);
+}
+
 int ngap_ue_context_release_req(instance_t instance,
                                 ngap_ue_release_req_t *ue_release_req_p)
 {
