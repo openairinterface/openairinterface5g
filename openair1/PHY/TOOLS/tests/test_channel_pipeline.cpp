@@ -280,22 +280,26 @@ using CpuParam = std::tuple<channel_pipeline_method_t, int, int, int, int>;
 
 class ChannelPipelineCpuTest : public ::testing::TestWithParam<CpuParam> {
  protected:
-  void SetUp() override
+  static void SetUpTestSuite()
   {
     pipeline = channel_pipeline_init(0.0f);
-    channel_pipeline_set_method(pipeline, std::get<0>(GetParam()));
     tpool = init_tpool(8);
   }
 
-  void TearDown() override
+  static void TearDownTestSuite()
   {
     if (tpool)
       destroy_tpool(tpool);
     channel_pipeline_shutdown(pipeline);
   }
 
-  void *tpool = nullptr;
-  channel_pipeline_t *pipeline = nullptr;
+  void SetUp() override
+  {
+    channel_pipeline_set_method(pipeline, std::get<0>(GetParam()));
+  }
+
+  static inline void *tpool = nullptr;
+  static inline channel_pipeline_t *pipeline = nullptr;
 };
 
 TEST_P(ChannelPipelineCpuTest, MatchesReference)
