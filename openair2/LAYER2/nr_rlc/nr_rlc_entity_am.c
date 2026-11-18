@@ -445,6 +445,7 @@ static void process_control_pdu(nr_rlc_entity_am_t *entity,
   if (sn_compare_tx(entity, entity->poll_sn, ack_sn) < 0)
     entity->t_poll_retransmit_start = 0;
 
+  int last_counted_sn = -1;
   while (e1) {
     nack_sn = nr_rlc_pdu_decoder_get_bits(&decoder, entity->sn_field_length);
     e1 = nr_rlc_pdu_decoder_get_bits(&decoder, 1);
@@ -506,22 +507,17 @@ process_wait_list_head:
         cur_wait_list->next = NULL;
         new_retransmit_list->next = cur_wait_list;
         new_retransmit_list = cur_wait_list;
-        /* increase retx count. Don't care about segmentation, so maybe we
-         * increase too much.
-         */
-        cur_wait_list->sdu->retx_count++;
-        /* report max RETX reached for all retx_count >= max_retx_threshold
-         * (specs say to report if retx_count == max_retx_threshold).
-         * Upper layers should react (radio link failure), so no big deal.
-         * We deal with segmentation by requiring
-         * retx_count >= max_retx_threshold * number of segments.
-         * We may report max RETX reached too late/early. To be refined if
-         * this is a problem.
-         */
-        if (cur_wait_list->sdu->retx_count
-              >= entity->max_retx_threshold * cur_wait_list->sdu->ref_count)
-          entity->common.max_retx_reached(entity->common.max_retx_reached_data,
-                                          (nr_rlc_entity_t *)entity);
+        /* The wait list groups segments by SN. Count the SDU once for this STATUS. */
+        if (cur_nack_sn != last_counted_sn) {
+          last_counted_sn = cur_nack_sn;
+          cur_wait_list->sdu->retx_count++;
+          /* report max RETX reached for all retx_count >= max_retx_threshold
+           * (specs say to report if retx_count == max_retx_threshold).
+           * Upper layers should react (radio link failure), so no big deal.
+           */
+          if (cur_wait_list->sdu->retx_count >= entity->max_retx_threshold)
+            entity->common.max_retx_reached(entity->common.max_retx_reached_data, (nr_rlc_entity_t *)entity);
+        }
         /* update buffer status */
         entity->common.bstatus.retx_size += compute_pdu_header_size(entity, cur_wait_list)
                                             + cur_wait_list->size;
