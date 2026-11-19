@@ -694,50 +694,46 @@ bool decode_E1_bearer_context_setup_request(const E1AP_E1AP_PDU_t *pdu, e1ap_bea
         out->anl = ie->value.choice.ActivityNotificationLevel;
         break;
 
-      case E1AP_ProtocolIE_ID_id_System_BearerContextSetupRequest:
+      case E1AP_ProtocolIE_ID_id_System_BearerContextSetupRequest: {
         _EQ_CHECK_INT(ie->value.present, E1AP_BearerContextSetupRequestIEs__value_PR_System_BearerContextSetupRequest);
         E1AP_System_BearerContextSetupRequest_t *System_BearerContextSetupRequest =
             &ie->value.choice.System_BearerContextSetupRequest;
         switch (System_BearerContextSetupRequest->present) {
           case E1AP_System_BearerContextSetupRequest_PR_NOTHING:
             PRINT_ERROR("System Bearer Context Setup Request: no choice present\n");
-            break;
+            return false;
           case E1AP_System_BearerContextSetupRequest_PR_e_UTRAN_BearerContextSetupRequest:
-            AssertError(System_BearerContextSetupRequest->present == E1AP_System_BearerContextSetupRequest_PR_e_UTRAN_BearerContextSetupRequest,
-                        return false, "E1AP_System_BearerContextSetupRequest_PR_e_UTRAN_BearerContextSetupRequest in E1 Setup Request not supported");
+            PRINT_ERROR("UTRAN in E1 Setup Request not supported\n");
+            return false;
+          case E1AP_System_BearerContextSetupRequest_PR_nG_RAN_BearerContextSetupRequest: {
+            // NG-RAN
+            _EQ_CHECK_INT(System_BearerContextSetupRequest->choice.nG_RAN_BearerContextSetupRequest != NULL, true);
+            E1AP_ProtocolIE_Container_4932P19_t *msgNGRAN_list =
+                (E1AP_ProtocolIE_Container_4932P19_t *)System_BearerContextSetupRequest->choice.nG_RAN_BearerContextSetupRequest;
+            _EQ_CHECK_INT(msgNGRAN_list->list.count, 1); // only one RAN is expected
+            E1AP_NG_RAN_BearerContextSetupRequest_t *msgNGRAN = msgNGRAN_list->list.array[0];
+            _EQ_CHECK_LONG(msgNGRAN->id, E1AP_ProtocolIE_ID_id_PDU_Session_Resource_To_Setup_List);
+            _EQ_CHECK_INT(msgNGRAN->value.present, E1AP_NG_RAN_BearerContextSetupRequest__value_PR_PDU_Session_Resource_To_Setup_List);
+            // PDU Session Resource To Setup List (9.3.3.2 of 3GPP TS 38.463)
+            E1AP_PDU_Session_Resource_To_Setup_List_t *pdu2SetupList = &msgNGRAN->value.choice.PDU_Session_Resource_To_Setup_List;
+            out->numPDUSessions = pdu2SetupList->list.count;
+            DevAssert(out->numPDUSessions > 0 && out->numPDUSessions <= NR_MAX_NB_PDU_SESSIONS);
+            // Allocate array for PDU sessions
+            out->pduSession = calloc_or_fail(out->numPDUSessions, sizeof(*out->pduSession));
+            // Loop through all PDU sessions
+            for (int i = 0; i < pdu2SetupList->list.count; i++) {
+              pdu_session_to_setup_t *pdu_session = out->pduSession + i;
+              E1AP_PDU_Session_Resource_To_Setup_Item_t *pdu2Setup = pdu2SetupList->list.array[i];
+              CHECK_E1AP_DEC(e1_decode_pdu_session_to_setup_item(pdu_session, pdu2Setup));
+            }
             break;
-          case E1AP_System_BearerContextSetupRequest_PR_nG_RAN_BearerContextSetupRequest:
-            // Handle nG-RAN Bearer Context Setup Request
-            _EQ_CHECK_INT(System_BearerContextSetupRequest->present,
-                          E1AP_System_BearerContextSetupRequest_PR_nG_RAN_BearerContextSetupRequest);
-            AssertFatal(System_BearerContextSetupRequest->choice.nG_RAN_BearerContextSetupRequest != NULL,
-                        "System_BearerContextSetupRequest->choice.nG_RAN_BearerContextSetupRequest shall not be null");
-            break;
+          }
           default:
             PRINT_ERROR("System Bearer Context Setup Request: No valid choice present.\n");
-            break;
-        }
-
-        E1AP_ProtocolIE_Container_4932P19_t *msgNGRAN_list =
-            (E1AP_ProtocolIE_Container_4932P19_t *)System_BearerContextSetupRequest->choice.nG_RAN_BearerContextSetupRequest;
-        E1AP_NG_RAN_BearerContextSetupRequest_t *msgNGRAN = msgNGRAN_list->list.array[0];
-        // NG-RAN
-        _EQ_CHECK_INT(msgNGRAN_list->list.count, 1); // only one RAN is expected
-        _EQ_CHECK_LONG(msgNGRAN->id, E1AP_ProtocolIE_ID_id_PDU_Session_Resource_To_Setup_List);
-        _EQ_CHECK_INT(msgNGRAN->value.present, E1AP_NG_RAN_BearerContextSetupRequest__value_PR_PDU_Session_Resource_To_Setup_List);
-        // PDU Session Resource To Setup List (9.3.3.2 of 3GPP TS 38.463)
-        E1AP_PDU_Session_Resource_To_Setup_List_t *pdu2SetupList = &msgNGRAN->value.choice.PDU_Session_Resource_To_Setup_List;
-        out->numPDUSessions = pdu2SetupList->list.count;
-        DevAssert(out->numPDUSessions > 0 && out->numPDUSessions <= NR_MAX_NB_PDU_SESSIONS);
-        // Allocate array for PDU sessions
-        out->pduSession = calloc_or_fail(out->numPDUSessions, sizeof(*out->pduSession));
-        // Loop through all PDU sessions
-        for (int i = 0; i < pdu2SetupList->list.count; i++) {
-          pdu_session_to_setup_t *pdu_session = out->pduSession + i;
-          E1AP_PDU_Session_Resource_To_Setup_Item_t *pdu2Setup = pdu2SetupList->list.array[i];
-          CHECK_E1AP_DEC(e1_decode_pdu_session_to_setup_item(pdu_session, pdu2Setup));
+            return false;
         }
         break;
+      }
       default:
         PRINT_ERROR("Handle for this IE %ld is not implemented (or) invalid IE detected\n", ie->id);
         break;
