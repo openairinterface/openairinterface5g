@@ -43,6 +43,8 @@ void test_send_mbuf(void *io_controller, struct rte_mbuf **mbufs, uint32_t num_m
  * --xran-ext1-reference / --xran-ext11-reference: checks for the xran O-DU ext1 and ext11 reference captures
  * (https://github.com/ConnorBlasie/openairinterface5g/releases/tag/ext1-pcaps and .../tag/ext11-pcaps).
  * Both are made by the same kit and generator, only the section extension differs.
+ * --xran-prach: the Section Type 3 captures of the type3-ext-pcaps kit, the same traffic plus PRACH carrying ext1 or
+ * ext11 (https://github.com/ConnorBlasie/openairinterface5g/releases/tag/type3-ext-pcaps).
  */
 #define REF_NUM_ANT 4
 #define REF_NUM_BF_ELM 32
@@ -53,6 +55,10 @@ void test_send_mbuf(void *io_controller, struct rte_mbuf **mbufs, uint32_t num_m
 #define REF_MAX_ELM 2
 #define REF_EXT11_BUND_PRB 8
 #define REF_MAX_EXT11_BUNDLES 18 // ceil(137 / 8)
+// PRACH config 159 (B4): one 12-symbol occasion on PRBs 0-11 at symbol 0 of slot 19, every frame
+#define REF_PRACH_SLOT 19
+#define REF_PRACH_NUM_PRB 12
+#define REF_PRACH_NUM_SYM 12
 
 typedef struct {
   int start_prb;
@@ -72,11 +78,13 @@ typedef struct {
 } ref_dl_section_t;
 
 static int ref_ext_type; // 1 or 11, 0 if not checking a reference capture
+static bool ref_prach; // --xran-prach: the capture also has PRACH (Section Type 3) with the extension
 static ref_dl_section_t ref_dl_sections[REF_NUM_ANT][256][REF_SLOTS_PER_FRAME][REF_MAX_ELM];
 static int ref_section_id[2][REF_MAX_ELM]; // [dl][elm], -1 until first seen
+static int ref_prach_section_id = -1;
 
 static struct {
-  uint64_t pkts, cplane_dl, cplane_ul, ext, uplane, iq_samples, errors;
+  uint64_t pkts, cplane_dl, cplane_ul, cplane_prach, ext, uplane, iq_samples, errors;
   uint64_t dl_symbols_read, dl_symbols_silent, dl_iq_checked, dl_iq_errors, dl_iq_bad_symbols;
 } ref_cnt;
 
@@ -143,7 +151,7 @@ static void ref_check_ext1(const uint8_t *ext, const uint8_t *end, int ant, int 
             (long)(end - ext));
   REF_CHECK(ext[2] == 0, "bfwCompHdr 0x%02x, expected uncompressed 16-bit", ext[2]);
   c16_t w[REF_NUM_BF_ELM];
-  REF_CHECK(xran_decode_bfw_ext1(ext, end - ext, REF_NUM_BF_ELM, w) == XRAN_BFW_OK, "ext1 decode failed");
+  REF_CHECK(xran_decode_bfw_ext1(ext, end - ext, REF_NUM_BF_ELM, w) == XRAN_EXT_OK, "ext1 decode failed");
   // xran zero-pads ext1 to the 4-byte boundary (xran_decode_bfw_ext1() does not check this yet)
   for (const uint8_t *pad = ext + 3 + REF_NUM_BF_ELM * 4; pad < end; pad++)
     REF_CHECK(*pad == 0, "ext1 padding byte 0x%02x", *pad);
@@ -178,11 +186,11 @@ static void ref_check_ext11(const uint8_t *ext, const uint8_t *end, int ant, int
   uint16_t ids[REF_MAX_EXT11_BUNDLES];
   c16_t w[REF_MAX_EXT11_BUNDLES * REF_NUM_BF_ELM];
   int dec_bundles = 0;
-  xran_bfw_err_t err =
+  xran_ext_err_t err =
       xran_decode_bfw_ext11(ext, end - ext, num_prb, REF_NUM_BF_ELM, REF_MAX_EXT11_BUNDLES, &hdr, &dec_bundles, ids, w);
-  REF_CHECK(err == XRAN_BFW_OK && dec_bundles == n_bundles,
+  REF_CHECK(err == XRAN_EXT_OK && dec_bundles == n_bundles,
             "ext11 decode failed: %s, %d bundles, expected %d",
-            xran_bfw_strerror(err),
+            xran_ext_strerror(err),
             dec_bundles,
             n_bundles);
   // The decoder also accepts compressed weights; this test only covers the uncompressed 16-bit shape
@@ -220,9 +228,78 @@ static void ref_check_ext11(const uint8_t *ext, const uint8_t *end, int ant, int
   }
 }
 
+// Checks the single extension of a section, at ext, against the generator for PRB element k of num_prb PRBs
+static void ref_check_section_ext(const uint8_t *ext, const uint8_t *end, int ef, int ant, int slot, int k, int num_prb)
+{
+  REF_CHECK(ef == 1 && end - ext >= 3, "section has no extension");
+  int ext_type = ext[0] & 0x7F, ext_more = ext[0] >> 7;
+  REF_CHECK(ext_type == ref_ext_type && ext_more == 0,
+            "extType %d ef %d, expected a single ext%d",
+            ext_type,
+            ext_more,
+            ref_ext_type);
+  if (ref_ext_type == 1)
+    ref_check_ext1(ext, end, ant, slot, k);
+  else
+    ref_check_ext11(ext, end, ant, slot, num_prb);
+}
+
+// The kit's xran patch gives each PRACH section the extension of UL PRB element 0 of the slot (the ext11 bundles
+// covering the PRACH PRBs), so its weights follow the same formulas as that element's.
+static void ref_check_prach_cplane(const uint8_t *p, const uint8_t *end, int ant)
+{
+  REF_CHECK(end - p >= 24, "PRACH C-plane too short");
+  bool dl = p[0] >> 7;
+  int payload_ver = (p[0] >> 4) & 7, filter = p[0] & 0xF;
+  int subframe = p[2] >> 4, slot = subframe * 2 + (((p[2] & 0xF) << 2) | (p[3] >> 6)), start_sym = p[3] & 0x3F;
+  REF_CHECK(!dl && payload_ver == 1 && filter == XRAN_FILTERINDEX_PRACH_ABC,
+            "PRACH C-plane dir %d payloadVer %d filterIndex %d",
+            dl,
+            payload_ver,
+            filter);
+  REF_CHECK(p[4] == 1, "PRACH numberOfSections %d, expected 1", p[4]);
+  REF_CHECK(slot == REF_PRACH_SLOT && start_sym == 0, "PRACH slot %d startSymbolId %d", slot, start_sym);
+  // frameStructure FFT 4096, 30 kHz; cpLength 0; udCompHdr uncompressed 16-bit
+  REF_CHECK(p[8] == 0xC1 && ref_be16(p + 9) == 0 && p[11] == 0,
+            "PRACH frameStructure 0x%02x cpLength %d udCompHdr 0x%02x",
+            p[8],
+            ref_be16(p + 9),
+            p[11]);
+
+  const uint8_t *s = p + 12; // section type 3 fields
+  int sec_id = (s[0] << 4) | (s[1] >> 4), rb = (s[1] >> 3) & 1, sym_inc = (s[1] >> 2) & 1;
+  int start_prb = ((s[1] & 3) << 8) | s[2], num_prb = s[3];
+  int re_mask = (s[4] << 4) | (s[5] >> 4), num_sym = s[5] & 0xF, ef = s[6] >> 7, beam_id = ((s[6] & 0x7F) << 8) | s[7];
+  REF_CHECK(start_prb == 0 && num_prb == REF_PRACH_NUM_PRB && num_sym == REF_PRACH_NUM_SYM,
+            "PRACH startPrbc %d numPrbc %d numSymbol %d",
+            start_prb,
+            num_prb,
+            num_sym);
+  REF_CHECK(rb == 0 && sym_inc == 0 && re_mask == 0xFFF && s[11] == 0,
+            "PRACH rb %d symInc %d reMask 0x%03x reserved 0x%02x",
+            rb,
+            sym_inc,
+            re_mask,
+            s[11]);
+  REF_CHECK(beam_id == 1, "PRACH beamId %d, expected 1 (UL PRB element 0)", beam_id);
+  if (ref_prach_section_id < 0)
+    ref_prach_section_id = sec_id;
+  REF_CHECK(sec_id == ref_prach_section_id, "PRACH sectionId %d, earlier %d", sec_id, ref_prach_section_id);
+  uint64_t errors = ref_cnt.errors;
+  ref_check_section_ext(s + 12, end, ef, ant, slot, 0, num_prb);
+  if (ref_cnt.errors != errors)
+    return;
+  ref_cnt.ext++;
+  ref_cnt.cplane_prach++;
+}
+
 static void ref_check_cplane(const uint8_t *p, const uint8_t *end, int ant)
 {
   REF_CHECK(end - p >= 16, "C-plane too short");
+  if (p[5] == XRAN_CP_SECTIONTYPE_3 && ref_prach) {
+    ref_check_prach_cplane(p, end, ant);
+    return;
+  }
   bool dl = p[0] >> 7;
   int payload_ver = (p[0] >> 4) & 7, filter = p[0] & 0xF;
   int frame = p[1], subframe = p[2] >> 4, slot = subframe * 2 + (((p[2] & 0xF) << 2) | (p[3] >> 6)), start_sym = p[3] & 0x3F;
@@ -250,19 +327,8 @@ static void ref_check_cplane(const uint8_t *p, const uint8_t *end, int ant)
   REF_CHECK(beam_id == k + 1, "beamId %d, expected %d", beam_id, k + 1);
   ref_check_section_id(dl, k, sec_id);
 
-  const uint8_t *ext = s + 8;
-  REF_CHECK(ef == 1 && end - ext >= 3, "section has no extension");
-  int ext_type = ext[0] & 0x7F, ext_more = ext[0] >> 7;
-  REF_CHECK(ext_type == ref_ext_type && ext_more == 0,
-            "extType %d ef %d, expected a single ext%d",
-            ext_type,
-            ext_more,
-            ref_ext_type);
   uint64_t errors = ref_cnt.errors;
-  if (ref_ext_type == 1)
-    ref_check_ext1(ext, end, ant, slot, k);
-  else
-    ref_check_ext11(ext, end, ant, slot, num_prb);
+  ref_check_section_ext(s + 8, end, ef, ant, slot, k, num_prb);
   if (ref_cnt.errors != errors)
     return;
   ref_cnt.ext++;
@@ -420,7 +486,7 @@ static void place_dl_streams(uint32_t **txdataF, const dl_iq_stream_t *streams, 
 
 // Returns true if the reference capture passed: all packets as generated, all expected messages present,
 // and the processor's DL IQ equal to what was sent
-static bool ref_report(uint64_t exp_c, uint64_t exp_u)
+static bool ref_report(uint64_t exp_c, uint64_t exp_u, uint64_t exp_prach)
 {
   uint64_t incomplete = 0;
   for (int a = 0; a < REF_NUM_ANT; a++)
@@ -434,12 +500,13 @@ static bool ref_report(uint64_t exp_c, uint64_t exp_u)
   // Every DL U-plane packet carries one PRB element of one antenna for one symbol
   uint64_t exp_dl_symbols = exp_u / (REF_NUM_ANT * REF_NUM_DL_ELM);
   printf(
-      "xran ext%d reference: packets %lu: C-plane DL %lu UL %lu (ext%d %lu), U-plane %lu (%lu IQ samples), incomplete "
-      "DL sections %lu, errors %lu\n",
+      "xran ext%d reference: packets %lu: C-plane DL %lu UL %lu PRACH %lu (ext%d %lu), U-plane %lu (%lu IQ samples), "
+      "incomplete DL sections %lu, errors %lu\n",
       ref_ext_type,
       ref_cnt.pkts,
       ref_cnt.cplane_dl,
       ref_cnt.cplane_ul,
+      ref_cnt.cplane_prach,
       ref_ext_type,
       ref_cnt.ext,
       ref_cnt.uplane,
@@ -456,8 +523,9 @@ static bool ref_report(uint64_t exp_c, uint64_t exp_u)
       ref_cnt.dl_iq_checked,
       ref_cnt.dl_iq_errors,
       ref_cnt.dl_iq_bad_symbols);
-  return ref_cnt.errors == 0 && incomplete == 0 && ref_cnt.cplane_dl + ref_cnt.cplane_ul == exp_c && ref_cnt.ext == exp_c
-         && ref_cnt.uplane == exp_u && ref_cnt.dl_symbols_read == exp_dl_symbols && ref_cnt.dl_iq_errors == 0;
+  return ref_cnt.errors == 0 && incomplete == 0 && ref_cnt.cplane_dl + ref_cnt.cplane_ul == exp_c
+         && ref_cnt.cplane_prach == exp_prach && ref_cnt.ext == exp_c + exp_prach && ref_cnt.uplane == exp_u
+         && ref_cnt.dl_symbols_read == exp_dl_symbols && ref_cnt.dl_iq_errors == 0;
 }
 
 int main(int argc, char *argv[])
@@ -466,7 +534,8 @@ int main(int argc, char *argv[])
     printf(
         "Usage: %s <pcap_file> <numerology> <initial_symbol> <num_dl_slots> <num_ul_slots> <num_dl_symbols> <num_ul_symbols> "
         "<tdd_pattern_length_slots> <mtu> <prach_eaxc_offset> [<num_bf_weights> <min_ext1_received>] "
-        "[--xran-ext1-reference|--xran-ext11-reference <expected_cplane> <expected_uplane>] -- <eal args>\n",
+        "[--xran-ext1-reference|--xran-ext11-reference <expected_cplane> <expected_uplane> [--xran-prach <expected_prach>]] "
+        "-- <eal args>\n",
         argv[0]);
     return 1;
   }
@@ -512,7 +581,7 @@ int main(int argc, char *argv[])
   int num_bf_weights = 0;
   uint64_t min_ext1_received = 0;
   // Check the capture and the processor's DL IQ against the xran ext1/ext11 reference capture's generator
-  uint64_t ref_exp_cplane = 0, ref_exp_uplane = 0;
+  uint64_t ref_exp_cplane = 0, ref_exp_uplane = 0, ref_exp_prach = 0;
   int num_positional = 0;
   for (int i = 11; i < eal_args_start; i++) {
     if ((strcmp(argv[i], "--xran-ext1-reference") == 0 || strcmp(argv[i], "--xran-ext11-reference") == 0)
@@ -520,6 +589,9 @@ int main(int argc, char *argv[])
       ref_ext_type = strcmp(argv[i], "--xran-ext1-reference") == 0 ? 1 : 11;
       ref_exp_cplane = strtoull(argv[++i], NULL, 0);
       ref_exp_uplane = strtoull(argv[++i], NULL, 0);
+    } else if (strcmp(argv[i], "--xran-prach") == 0 && i + 1 < eal_args_start) {
+      ref_prach = true;
+      ref_exp_prach = strtoull(argv[++i], NULL, 0);
     } else if (num_positional == 0) {
       num_bf_weights = atoi(argv[i]);
       num_positional++;
@@ -549,7 +621,11 @@ int main(int argc, char *argv[])
          num_bf_weights,
          min_ext1_received);
   if (ref_ext_type)
-    printf("  xran ext%d reference: expected C-plane %lu, U-plane %lu\n", ref_ext_type, ref_exp_cplane, ref_exp_uplane);
+    printf("  xran ext%d reference: expected C-plane %lu, U-plane %lu, PRACH C-plane %lu\n",
+           ref_ext_type,
+           ref_exp_cplane,
+           ref_exp_uplane,
+           ref_exp_prach);
 
   void *ctx = init_packet_processor(numerology,
                                     273,
@@ -741,6 +817,7 @@ int main(int argc, char *argv[])
   printf("  C-Plane Malformed Section Extension 11 Errors: %lu\n", stats.cplane_err_sect_ext11);
   printf("  C-Plane Malformed Section Extension Chain Errors: %lu\n", stats.cplane_err_sect_ext_chain);
   printf("  C-Plane Malformed Section Extension Other Errors: %lu\n", stats.cplane_err_sect_ext_other);
+  printf("  PRACH C-Plane Packets: %lu\n", stats.cplane_received_prach);
 
   pcap_close(pcap);
   cleanup_packet_processor(ctx);
@@ -763,13 +840,20 @@ int main(int argc, char *argv[])
     printf("FAIL: %lu ext1 received, expected at least %lu\n", stats.cplane_ext1_received, min_ext1_received);
     return 1;
   }
-  // Every extension in the reference window must also have reached the processor
+  // Every extension in the reference window, PRACH included, must also have reached the processor
   uint64_t ext_received = ref_ext_type == 11 ? stats.cplane_ext11_received : stats.cplane_ext1_received;
-  if (ref_ext_type && ext_received < ref_exp_cplane) {
-    printf("FAIL: %lu ext%d received by the processor, expected at least %lu\n", ext_received, ref_ext_type, ref_exp_cplane);
+  if (ref_ext_type && ext_received < ref_exp_cplane + ref_exp_prach) {
+    printf("FAIL: %lu ext%d received by the processor, expected at least %lu\n",
+           ext_received,
+           ref_ext_type,
+           ref_exp_cplane + ref_exp_prach);
     return 1;
   }
-  if (ref_ext_type && !ref_report(ref_exp_cplane, ref_exp_uplane)) {
+  if (ref_prach && stats.cplane_received_prach != ref_exp_prach) {
+    printf("FAIL: %lu PRACH C-plane received by the processor, expected %lu\n", stats.cplane_received_prach, ref_exp_prach);
+    return 1;
+  }
+  if (ref_ext_type && !ref_report(ref_exp_cplane, ref_exp_uplane, ref_exp_prach)) {
     printf("FAIL: xran ext%d reference capture checks\n", ref_ext_type);
     return 1;
   }

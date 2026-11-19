@@ -13,6 +13,7 @@
 #include <rte_ether.h>
 #include <rte_byteorder.h>
 #include "xran_pkt_api.h"
+#include "xran_pkt_ext.h"
 #include "xran_pkt_bfw.h"
 
 #define MAX_BF_WEIGHTS 64
@@ -61,9 +62,9 @@ struct dump_ctx {
 static bool dump_ext1(const struct dump_ctx *ctx, const uint8_t *ext, size_t ext_len)
 {
   c16_t weights[MAX_BF_WEIGHTS];
-  xran_bfw_err_t err = xran_decode_bfw_ext1(ext, ext_len, ctx->num_bf_weights, weights);
-  if (err != XRAN_BFW_OK) {
-    printf("      [Ext1] malformed beamforming-weights extension: %s\n", xran_bfw_strerror(err));
+  xran_ext_err_t err = xran_decode_bfw_ext1(ext, ext_len, ctx->num_bf_weights, weights);
+  if (err != XRAN_EXT_OK) {
+    printf("      [Ext1] malformed beamforming-weights extension: %s\n", xran_ext_strerror(err));
     return false;
   }
   printf("      [Ext1] %d beamforming weight(s):", ctx->num_bf_weights);
@@ -81,10 +82,10 @@ static bool dump_ext11(const struct dump_ctx *ctx, const uint8_t *ext, size_t ex
   int n;
   uint16_t beam_ids[MAX_EXT11_BUNDLES];
   c16_t weights[MAX_EXT11_BUNDLES * MAX_BF_WEIGHTS];
-  xran_bfw_err_t err =
+  xran_ext_err_t err =
       xran_decode_bfw_ext11(ext, ext_len, num_prb, ctx->num_bf_weights, MAX_EXT11_BUNDLES, &ext11, &n, beam_ids, weights);
-  if (err != XRAN_BFW_OK) {
-    printf("      [Ext11] malformed flexible beamforming-weights extension: %s\n", xran_bfw_strerror(err));
+  if (err != XRAN_EXT_OK) {
+    printf("      [Ext11] malformed flexible beamforming-weights extension: %s\n", xran_ext_strerror(err));
     return false;
   }
   printf("      [Ext11] disableBFWs: %d  RAD: %d  bundleOffset: %d  numBundPrb: %d",
@@ -122,9 +123,9 @@ static uint8_t *dump_section_extensions(struct dump_ctx *ctx, uint8_t *ext, cons
     uint8_t ext_type = ext[0] & 0x7F;
     ef = ext[0] >> 7;
     size_t ext_len;
-    xran_bfw_err_t err = xran_section_ext_len(ext_type, ext, end - ext, &ext_len);
-    if (err != XRAN_BFW_OK) {
-      printf("      [Ext%d] malformed extension: %s\n", ext_type, xran_bfw_strerror(err));
+    xran_ext_err_t err = xran_section_ext_len(ext_type, ext, end - ext, &ext_len);
+    if (err != XRAN_EXT_OK) {
+      printf("      [Ext%d] malformed extension: %s\n", ext_type, xran_ext_strerror(err));
       ctx->error_count++;
       return NULL;
     }
