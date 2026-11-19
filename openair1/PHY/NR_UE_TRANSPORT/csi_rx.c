@@ -972,13 +972,19 @@ static void nr_csi_rs_pmi_estimation(const PHY_VARS_NR_UE *ue,
   }
 }
 
-int nr_csi_rs_cqi_estimation(const uint32_t precoded_sinr,
+int nr_csi_rs_cqi_estimation(const int32_t precoded_sinr,
                              uint8_t *cqi) {
 
   *cqi = 0;
 
   // Default SINR table for an AWGN channel for SISO scenario, considering 0.1 BLER condition and TS 38.214 Table 5.2.2.1-2
-  if(precoded_sinr>0 && precoded_sinr<=2) {
+  if (precoded_sinr >= -6 && precoded_sinr <= -5) {
+    *cqi = 1;
+  } else if (precoded_sinr >= -4 && precoded_sinr <= -3) {
+    *cqi = 2;
+  } else if (precoded_sinr >= -2 && precoded_sinr <= 0) {
+    *cqi = 3;
+  } else if(precoded_sinr>0 && precoded_sinr<=2) {
     *cqi = 4;
   } else if(precoded_sinr==3) {
     *cqi = 5;
