@@ -1051,6 +1051,7 @@ int nr_srs_channel_interpolation(int p_index,
                                  c16_t srs_estimated_channel_time[NR_SRS_IDFT_OVERSAMP_FACTOR * ofdm_symbol_size],
                                  c16_t srs_estimated_channel_time_shifted[NR_SRS_IDFT_OVERSAMP_FACTOR * ofdm_symbol_size],
                                  uint32_t *signal_power,
+                                 int *idft_shift,
                                  c16_t delay_table[2 * MAX_DELAY_COMP + 1][NR_MAX_OFDM_SYMBOL_SIZE])
 {
 #ifdef SRS_DEBUG
@@ -1202,7 +1203,11 @@ int nr_srs_channel_interpolation(int p_index,
   memcpy(&chF_interpol[0], &srs_estimated_channel_freq_avg[ofdm_symbol_size_half], ofdm_symbol_size_half * sizeof(c16_t));
   memcpy(&chF_interpol[start_offset], &srs_estimated_channel_freq_avg[0], ofdm_symbol_size_half * sizeof(c16_t));
 
-  // Convert to time domain oversampled
+  // Convert to time domain oversampled; the input is prescaled so that the IDFT output fits int16
+  *idft_shift = nr_idft_prescale_shift(chF_interpol, ofdm_os_size);
+  if (*idft_shift)
+    for (int i = 0; i < ofdm_os_size; i++)
+      chF_interpol[i] = (c16_t){chF_interpol[i].r >> *idft_shift, chF_interpol[i].i >> *idft_shift};
   freq2time(ofdm_os_size, (int16_t *)chF_interpol, (int16_t *)srs_estimated_channel_time);
 
   // Do FFT shift
