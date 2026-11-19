@@ -1812,6 +1812,27 @@ static void process_Periodical_Measurement_Report(gNB_RRC_UE_t *ue_ctxt, NR_Meas
   measurementReport->criticalExtensions.choice.measurementReport = NULL;
 }
 
+/* Reads the PCI and cell RSRP (in dBm) of a measurement result. physCellId, the SSB and
+ * CSI-RS cell results and their RSRP are all optional (TS 38.331 MeasResultNR and
+ * MeasQuantityResults): returns false if one of them is missing. */
+static bool get_meas_result_pci_rsrp(const NR_MeasResultNR_t *mr, int *pci, int *rsrp)
+{
+  if (!mr->physCellId)
+    return false;
+  const struct NR_MeasResultNR__measResult__cellResults *cr = &mr->measResult.cellResults;
+  const NR_RSRP_Range_t *r = NULL;
+  if (cr->resultsSSB_Cell && cr->resultsSSB_Cell->rsrp)
+    r = cr->resultsSSB_Cell->rsrp;
+  else if (cr->resultsCSI_RS_Cell && cr->resultsCSI_RS_Cell->rsrp)
+    r = cr->resultsCSI_RS_Cell->rsrp;
+  if (!r)
+    return false;
+  *pci = *mr->physCellId;
+  // TS 38.133 Table 10.1.6.1-1: SS-RSRP and CSI-RSRP measurement report mapping
+  *rsrp = *r - 157;
+  return true;
+}
+
 static void process_Event_Based_Measurement_Report(gNB_RRC_INST *rrc,
                                                    gNB_RRC_UE_t *ue,
                                                    NR_ReportConfigNR_t *report,
@@ -1839,12 +1860,13 @@ static void process_Event_Based_Measurement_Report(gNB_RRC_INST *rrc,
 
       for (int serving_cell_idx = 0; serving_cell_idx < measResults->measResultServingMOList.list.count; serving_cell_idx++) {
         const NR_MeasResultServMO_t *meas_result_serv_MO = measResults->measResultServingMOList.list.array[serving_cell_idx];
-        scell_pci = *(meas_result_serv_MO->measResultServingCell.physCellId);
-        if (meas_result_serv_MO->measResultServingCell.measResult.cellResults.resultsSSB_Cell) {
-          servingCellRSRP = *(meas_result_serv_MO->measResultServingCell.measResult.cellResults.resultsSSB_Cell->rsrp) - 157;
-        } else {
-          servingCellRSRP = *(meas_result_serv_MO->measResultServingCell.measResult.cellResults.resultsCSI_RS_Cell->rsrp) - 157;
+        int pci, rsrp;
+        if (!get_meas_result_pci_rsrp(&meas_result_serv_MO->measResultServingCell, &pci, &rsrp)) {
+          LOG_W(NR_RRC, "UE %d: A3 report: serving cell result without PCI or RSRP, ignoring it\n", ue->rrc_ue_id);
+          continue;
         }
+        scell_pci = pci;
+        servingCellRSRP = rsrp;
         LOG_D(NR_RRC, "Serving Cell RSRP: %d\n", servingCellRSRP);
       }
 
@@ -1857,15 +1879,10 @@ static void process_Event_Based_Measurement_Report(gNB_RRC_INST *rrc,
       const NR_MeasResultListNR_t *measResultListNR = measResults->measResultNeighCells->choice.measResultListNR;
       for (int neigh_meas_idx = 0; neigh_meas_idx < measResultListNR->list.count; neigh_meas_idx++) {
         const NR_MeasResultNR_t *meas_result_neigh_cell = (measResultListNR->list.array[neigh_meas_idx]);
-        const int neighbour_pci = *(meas_result_neigh_cell->physCellId);
-
-        // TS 138 133 Table 10.1.6.1-1: SS-RSRP and CSI-RSRP measurement report mapping
-        const struct NR_MeasResultNR__measResult__cellResults *cellResults = &(meas_result_neigh_cell->measResult.cellResults);
-
-        if (cellResults->resultsSSB_Cell) {
-          neighbourCellRSRP = *(cellResults->resultsSSB_Cell->rsrp) - 157;
-        } else {
-          neighbourCellRSRP = *(cellResults->resultsCSI_RS_Cell->rsrp) - 157;
+        int neighbour_pci;
+        if (!get_meas_result_pci_rsrp(meas_result_neigh_cell, &neighbour_pci, &neighbourCellRSRP)) {
+          LOG_W(NR_RRC, "UE %d: A3 report: neighbour result without PCI or RSRP, ignoring it\n", ue->rrc_ue_id);
+          continue;
         }
 
         LOG_I(NR_RRC,
