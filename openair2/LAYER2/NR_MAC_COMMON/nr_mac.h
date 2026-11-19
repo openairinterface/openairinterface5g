@@ -478,6 +478,8 @@ typedef struct nr_csi_report {
   NR_CSI_ReportConfig__ext2__reportQuantity_r16_PR reportQuantity_type_r16;
   long periodicity;
   uint16_t offset;
+  /// number of entries in SSB_Index_list or CSI_Index_list
+  int nb_resources;
   long **SSB_Index_list;
   long **CSI_Index_list;
 //  uint8_t nb_of_nzp_csi_report;

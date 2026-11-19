@@ -5006,6 +5006,7 @@ void compute_csi_bitlen(const NR_CSI_MeasConfig_t *csi_MeasConfig, nr_csi_report
       else AssertFatal(1==0,"Only periodic resource configuration currently supported\n");
     }
     LOG_D(NR_MAC,"nb_resources %d\n",nb_resources);
+    csi_report->nb_resources = nb_resources;
     // computation of bit length depending on the report type
     if (csi_report->reportQuantity_type_r16 != NR_CSI_ReportConfig__ext2__reportQuantity_r16_PR_NOTHING) {
       switch (csi_report->reportQuantity_type_r16) {
