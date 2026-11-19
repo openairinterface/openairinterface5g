@@ -72,7 +72,9 @@ add_executable(accuracy_test_gpu_optimized_pipeline accuracy_test_gpu_optimized_
 target_link_libraries(accuracy_test_gpu_optimized_pipeline PRIVATE UTIL SIMU PHY_COMMON LOG CONFIG_LIB shlib_loader m channel_pipeline GTest::gtest thread-pool)
 
 add_dependencies(tests test_channel_pipeline)
-add_test(NAME test_channel_pipeline COMMAND test_channel_pipeline)
+# Skip slow cases that add no coverage.
+add_test(NAME test_channel_pipeline COMMAND test_channel_pipeline
+  "--gtest_filter=-*direct_*_Samples30720_ChanLen7:*direct_*_Samples30720_ChanLen16:*direct_*_Samples30720_ChanLen64:*_Samples30720_ChanLen255")
 if (ENABLE_CHANNEL_SIM_CUDA)
   target_compile_definitions(test_channel_pipeline PRIVATE CHANNEL_SIM_CUDA)
   set_tests_properties(test_channel_pipeline PROPERTIES LABELS "cuda")

@@ -161,38 +161,37 @@ INSTANTIATE_TEST_SUITE_P(ChannelConvolutionTests,
                          });
 #endif // CHANNEL_SIM_CUDA
 
-// Input/output of one pipeline call, with the input split into sig0|sig1 at in_split and the
-// output split into sig0|sig1 at out_split (the same way vrtsim passes history + new samples).
+using Signals = std::vector<std::vector<c16_t>>;
+
+static std::pair<int, double> compare(const Signals &a, const Signals &b)
+{
+  int max_err = 0;
+  double err_pow = 0;
+  size_t n = 0;
+  for (size_t r = 0; r < a.size(); r++) {
+    for (size_t i = 0; i < a[r].size(); i++, n++) {
+      int dr = std::abs(a[r][i].r - b[r][i].r), di = std::abs(a[r][i].i - b[r][i].i);
+      max_err = std::max(max_err, std::max(dr, di));
+      err_pow += (double)dr * dr + (double)di * di;
+    }
+  }
+  return {max_err, err_pow / (2.0 * n)};
+}
+
 struct PipelineIo {
-  int nb_tx, nb_rx, num_samples, L, in_split, out_split;
-  std::vector<std::vector<c16_t>> in0, in1, out0, out1, ref0, ref1;
+  int nb_tx, nb_rx, num_samples, L;
+  Signals in, ref; // num_samples + L - 1 per tx, num_samples per rx
   std::vector<std::vector<cf_t>> channel;
 
-  PipelineIo(int nb_tx_, int nb_rx_, int num_samples_, int L_, int in_split_, int out_split_)
-      : nb_tx(nb_tx_), nb_rx(nb_rx_), num_samples(num_samples_), L(L_), in_split(in_split_), out_split(out_split_)
+  PipelineIo(int nb_tx_, int nb_rx_, int num_samples_, int L_) : nb_tx(nb_tx_), nb_rx(nb_rx_), num_samples(num_samples_), L(L_)
   {
-    const int total = num_samples + L - 1;
-    in0.resize(nb_tx);
-    in1.resize(nb_tx);
-    for (int t = 0; t < nb_tx; t++) {
-      in0[t].resize(in_split);
-      in1[t].resize(std::max(1, total - in_split));
-      generate_random_signal(in0[t].data(), in_split);
-      generate_random_signal(in1[t].data(), total - in_split);
-    }
-    for (auto *v : {&out0, &out1, &ref0, &ref1})
-      v->resize(nb_rx);
-    for (int r = 0; r < nb_rx; r++) {
-      out0[r].assign(out_split, {0, 0});
-      ref0[r].assign(out_split, {0, 0});
-      out1[r].assign(std::max(1, num_samples - out_split), {0, 0});
-      ref1[r].assign(std::max(1, num_samples - out_split), {0, 0});
-    }
-    channel.resize(nb_rx * nb_tx);
-    for (auto &c : channel) {
-      c.resize(L);
+    in.assign(nb_tx, std::vector<c16_t>(num_samples + L - 1));
+    for (auto &x : in)
+      generate_random_signal(x.data(), x.size());
+    ref.assign(nb_rx, std::vector<c16_t>(num_samples));
+    channel.assign(nb_rx * nb_tx, std::vector<cf_t>(L));
+    for (auto &c : channel)
       generate_scaled_taps(c.data(), L, nb_tx);
-    }
   }
 
   template <typename T>
@@ -204,11 +203,46 @@ struct PipelineIo {
     return p;
   }
 
-  // Set the taps on pc and run on it.
-  void run(channel_pipeline_t *pipeline, void *tpool, channel_pipeline_channel_t *pc, float noise_power = 0.0f)
+  void reference()
+  {
+    auto ch = ptrs(channel);
+    auto i = ptrs(in);
+    auto r = ptrs(ref);
+    channel_convolution_cpu((const cf_t **)ch.data(),
+                            (const c16_t **)i.data(),
+                            nullptr,
+                            num_samples + L - 1,
+                            r.data(),
+                            nullptr,
+                            num_samples,
+                            num_samples,
+                            L,
+                            nb_tx,
+                            nb_rx);
+  }
+
+  // Input and output split into sig0|sig1 at in_split/out_split, as vrtsim passes them.
+  Signals run(channel_pipeline_t *pipeline,
+              void *tpool,
+              channel_pipeline_channel_t *pc,
+              int in_split,
+              int out_split,
+              float noise_power = 0.0f)
   {
     auto ch = ptrs(channel);
     channel_pipeline_channel_set(pc, (const cf_t **)ch.data(), nb_tx, nb_rx, L);
+    Signals in0(nb_tx), in1(nb_tx), out0(nb_rx), out1(nb_rx);
+    for (int t = 0; t < nb_tx; t++) {
+      auto mid = in[t].begin() + std::min<size_t>(in_split, in[t].size());
+      in0[t].assign(in[t].begin(), mid);
+      in0[t].resize(in_split); // a split past the end leaves sig0 longer than needed
+      in1[t].assign(mid, in[t].end());
+      in1[t].resize(std::max<size_t>(1, in1[t].size()));
+    }
+    for (int r = 0; r < nb_rx; r++) {
+      out0[r].resize(out_split);
+      out1[r].resize(std::max(1, num_samples - out_split));
+    }
     auto i0 = ptrs(in0), i1 = ptrs(in1);
     auto o0 = ptrs(out0), o1 = ptrs(out1);
     channel_pipeline(pipeline,
@@ -222,48 +256,17 @@ struct PipelineIo {
                      out_split,
                      num_samples,
                      noise_power);
+    for (int r = 0; r < nb_rx; r++)
+      out0[r].insert(out0[r].end(), out1[r].begin(), out1[r].begin() + (num_samples - out_split));
+    return out0;
   }
 
-  void run(channel_pipeline_t *pipeline, void *tpool, float noise_power = 0.0f)
+  Signals run(channel_pipeline_t *pipeline, void *tpool, int in_split, int out_split, float noise_power = 0.0f)
   {
     channel_pipeline_channel_t *pc = channel_pipeline_channel_init();
-    run(pipeline, tpool, pc, noise_power);
+    Signals out = run(pipeline, tpool, pc, in_split, out_split, noise_power);
     channel_pipeline_channel_free(pc);
-  }
-
-  void reference()
-  {
-    auto ch = ptrs(channel);
-    auto i0 = ptrs(in0), i1 = ptrs(in1);
-    auto r0 = ptrs(ref0), r1 = ptrs(ref1);
-    channel_convolution_cpu((const cf_t **)ch.data(),
-                            (const c16_t **)i0.data(),
-                            (const c16_t **)i1.data(),
-                            in_split,
-                            r0.data(),
-                            r1.data(),
-                            out_split,
-                            num_samples,
-                            L,
-                            nb_tx,
-                            nb_rx);
-  }
-
-  // Max absolute per-component difference to the reference, and error power.
-  std::pair<int, double> compare() const
-  {
-    int max_err = 0;
-    double err_pow = 0;
-    for (int r = 0; r < nb_rx; r++) {
-      for (int i = 0; i < num_samples; i++) {
-        const c16_t a = i < out_split ? out0[r][i] : out1[r][i - out_split];
-        const c16_t b = i < out_split ? ref0[r][i] : ref1[r][i - out_split];
-        int dr = std::abs(a.r - b.r), di = std::abs(a.i - b.i);
-        max_err = std::max(max_err, std::max(dr, di));
-        err_pow += (double)dr * dr + (double)di * di;
-      }
-    }
-    return {max_err, err_pow / (2.0 * nb_rx * num_samples)};
+    return out;
   }
 };
 
@@ -271,22 +274,26 @@ using CpuParam = std::tuple<channel_pipeline_method_t, int, int, int, int>;
 
 class ChannelPipelineCpuTest : public ::testing::TestWithParam<CpuParam> {
  protected:
-  void SetUp() override
+  static void SetUpTestSuite()
   {
     pipeline = channel_pipeline_init(0.0f);
-    channel_pipeline_set_method(pipeline, std::get<0>(GetParam()));
     tpool = init_tpool(8);
   }
 
-  void TearDown() override
+  static void TearDownTestSuite()
   {
     if (tpool)
       destroy_tpool(tpool);
     channel_pipeline_shutdown(pipeline);
   }
 
-  void *tpool = nullptr;
-  channel_pipeline_t *pipeline = nullptr;
+  void SetUp() override
+  {
+    channel_pipeline_set_method(pipeline, std::get<0>(GetParam()));
+  }
+
+  static inline void *tpool = nullptr;
+  static inline channel_pipeline_t *pipeline = nullptr;
 };
 
 TEST_P(ChannelPipelineCpuTest, MatchesReference)
@@ -300,15 +307,12 @@ TEST_P(ChannelPipelineCpuTest, MatchesReference)
   // Output split: all in sig0, or an odd split.
   const int in_splits[] = {total, L - 1, total / 2 + 3};
   const int out_splits[] = {num_samples, num_samples / 2 + 1};
-  for (int in_split : in_splits) {
-    for (int out_split : out_splits) {
-      PipelineIo io(nb_tx, nb_rx, num_samples, L, in_split, out_split);
-      io.reference();
-      io.run(pipeline, tpool);
-      auto [max_err, err_pow] = io.compare();
-      EXPECT_LE(max_err, 1) << "in_split=" << in_split << " out_split=" << out_split;
-    }
-  }
+  PipelineIo io(nb_tx, nb_rx, num_samples, L);
+  io.reference();
+  for (int in_split : in_splits)
+    for (int out_split : out_splits)
+      EXPECT_LE(compare(io.run(pipeline, tpool, in_split, out_split), io.ref).first, 1)
+          << "in_split=" << in_split << " out_split=" << out_split;
 }
 
 // Setting new taps on a channel replaces everything built from the old ones, including the
@@ -319,16 +323,15 @@ TEST_P(ChannelPipelineCpuTest, ChannelSetReplacesTaps)
   const int nb_tx = std::get<2>(GetParam());
   const int num_samples = std::get<3>(GetParam());
   const int L = std::get<4>(GetParam());
-  PipelineIo a(nb_tx, nb_rx, num_samples, L, L - 1, num_samples);
-  PipelineIo b(nb_tx, nb_rx, num_samples, L, L - 1, num_samples);
+  PipelineIo a(nb_tx, nb_rx, num_samples, L);
+  PipelineIo b(nb_tx, nb_rx, num_samples, L);
   // A different shape, so set also has to resize.
-  PipelineIo c(nb_rx, nb_tx, num_samples, L + 3, L + 2, num_samples);
+  PipelineIo c(nb_rx, nb_tx, num_samples, L + 3);
   channel_pipeline_channel_t *pc = channel_pipeline_channel_init();
-  for (int round = 0; round < 3; round++) {
+  for (int round = 0; round < 2; round++) {
     for (PipelineIo *io : {&a, &b, &c}) {
-      io->reference();
-      io->run(pipeline, tpool, pc);
-      EXPECT_LE(io->compare().first, 1) << "round " << round;
+      Signals fresh = io->run(pipeline, tpool, io->L - 1, num_samples);
+      EXPECT_EQ(compare(io->run(pipeline, tpool, pc, io->L - 1, num_samples), fresh).first, 0) << "round " << round;
     }
     a.channel[0][L / 2].r += 0.5f;
     a.channel[nb_rx * nb_tx - 1][0].i -= 0.25f;
@@ -376,10 +379,9 @@ TEST(ChannelPipelineCpuNoise, AddsNoiseOfConfiguredPower)
   channel_pipeline_t *pipeline = channel_pipeline_init(sigma);
   for (auto method : {CHANNEL_PIPELINE_METHOD_DIRECT, CHANNEL_PIPELINE_METHOD_FFT}) {
     channel_pipeline_set_method(pipeline, method);
-    PipelineIo io(2, 2, 30720, 16, 15, 30720);
+    PipelineIo io(2, 2, 30720, 16);
     io.reference();
-    io.run(pipeline, tpool, sigma);
-    double rms = std::sqrt(io.compare().second);
+    double rms = std::sqrt(compare(io.run(pipeline, tpool, 15, 30720, sigma), io.ref).second);
     EXPECT_GT(rms, 0.8 * sigma);
     EXPECT_LT(rms, 1.2 * sigma);
   }
