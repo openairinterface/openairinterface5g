@@ -1418,7 +1418,31 @@ int phy_procedures_gNB_uespec_RX(PHY_VARS_gNB *gNB,
     c16_t **rxdataF = gNB->common_vars.rxdataF + ant_port;
     handle_pucch(gNB, rxdataF, &pucch[i], &uci_ind->uci_list[i]);
   }
+  if (gNB->if_inst && uci_ind->num_ucis > 0)
+    gNB->if_inst->nr_uci_indication(uci_ind);
 
+  srs_ind->header.transmit_timestamp = 0;
+  srs_ind->sfn = frame_rx;
+  srs_ind->slot = slot_rx;
+  srs_ind->number_of_pdus = n_srs;
+  srs_ind->control_length = 0;
+  srs_toa_v_ext->header.transmit_timestamp = 0;
+  srs_toa_v_ext->sfn = frame_rx;
+  srs_toa_v_ext->slot = slot_rx;
+  srs_toa_v_ext->number_of_pdus = 0;
+  for (int i = 0; i < n_srs; ++i) {
+    start_meas(&gNB->rx_srs_stats);
+    nfapi_nr_srs_toa_vendor_ext_pdu_t *ta_pdu = &srs_toa_v_ext->pdu_list[srs_toa_v_ext->number_of_pdus];
+    ta_pdu->num_ta = 0;
+    handle_srs(now, gNB, &srs[i], &srs_ind->pdu_list[i], ta_pdu);
+    if (ta_pdu->num_ta)
+      srs_toa_v_ext->number_of_pdus++;
+    stop_meas(&gNB->rx_srs_stats);
+  }
+  if (gNB->if_inst && srs_ind->number_of_pdus > 0)
+    gNB->if_inst->nr_srs_indication(srs_ind);
+  if (gNB->if_inst && srs_toa_v_ext->number_of_pdus > 0)
+    gNB->if_inst->nr_srs_toa_vendor_ext_indication(srs_toa_v_ext);
 
   crc_ind->header.transmit_timestamp = 0;
   crc_ind->sfn = frame_rx;
@@ -1480,25 +1504,10 @@ int phy_procedures_gNB_uespec_RX(PHY_VARS_gNB *gNB,
     STOP_MEAS_FULL_SLOT(&gNB->ulsch_decoding_stats, slot_type, NR_UPLINK_SLOT);
   }
 
-  srs_ind->header.transmit_timestamp = 0;
-  srs_ind->sfn = frame_rx;
-  srs_ind->slot = slot_rx;
-  srs_ind->number_of_pdus = n_srs;
-  srs_ind->control_length = 0;
-
-  srs_toa_v_ext->header.transmit_timestamp = 0;
-  srs_toa_v_ext->sfn = frame_rx;
-  srs_toa_v_ext->slot = slot_rx;
-  srs_toa_v_ext->number_of_pdus = 0;
-  for (int i = 0; i < n_srs; ++i) {
-    start_meas(&gNB->rx_srs_stats);
-    nfapi_nr_srs_toa_vendor_ext_pdu_t *ta_pdu = &srs_toa_v_ext->pdu_list[srs_toa_v_ext->number_of_pdus];
-    ta_pdu->num_ta = 0;
-    handle_srs(now, gNB, &srs[i], &srs_ind->pdu_list[i], ta_pdu);
-    if (ta_pdu->num_ta)
-      srs_toa_v_ext->number_of_pdus++;
-    stop_meas(&gNB->rx_srs_stats);
-  }
+  if (gNB->if_inst && crc_ind->number_crcs > 0)
+    gNB->if_inst->nr_crc_indication(crc_ind);
+  if (gNB->if_inst && rx_ind->number_of_pdus > 0)
+    gNB->if_inst->nr_rx_data_indication(rx_ind);
 
   STOP_MEAS_FULL_SLOT(&gNB->phy_proc_rx, slot_type, NR_UPLINK_SLOT);
 

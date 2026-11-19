@@ -220,6 +220,9 @@ static void rx_func(processingData_L1_t *info)
     while (spsc_q_get(&gNB->prach_l1rx_queue, &p, sizeof(p)))
       L1_nr_prach_procedures(gNB, &p, &UL_INFO.rach_ind);
 
+    if (UL_INFO.rach_ind.number_of_pdus > 0)
+      gNB->if_inst->nr_rach_indication(&UL_INFO.rach_ind);
+
     // apply the rx signal rotation here
     if (gNB->phase_comp) {
       const NR_DL_FRAME_PARMS *fp = &gNB->frame_parms;
@@ -248,22 +251,6 @@ static void rx_func(processingData_L1_t *info)
                                  &UL_INFO.rx_ind,
                                  &UL_INFO.srs_ind,
                                  &UL_INFO.srs_toa_vendor_ext_ind);
-
-    // Call the scheduler
-    START_MEAS_FULL_SLOT(&gNB->ul_indication_stats, rx_slot_type, NR_UPLINK_SLOT);
-    if (UL_INFO.rach_ind.number_of_pdus > 0)
-      gNB->if_inst->nr_rach_indication(&UL_INFO.rach_ind);
-    if (UL_INFO.uci_ind.num_ucis > 0)
-      gNB->if_inst->nr_uci_indication(&UL_INFO.uci_ind);
-    if (UL_INFO.crc_ind.number_crcs > 0)
-      gNB->if_inst->nr_crc_indication(&UL_INFO.crc_ind);
-    if (UL_INFO.rx_ind.number_of_pdus > 0)
-      gNB->if_inst->nr_rx_data_indication(&UL_INFO.rx_ind);
-    if (UL_INFO.srs_ind.number_of_pdus > 0)
-      gNB->if_inst->nr_srs_indication(&UL_INFO.srs_ind);
-    if (UL_INFO.srs_toa_vendor_ext_ind.number_of_pdus > 0)
-      gNB->if_inst->nr_srs_toa_vendor_ext_indication(&UL_INFO.srs_toa_vendor_ext_ind);
-    STOP_MEAS_FULL_SLOT(&gNB->ul_indication_stats, rx_slot_type, NR_UPLINK_SLOT);
 
     // Signal the ru_thread on completion of using rxdataF in this slot
     notifiedFIFO_elt_t *res = newNotifiedFIFO_elt(sizeof(processingData_L1_t), 0, &gNB->L1_rx_out, NULL);
@@ -295,7 +282,6 @@ static void nrL1_stats_reset(PHY_VARS_gNB *gNB, RU_t *ru)
   reset_meas(&gNB->pucch23_proc_rx);
   reset_meas(&gNB->ulsch_decoding_stats);
   reset_meas(&gNB->ts_ldpc_decode);
-  reset_meas(&gNB->ul_indication_stats);
   reset_meas(&gNB->slot_indication_stats);
   reset_meas(&gNB->rx_pusch_stats);
   reset_meas(&gNB->rx_prach);
@@ -341,7 +327,6 @@ static size_t dump_L1_meas_stats(PHY_VARS_gNB *gNB, RU_t *ru, char *output, size
   output += print_meas_log(&gNB->pucch23_proc_rx, "PUCCH23 reception", NULL, NULL, output, end - output);
   output += print_meas_log(&gNB->ulsch_decoding_stats, "ULSCH decoding", NULL, NULL, output, end - output);
   output += print_meas_log(&gNB->ts_ldpc_decode, "UL segments decoding", NULL, NULL, output, end - output);
-  output += print_meas_log(&gNB->ul_indication_stats, "UL Indication", NULL, NULL, output, end - output);
   output += print_meas_log(&gNB->slot_indication_stats, "Slot Indication", NULL, NULL, output, end - output);
   output += print_meas_log(&gNB->rx_pusch_stats, "PUSCH inner-receiver", NULL, NULL, output, end - output);
   output += print_meas_log(&gNB->rx_prach, "PRACH RX", NULL, NULL, output, end - output);

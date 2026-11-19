@@ -679,6 +679,8 @@ int main(int argc, char *argv[])
   nr_cell_sched_t *cell = nr_mac_cell_alloc(nrmac, scc);
   nr_mac_cell_config_scc(cell, scc, &conf);
   nr_mac_send_config_req(nrmac, &cell->config, nr_mac_get_cell_phy_id(nrmac, cell));
+  // we are done with the interface, and don't need it anymore
+  free_and_zero(gNB->if_inst);
 
   NR_UE_NR_Capability_t* UE_Capability_nr = CALLOC(1,sizeof(NR_UE_NR_Capability_t));
   prepare_sim_uecap(UE_Capability_nr, scc, mu, N_RB_UL, 0, mcs_table);
