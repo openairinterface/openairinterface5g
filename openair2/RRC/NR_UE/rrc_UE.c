@@ -934,15 +934,16 @@ static void nr_rrc_signal_maxrtxindication(int ue_id)
  * This is typically used when tearing down all DRBs at UE side,
  * such as after a PDU session release or full reconfiguration.
  * @param rrc Pointer to NR_UE_RRC_INST_t structure
- * @param id Logical Channel ID (must be in range [0, NR_MAX_NUM_LCID-1]) */
-static void nr_rrc_release_rlc_entity(NR_UE_RRC_INST_t *rrc, int id)
+ * @param lcid Logical Channel ID (must be in range [1, NR_MAX_NUM_LCID]) */
+static void nr_rrc_release_rlc_entity(NR_UE_RRC_INST_t *rrc, int lcid)
 {
   DevAssert(rrc);
-  DevAssert(id >= 0 && id < NR_MAX_NUM_LCID);
-  if (rrc->active_RLC_entity[id]) {
-    rrc->active_RLC_entity[id] = false;
-    nr_rlc_release_entity(rrc->ue_id, id);
-    RRCLOG_I("RRC Released RLC entity lc_id=%d\n", id);
+  DevAssert(lcid > 0 && lcid <= NR_MAX_NUM_LCID);
+  const int idx = lcid - 1;
+  if (rrc->active_RLC_entity[idx]) {
+    rrc->active_RLC_entity[idx] = false;
+    nr_rlc_release_entity(rrc->ue_id, lcid);
+    RRCLOG_I("RRC Released RLC entity lc_id=%d\n", lcid);
   }
 }
 
@@ -960,13 +961,15 @@ static void nr_rrc_manage_rlc_bearers(NR_UE_RRC_INST_t *rrc, const NR_CellGroupC
     for (int i = 0; i < cellGroupConfig->rlc_BearerToAddModList->list.count; i++) {
       NR_RLC_BearerConfig_t *rlc_bearer = cellGroupConfig->rlc_BearerToAddModList->list.array[i];
       NR_LogicalChannelIdentity_t lcid = rlc_bearer->logicalChannelIdentity;
-      if (rrc->active_RLC_entity[lcid]) {
+      DevAssert(lcid > 0 && lcid <= NR_MAX_NUM_LCID);
+      const int idx = lcid - 1;
+      if (rrc->active_RLC_entity[idx]) {
         if (rlc_bearer->reestablishRLC)
           nr_rlc_reestablish_entity(rrc->ue_id, lcid);
         if (rlc_bearer->rlc_Config)
           nr_rlc_reconfigure_entity(rrc->ue_id, lcid, rlc_bearer->rlc_Config);
       } else {
-        rrc->active_RLC_entity[lcid] = true;
+        rrc->active_RLC_entity[idx] = true;
         AssertFatal(rlc_bearer->servedRadioBearer, "servedRadioBearer mandatory in case of setup\n");
         AssertFatal(rlc_bearer->servedRadioBearer->present != NR_RLC_BearerConfig__servedRadioBearer_PR_NOTHING,
                     "Invalid RB for RLC configuration\n");
@@ -978,7 +981,7 @@ static void nr_rrc_manage_rlc_bearers(NR_UE_RRC_INST_t *rrc, const NR_CellGroupC
           NR_DRB_Identity_t drb_id = rlc_bearer->servedRadioBearer->choice.drb_Identity;
           if (!rlc_bearer->rlc_Config) {
             RRCLOG_E("RRC RLC-Config not present but is mandatory for setup\n");
-            rrc->active_RLC_entity[lcid] = false;
+            rrc->active_RLC_entity[idx] = false;
           } else {
             nr_rlc_add_drb(rrc->ue_id, drb_id, rlc_bearer);
             nr_rlc_set_rlf_handler(rrc->ue_id, nr_rrc_signal_maxrtxindication);
@@ -2452,7 +2455,7 @@ static void nr_rrc_rrcsetup_fallback(NR_UE_RRC_INST_t *rrc)
       nr_pdcp_release_srb(rrc->ue_id, i);
     }
   }
-  for (int i = 1; i < NR_MAX_NUM_LCID; i++) {
+  for (int i = 1; i <= NR_MAX_NUM_LCID; i++) {
     nr_rrc_release_rlc_entity(rrc, i);
   }
   // stop UE TUN readers before SDAP delete (connected reader holds entity pointer)
@@ -3914,7 +3917,7 @@ void nr_rrc_going_to_IDLE(NR_UE_RRC_INST_t *rrc,
       nr_pdcp_release_srb(rrc->ue_id, i);
     }
   }
-  for (int i = 0; i < NR_MAX_NUM_LCID; i++) {
+  for (int i = 1; i <= NR_MAX_NUM_LCID; i++) {
     nr_rrc_release_rlc_entity(rrc, i);
   }
 
