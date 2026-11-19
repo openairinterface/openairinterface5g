@@ -94,7 +94,9 @@ void start_process_slot_tx(void* arg) {
   if (num_ul_actors > 0) {
     pushNotifiedFIFO(&curMsgTx->ul_actors[curMsgTx->proc.nr_slot_tx % num_ul_actors].fifo, newTx);
   } else {
+    // inline: the actor thread is not there to free the message
     newTx->processingFunc(curMsgTx);
+    delNotifiedFIFO_elt(newTx);
   }
 }
 
@@ -1326,7 +1328,9 @@ void *UE_thread(void *arg)
     if (num_dl_actors > 0) {
       pushNotifiedFIFO(&dl_actors[curMsg.proc.nr_slot_rx % num_dl_actors].fifo, newRx);
     } else {
+      // inline: the actor thread is not there to free the message
       newRx->processingFunc(curMsgRx);
+      delNotifiedFIFO_elt(newRx);
     }
 
     // apply new NTN timing information
