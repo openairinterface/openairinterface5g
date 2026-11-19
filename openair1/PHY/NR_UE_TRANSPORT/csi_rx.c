@@ -1013,21 +1013,23 @@ int nr_csi_rs_cqi_estimation(const int32_t precoded_sinr,
   return 0;
 }
 
-static void nr_csi_im_power_estimation(const PHY_VARS_NR_UE *ue,
+static bool nr_csi_im_power_estimation(const PHY_VARS_NR_UE *ue,
                                        const fapi_nr_dl_config_csiim_pdu_rel15_t *csiim_config_pdu,
                                        uint32_t *interference_plus_noise_power,
                                        const c16_t rxdataF[][ue->frame_parms.samples_per_slot_wCP])
 {
   const NR_DL_FRAME_PARMS *frame_parms = &ue->frame_parms;
 
-  const uint16_t end_rb = csiim_config_pdu->start_rb + csiim_config_pdu->nr_of_rbs > csiim_config_pdu->bwp_size ?
-                          csiim_config_pdu->bwp_size : csiim_config_pdu->start_rb + csiim_config_pdu->nr_of_rbs;
+  // startingRB is relative to CRB0 (TS 38.331 section 6.3.2, CSI-FrequencyOccupation).
+  const int bwp_end = csiim_config_pdu->bwp_start + csiim_config_pdu->bwp_size;
+  const int end_rb = min(csiim_config_pdu->start_rb + csiim_config_pdu->nr_of_rbs, bwp_end);
 
   int32_t count = 0;
-  int32_t sum_re = 0;
-  int32_t sum_im = 0;
-  int32_t sum2_re = 0;
-  int32_t sum2_im = 0;
+  // Accumulated squared int16_t samples can exceed INT32_MAX within one CSI-IM resource.
+  int64_t sum_re = 0;
+  int64_t sum_im = 0;
+  int64_t sum2_re = 0;
+  int64_t sum2_im = 0;
 
   int l_csiim[4] = {-1, -1, -1, -1};
 
@@ -1074,14 +1076,18 @@ static void nr_csi_im_power_estimation(const PHY_VARS_NR_UE *ue,
     }
   }
 
-  int32_t power_re = sum2_re / count - (sum_re / count) * (sum_re / count);
-  int32_t power_im = sum2_im / count - (sum_im / count) * (sum_im / count);
+  if (count == 0)
+    return false;
+
+  int64_t power_re = sum2_re / count - (sum_re / count) * (sum_re / count);
+  int64_t power_im = sum2_im / count - (sum_im / count) * (sum_im / count);
 
   *interference_plus_noise_power = power_re + power_im;
 
 #ifdef NR_CSIIM_DEBUG
   LOG_I(NR_PHY, "interference_plus_noise_power based on CSI-IM = %i\n", *interference_plus_noise_power);
 #endif
+  return true;
 }
 
 static double get_cfo(const double phase_diff, const int sym0, const int sym1, const NR_DL_FRAME_PARMS *fp)
@@ -1154,8 +1160,8 @@ void nr_ue_csi_im_procedures(PHY_VARS_NR_UE *ue,
   LOG_I(NR_PHY, "csiim_config_pdu->l_csiim = %i.%i.%i.%i\n", csiim_config_pdu->l_csiim[0], csiim_config_pdu->l_csiim[1], csiim_config_pdu->l_csiim[2], csiim_config_pdu->l_csiim[3]);
 #endif
 
-  nr_csi_im_power_estimation(ue, csiim_config_pdu, &ue->nr_csi_info->interference_plus_noise_power, rxdataF);
-  ue->nr_csi_info->csi_im_meas_computed = true;
+  ue->nr_csi_info->csi_im_meas_computed =
+      nr_csi_im_power_estimation(ue, csiim_config_pdu, &ue->nr_csi_info->interference_plus_noise_power, rxdataF);
 }
 
 void nr_ue_csi_rs_procedures(PHY_VARS_NR_UE *ue,
