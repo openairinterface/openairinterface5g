@@ -185,6 +185,15 @@ int main(int argc, char **argv)
         oru.prach_info.start_symbol,
         oru.prach_info.N_dur);
   prepare_prach_item(&oru);
+  AssertFatal(oru.prach_item.pdu.prach_format == 8,
+              "prach_config_index %d: only PRACH format B4 is supported (got FAPI format %d)\n",
+              oru.prach_config_index,
+              oru.prach_item.pdu.prach_format);
+  if (oru.fh_config.prach_kbar < 0) {
+    // Short format: the PRACH SCS is the numerology
+    oru.fh_config.prach_kbar = 2 * get_PRACH_k_bar(fp->numerology_index, fp->numerology_index);
+  }
+  LOG_A(PHY, "PRACH kbar %d (int16)\n", oru.fh_config.prach_kbar);
 
   oru.fronthaul = oru_fh_init(&oru.fh_config);
   AssertFatal(oru.fronthaul != NULL, "Cannot configure oru fronthaul, check your config file/cmdline");
