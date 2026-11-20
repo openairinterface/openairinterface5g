@@ -991,7 +991,6 @@ int main(int argc, char **argv)
   nr_ue_phy_config_request(&UE_mac->phy_config);
   int ret = 1;
   initNamedTpool(gNBthreads, &gNB->threadPool, true, "gNB-tpool");
-  initNotifiedFIFO(&gNB->L1_tx_out);
 
   // Buffers to store internal memory of slot process
   int rx_size = (((14 * UE->frame_parms.N_RB_DL * 12 * sizeof(int32_t)) + 15) >> 4) << 4;
@@ -1456,7 +1455,6 @@ int main(int argc, char **argv)
         printStatIndent(&UE->phy_cpu_stats.cpu_time_stats[i], UE->phy_cpu_stats.cpu_time_stats[i].meas_name);
       }
     }
-
     if (n_trials == 1) {
       unsigned int op_format = 1;
       unsigned int dec = 1;
@@ -1516,6 +1514,9 @@ int main(int argc, char **argv)
 
   } // NSR
 
+  abortTpool(&nrUE_params.Tpool);
+  abortTpool(&gNB->threadPool);
+
   free(Sched_INFO);
 
   free_channel_desc_scm(gNB2UE);
@@ -1539,6 +1540,8 @@ int main(int argc, char **argv)
                           &h_final_output_pinned,
                           &h_channel_coeffs,
                           &d_channel_coeffs_gpu);
+#else
+  free_and_zero(h_tx_sig_pinned);
 #endif
 
   free(s_interleaved);
@@ -1554,10 +1557,15 @@ int main(int argc, char **argv)
   free(UE->phy_sim_pdsch_dl_ch_estimates);
   free(UE->phy_sim_pdsch_dl_ch_estimates_ext);
   free(UE->phy_sim_dlsch_b);
+  term_nr_ue_transport(UE);
+  free_nr_ue_phy_cpu_stats(&UE->phy_cpu_stats);
+  term_nr_ue_signal(UE);
   free(UE);
   free(nrPHY_vars_UE_g[0]);
   free(nrPHY_vars_UE_g);
 
+  free_MIB_NR(mib);
+  ASN_STRUCT_FREE(asn_DEF_NR_UE_NR_Capability, UE_Capability_nr);
   free_nrLDPC_coding_interface(&gNB->nrLDPC_coding_interface);
   end_configmodule(uniqCfg);
 
@@ -1645,56 +1653,26 @@ void update_dmrs_config(NR_BWP_Downlink_t *bwp, int8_t* dmrs_arg)
 
   AssertFatal((bwp->bwp_Dedicated->pdsch_Config != NULL && bwp->bwp_Dedicated->pdsch_Config->choice.setup != NULL), "Base RRC reconfig structures are not allocated.\n");
 
-  if(mapping_type == typeA) {
-    bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeA =
-        calloc_or_fail(1, sizeof(*bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeA));
-    bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeA->present= NR_SetupRelease_DMRS_DownlinkConfig_PR_setup;
-    bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeA->choice.setup =
-        calloc_or_fail(1,
-                       sizeof(*bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeA->choice.setup));
-    if (dmrs_config_type == NFAPI_NR_DMRS_TYPE2)
-      bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeA->choice.setup->dmrs_Type = calloc_or_fail(
-          1,
-          sizeof(*bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeA->choice.setup->dmrs_Type));
-    else
-      bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeA->choice.setup->dmrs_Type = NULL;
-    bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeA->choice.setup->maxLength=NULL;
-    bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeA->choice.setup->scramblingID0=NULL;
-    bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeA->choice.setup->scramblingID1=NULL;
-    bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeA->choice.setup->phaseTrackingRS=NULL;
-    bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeA->choice.setup->dmrs_AdditionalPosition = NULL;
-    printf("DLSIM: Allocated Mapping TypeA in RRC reconfig message\n");
+  NR_PDSCH_Config_t *pdsch_config = bwp->bwp_Dedicated->pdsch_Config->choice.setup;
+  NR_SetupRelease_DMRS_DownlinkConfig_t **dmrs =
+      mapping_type == typeA ? &pdsch_config->dmrs_DownlinkForPDSCH_MappingTypeA : &pdsch_config->dmrs_DownlinkForPDSCH_MappingTypeB;
+  if (*dmrs == NULL) {
+    *dmrs = calloc_or_fail(1, sizeof(**dmrs));
+    (*dmrs)->present = NR_SetupRelease_DMRS_DownlinkConfig_PR_setup;
+    (*dmrs)->choice.setup = calloc_or_fail(1, sizeof(*(*dmrs)->choice.setup));
   }
-
-  if(mapping_type == typeB) {
-    bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeB =
-        calloc_or_fail(1, sizeof(*bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeB));
-    bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeB->present= NR_SetupRelease_DMRS_DownlinkConfig_PR_setup;
-    bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeB->choice.setup =
-        calloc_or_fail(1,
-                       sizeof(*bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeB->choice.setup));
-    if (dmrs_config_type == NFAPI_NR_DMRS_TYPE2)
-      bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeB->choice.setup->dmrs_Type = calloc_or_fail(
-          1,
-          sizeof(*bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeB->choice.setup->dmrs_Type));
-    else
-      bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeB->choice.setup->dmrs_Type = NULL;
-    bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeB->choice.setup->maxLength=NULL;
-    bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeB->choice.setup->scramblingID0=NULL;
-    bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeB->choice.setup->scramblingID1=NULL;
-    bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeB->choice.setup->phaseTrackingRS=NULL;
-    bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeB->choice.setup->dmrs_AdditionalPosition = NULL;
-    printf("DLSIM: Allocated Mapping TypeB in RRC reconfig message\n");
+  NR_DMRS_DownlinkConfig_t *dmrs_config = (*dmrs)->choice.setup;
+  if (dmrs_config_type == NFAPI_NR_DMRS_TYPE2) {
+    if (dmrs_config->dmrs_Type == NULL)
+      dmrs_config->dmrs_Type = calloc_or_fail(1, sizeof(*dmrs_config->dmrs_Type));
+  } else {
+    free(dmrs_config->dmrs_Type);
+    dmrs_config->dmrs_Type = NULL;
   }
-
-  struct NR_SetupRelease_DMRS_DownlinkConfig	*dmrs_MappingtypeA = bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeA;
-  struct NR_SetupRelease_DMRS_DownlinkConfig	*dmrs_MappingtypeB = bwp->bwp_Dedicated->pdsch_Config->choice.setup->dmrs_DownlinkForPDSCH_MappingTypeB;
-
-  NR_DMRS_DownlinkConfig_t *dmrs_config = (mapping_type == typeA) ? dmrs_MappingtypeA->choice.setup : dmrs_MappingtypeB->choice.setup;
 
   if (add_pos != 2) { // pos0,pos1,pos3
     if (dmrs_config->dmrs_AdditionalPosition == NULL) {
-      dmrs_config->dmrs_AdditionalPosition = calloc_or_fail(1, sizeof(*dmrs_MappingtypeA->choice.setup->dmrs_AdditionalPosition));
+      dmrs_config->dmrs_AdditionalPosition = calloc_or_fail(1, sizeof(*dmrs_config->dmrs_AdditionalPosition));
     }
     switch (add_pos) {
       case 0:

@@ -21,3 +21,9 @@ void reset_nr_ue_phy_cpu_stats(nr_ue_phy_cpu_stat_t *ue_phy_cpu_stats) {
     reset_meas(&ue_phy_cpu_stats->cpu_time_stats[i]);
   }
 }
+
+void free_nr_ue_phy_cpu_stats(nr_ue_phy_cpu_stat_t *ue_phy_cpu_stats)
+{
+  for (int i = 0; i < MAX_CPU_STAT_TYPE; i++)
+    free_and_zero(ue_phy_cpu_stats->cpu_time_stats[i].meas_name);
+}

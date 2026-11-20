@@ -13,6 +13,7 @@ int nr_get_ssb_start_symbol(const NR_DL_FRAME_PARMS *fp, uint8_t i_ssb);
 int init_nr_ue_signal(PHY_VARS_NR_UE *ue,int nb_connected_eNB);
 void term_nr_ue_signal(PHY_VARS_NR_UE *ue);
 void init_nr_ue_transport(PHY_VARS_NR_UE *ue);
+void term_nr_ue_transport(PHY_VARS_NR_UE *ue);
 void init_phy_nr_measurements(PHY_VARS_NR_UE *ue);
 void init_nr_ue_sl_transport(PHY_VARS_NR_UE *ue);
 void term_nr_ue_sl_transport(PHY_VARS_NR_UE *ue);

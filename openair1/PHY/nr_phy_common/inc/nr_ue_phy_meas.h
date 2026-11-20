@@ -47,5 +47,6 @@ typedef struct nr_ue_phy_cpu_stat_t {
 
 void init_nr_ue_phy_cpu_stats(nr_ue_phy_cpu_stat_t *ue_phy_cpu_stats);
 void reset_nr_ue_phy_cpu_stats(nr_ue_phy_cpu_stat_t *ue_phy_cpu_stats);
+void free_nr_ue_phy_cpu_stats(nr_ue_phy_cpu_stat_t *ue_phy_cpu_stats);
 
 #endif
