@@ -4137,6 +4137,18 @@ static int nr_ue_validate_successrar(uint8_t *pduP, int32_t pdu_len, NR_UE_MAC_I
 
 #define MAX_NUM_DATA_IND 1024
 
+/* Appends an RLC PDU to data_ind[], which holds at most MAX_NUM_DATA_IND entries. Returns
+ * false when it is full: the gNB controls how many sub-PDUs a MAC PDU contains. */
+static bool add_data_ind(int ue_id, nr_rlc_data_ind_t *data_ind, int *num_data_ind, nr_rlc_data_ind_t ind)
+{
+  if (*num_data_ind >= MAX_NUM_DATA_IND) {
+    LOG_E(NR_MAC, "UE %d: more than %d RLC PDUs in DL MAC PDU, dropping the rest\n", ue_id, MAX_NUM_DATA_IND);
+    return false;
+  }
+  data_ind[(*num_data_ind)++] = ind;
+  return true;
+}
+
 ///////////////////////////////////
 // brief:     nr_ue_process_mac_pdu
 // function:  parsing DL PDU header
@@ -4241,8 +4253,8 @@ static void nr_ue_process_mac_pdu(NR_UE_MAC_INST_t *mac, nr_downlink_indication_
         if (mac_len > 0) {
           LOG_DDUMP(NR_MAC, (void *)pduP, mac_subheader_len + mac_len, LOG_DUMP_CHAR, "DL_SCH_LCID_CCCH (e.g. RRCSetup) payload: ");
           nr_rlc_data_ind_t ind = {.ch = rx_lcid, .buf = pduP + mac_subheader_len, .len = mac_len};
-          data_ind[num_data_ind++] = ind;
-          DevAssert(num_data_ind < MAX_NUM_DATA_IND);
+          if (!add_data_ind(mac->ue_id, data_ind, &num_data_ind, ind))
+            done = 1;
         }
         break;
       case DL_SCH_LCID_TCI_STATE_ACT_UE_SPEC_PDSCH:
@@ -4366,8 +4378,8 @@ static void nr_ue_process_mac_pdu(NR_UE_MAC_INST_t *mac, nr_downlink_indication_
         }
         LOG_D(NR_MAC, "%4d.%2d : DLSCH -> LCID %d %d bytes\n", frameP, slot, rx_lcid, mac_len);
         nr_rlc_data_ind_t ind = {.ch = rx_lcid, .buf = pduP + mac_subheader_len, .len = mac_len};
-        data_ind[num_data_ind++] = ind;
-        DevAssert(num_data_ind < MAX_NUM_DATA_IND);
+        if (!add_data_ind(mac->ue_id, data_ind, &num_data_ind, ind))
+          done = 1;
         break;
       default:
         LOG_W(MAC, "unknown lcid %02x\n", rx_lcid);
