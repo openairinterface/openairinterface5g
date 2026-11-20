@@ -3927,15 +3927,45 @@ NR_CellGroupConfig_t *update_cellGroupConfig_for_reconfig(NR_CellGroupConfig_t *
   const int copy_result = asn_copy(&asn_DEF_NR_CellGroupConfig, (void **)&clone_cg, cellGroupConfig);
   AssertFatal(copy_result == 0, "unable to copy NR_CellGroupConfig for cloning\n");
   NR_ServingCellConfig_t *clone_configDedicated = clone_cg->spCellConfig->spCellConfigDedicated;
-  clone_configDedicated->csi_MeasConfig->choice.setup  = get_csiMeasConfig(configDedicated,
-                                                                           uecap,
-                                                                           scc,
-                                                                           &local_config,
-                                                                           cell,
-                                                                           uid,
-                                                                           *uplinkConfig->firstActiveUplinkBWP_Id,
-                                                                           bitmap,
-                                                                           ssb_index);
+
+  // get_csiMeasConfig() keys the NZP-CSI-RS and CSI-IM resource and set ids by ssb_index. The UE keeps
+  // each id until it is released (TS 38.331 §6.3.2 CSI-MeasConfig), so release the ids of the old beam.
+  // choice.setup aliases choice.release in the union: with release, the new config would leak and not be sent
+  DevAssert(clone_configDedicated->csi_MeasConfig->present == NR_SetupRelease_CSI_MeasConfig_PR_setup);
+  NR_CSI_MeasConfig_t *old_csi = clone_configDedicated->csi_MeasConfig->choice.setup;
+  NR_CSI_MeasConfig_t *csi = get_csiMeasConfig(configDedicated,
+                                               uecap,
+                                               scc,
+                                               &local_config,
+                                               cell,
+                                               uid,
+                                               *uplinkConfig->firstActiveUplinkBWP_Id,
+                                               bitmap,
+                                               ssb_index);
+  if (old_csi) {
+    RELEASE_REMOVED_FROMLIST(old_csi->nzp_CSI_RS_ResourceToAddModList,
+                             csi->nzp_CSI_RS_ResourceToAddModList,
+                             csi->nzp_CSI_RS_ResourceToReleaseList,
+                             nzp_CSI_RS_ResourceId,
+                             NR_NZP_CSI_RS_ResourceId_t);
+    RELEASE_REMOVED_FROMLIST(old_csi->nzp_CSI_RS_ResourceSetToAddModList,
+                             csi->nzp_CSI_RS_ResourceSetToAddModList,
+                             csi->nzp_CSI_RS_ResourceSetToReleaseList,
+                             nzp_CSI_ResourceSetId,
+                             NR_NZP_CSI_RS_ResourceSetId_t);
+    RELEASE_REMOVED_FROMLIST(old_csi->csi_IM_ResourceToAddModList,
+                             csi->csi_IM_ResourceToAddModList,
+                             csi->csi_IM_ResourceToReleaseList,
+                             csi_IM_ResourceId,
+                             NR_CSI_IM_ResourceId_t);
+    RELEASE_REMOVED_FROMLIST(old_csi->csi_IM_ResourceSetToAddModList,
+                             csi->csi_IM_ResourceSetToAddModList,
+                             csi->csi_IM_ResourceSetToReleaseList,
+                             csi_IM_ResourceSetId,
+                             NR_CSI_IM_ResourceSetId_t);
+    ASN_STRUCT_FREE(asn_DEF_NR_CSI_MeasConfig, old_csi);
+  }
+  clone_configDedicated->csi_MeasConfig->choice.setup = csi;
 
   if (new_bwp >= 0)
     clean_bwp_structures(clone_cg->spCellConfig);
