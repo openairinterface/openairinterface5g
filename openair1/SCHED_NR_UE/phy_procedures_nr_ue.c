@@ -324,7 +324,7 @@ void ue_srs_procedures_nr(PHY_VARS_NR_UE *ue,
                         // is a problem
 }
 
-void phy_procedures_nrUE_TX(PHY_VARS_NR_UE *ue, const UE_nr_rxtx_proc_t *proc, nr_phy_data_tx_t *phy_data, c16_t **txp)
+bool phy_procedures_nrUE_TX(PHY_VARS_NR_UE *ue, const UE_nr_rxtx_proc_t *proc, nr_phy_data_tx_t *phy_data, c16_t **txp)
 {
   const int slot_tx = proc->nr_slot_tx;
   const int frame_tx = proc->frame_tx;
@@ -363,6 +363,15 @@ void phy_procedures_nrUE_TX(PHY_VARS_NR_UE *ue, const UE_nr_rxtx_proc_t *proc, n
 
   // Don't do OFDM Mod if txdata contains prach
   const NR_UE_PRACH *prach_var = ue->prach_vars[proc->gNB_id];
+  const bool prach = prach_var->active; // nr_ue_prach_procedures() clears it in the last PRACH slot
+  bool symbol_used = false;
+  for (int s = 0; s < NR_SYMBOLS_PER_SLOT; s++)
+    symbol_used |= was_symbol_used[s];
+  // the FD device is written in every slot
+  if (!ue->fd_ifdevice && !prach && !symbol_used) {
+    stop_meas_nr_ue_phy(ue, PHY_PROC_TX);
+    return false; // nothing to modulate: the caller writes silence
+  }
   if (ue->fd_ifdevice) {
     const bool none[NR_SYMBOLS_PER_SLOT] = {0};
     ue->fd_ifdevice->write_slot(ue->fd_ifdevice,
@@ -371,8 +380,8 @@ void phy_procedures_nrUE_TX(PHY_VARS_NR_UE *ue, const UE_nr_rxtx_proc_t *proc, n
                                 slot_tx,
                                 ue->frame_parms.nb_antennas_tx,
                                 (c16_t **)txdataF,
-                                prach_var->active ? none : was_symbol_used);
-  } else if (!prach_var->active) {
+                                prach ? none : was_symbol_used);
+  } else if (!prach) {
     start_meas_nr_ue_phy(ue, OFDM_MOD_STATS);
     nr_tx_rotation_and_ofdm_mod(proc->nr_slot_tx,
                                 &ue->frame_parms,
@@ -390,6 +399,7 @@ void phy_procedures_nrUE_TX(PHY_VARS_NR_UE *ue, const UE_nr_rxtx_proc_t *proc, n
   LOG_D(PHY, "****** end TX-Chain for AbsSubframe %d.%d ******\n", proc->frame_tx, proc->nr_slot_tx);
 
   stop_meas_nr_ue_phy(ue, PHY_PROC_TX);
+  return true;
 }
 
 static void nr_ue_measurement_procedures(uint16_t l,

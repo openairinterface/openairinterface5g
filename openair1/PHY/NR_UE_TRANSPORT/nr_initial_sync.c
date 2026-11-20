@@ -430,7 +430,8 @@ nr_initial_sync_t nr_initial_sync(UE_nr_rxtx_proc_t *proc,
     nr_ue_ssb_scan_t *ssbInfo = &ssb_info[i];
     if (ssbInfo->syncRes.cell_detected) {
       LOG_I(NR_PHY,
-            "Cell Detected with GSCN: %d, SSB SC offset: %d, SSB Ref: %lf, PSS Corr peak: %d dB, PSS Corr Average: %d\n",
+            "UE: %d Cell Detected with GSCN: %d, SSB SC offset: %d, SSB Ref: %lf, PSS Corr peak: %d dB, PSS Corr Average: %d\n",
+            ue->Mod_id,
             ssbInfo->gscnInfo.gscn,
             ssbInfo->gscnInfo.ssbFirstSC,
             ssbInfo->gscnInfo.ssRef,
