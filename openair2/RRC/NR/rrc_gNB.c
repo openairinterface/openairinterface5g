@@ -1924,9 +1924,9 @@ static void process_Event_Based_Measurement_Report(gNB_RRC_INST *rrc,
           if (!a3_event_configuration)
             a3_event_configuration = get_a3_configuration(rrc, -1);
           // Additional check - This part can be modified according to additional cell specific Handover Margin
-          // a3-Offset: The actual value is field value * 0.5 dB.
+          // a3-Offset and Hysteresis: the actual value is field value * 0.5 dB (TS 38.331 6.3.2)
           if (a3_event_configuration
-              && ((a3_event_configuration->a3_offset * 0.5 + a3_event_configuration->hysteresis)
+              && ((a3_event_configuration->a3_offset + a3_event_configuration->hysteresis) * 0.5
                   < (neighbourCellRSRP - servingCellRSRP))) {
             if (neighbourCellRSRP > best_rsrp) {
               // UE can send multiple neighbour cells A3 event report in 1 Meas Report. So, we need to find the best neighbour
