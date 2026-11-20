@@ -1765,6 +1765,12 @@ fallback_rrc_setup:
   rrc_gNB_ue_context_t *new = rrc_gNB_create_ue_context(assoc_id, msg->crnti, rrc, random_value, msg->gNB_DU_ue_id);
   if (!new)
     return;
+  /* TS 38.473 8.4.1.2: without DU to CU RRC Container IE in the INITIAL UL RRC MESSAGE TRANSFER, the gNB-CU should
+     reject the UE, the gNB-DU not being able to serve it (as for an RRC Setup Request) */
+  if (msg->du2cu_rrc_container == NULL) {
+    rrc_gNB_generate_RRCReject(rrc, new);
+    return;
+  }
   activate_srb(&new->ue_context, 1);
   added = rrc_update_ue_pcell(&new->ue_context, current_cell);
   DevAssert(added);

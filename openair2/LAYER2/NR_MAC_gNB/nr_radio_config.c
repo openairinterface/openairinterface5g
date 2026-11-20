@@ -3803,9 +3803,8 @@ static bool verify_radio_configuration(int uid,
 {
   const nr_mac_config_t *configuration = &cell->radio_config;
   const frame_structure_t *fs = &cell->frame_structure;
-  int srs_offset = get_ul_slot_offset(fs, uid, false);
-  // see configure_periodic_srs
-  if (srs_offset >= 2560) {
+  // see configure_periodic_srs, the only user of the SRS offset of the UE
+  if (configuration->do_SRS == PERIODIC_SRS && get_ul_slot_offset(fs, uid, false) >= 2560) {
     LOG_E(NR_RRC, "UID %d, cannot allocate resources for SRS, rejecting UE\n", uid);
     return false;
   }

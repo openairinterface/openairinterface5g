@@ -182,6 +182,34 @@ static int compare_dl_pf_rb_ptrs(const void *a, const void *b)
   return (wa < wb) - (wa > wb);
 }
 
+/* number of RBs to send the pending data of a DL candidate, between min_rbSize and max_rbSize */
+static uint16_t dl_needed_rbs(const nr_dl_sched_params_t *params, const nr_dl_candidate_t *cand, int min_rbSize, int max_rbSize)
+{
+  int mcs = cand->sched_pdsch.mcs;
+  uint8_t Qm = nr_get_Qm_dl(mcs, cand->mcs_table);
+  uint16_t R = nr_get_code_rate_dl(mcs, cand->mcs_table);
+  const nr_cell_sched_t *cell = params->cell;
+  NR_pdsch_dmrs_t dmrs = get_dl_dmrs_params(cell->common_channels.ServingCellConfigCommon,
+                                            &cand->UE->current_DL_BWP,
+                                            &cand->sched_pdsch.tda_info,
+                                            cand->sched_pdsch.nrOfLayers);
+  const int oh = 3 * 4 + (cand->UE->UE_sched_ctrl.ta_apply ? 2 : 0);
+  uint32_t tbs;
+  uint16_t rbs = 0;
+  nr_find_nb_rb(Qm,
+                R,
+                1,
+                cand->sched_pdsch.nrOfLayers,
+                cand->sched_pdsch.tda_info.nrOfSymbols,
+                dmrs.N_PRB_DMRS * dmrs.N_DMRS_SLOT,
+                cand->pending_bytes + oh,
+                min_rbSize,
+                max_rbSize,
+                &tbs,
+                &rbs);
+  return rbs;
+}
+
 int nr_dl_proportional_fair(const nr_dl_sched_params_t *params, nr_dl_candidate_t *candidates, int n_candidates)
 {
   const int min_rbSize = 5;
@@ -258,27 +286,7 @@ int nr_dl_proportional_fair(const nr_dl_sched_params_t *params, nr_dl_candidate_
       continue;
 
     // calculate the number of RBs that UE would like to have
-    int mcs = cand->sched_pdsch.mcs;
-    uint8_t Qm = nr_get_Qm_dl(mcs, cand->mcs_table);
-    uint16_t R = nr_get_code_rate_dl(mcs, cand->mcs_table);
-    const nr_cell_sched_t *cell = params->cell;
-    NR_pdsch_dmrs_t dmrs = get_dl_dmrs_params(cell->common_channels.ServingCellConfigCommon,
-                                              &cand->UE->current_DL_BWP,
-                                              &cand->sched_pdsch.tda_info,
-                                              cand->sched_pdsch.nrOfLayers);
-    const int oh = 3 * 4 + (cand->UE->UE_sched_ctrl.ta_apply ? 2 : 0);
-    uint32_t tbs;
-    nr_find_nb_rb(Qm,
-                  R,
-                  1,
-                  cand->sched_pdsch.nrOfLayers,
-                  cand->sched_pdsch.tda_info.nrOfSymbols,
-                  dmrs.N_PRB_DMRS * dmrs.N_DMRS_SLOT,
-                  cand->pending_bytes + oh,
-                  min_rbSize,
-                  max_rbSize,
-                  &tbs,
-                  &rbs_ue[j]);
+    rbs_ue[j] = dl_needed_rbs(params, cand, min_rbSize, max_rbSize);
     if (n < n_remain_ue) {
       // for the first n_remain_ue UEs: account number of RBs
       // so excess RBs not used by some UEs could be given to others
@@ -311,6 +319,23 @@ int nr_dl_proportional_fair(const nr_dl_sched_params_t *params, nr_dl_candidate_
 
     int mcs = cand->sched_pdsch.mcs;
     COMMIT_ALLOC(params, cand, rbStart, rbSize, mcs, n_scheduled);
+  }
+
+  /* Phase 4: the RBs of the UEs above that could not be allocated (no CCE, no PUCCH resource for the HARQ
+   * feedback) are left: give them to the other UEs with data, in PF order. With many UEs, the PUCCH resources
+   * of an UL slot are taken by the first UEs scheduled in the period, the UEs with the highest PF weight then
+   * fail on PUCCH while the UEs that already have a PUCCH allocation are further in the list. */
+  for (int j = 0; j < n_active; j++) {
+    nr_dl_candidate_t *cand = order[j];
+    // skip the UEs already tried above
+    if (cand->is_retx || cand->pending_bytes == 0 || rbs_ue[j] != 0)
+      continue;
+    int rb_req = dl_needed_rbs(params, cand, min_rbSize, max_rbSize);
+    int rbStart, rbSize;
+    uint16_t *vrb_map = params->vrb_map[cand->alloc_beam_idx];
+    if (!get_rb_alloc(min_rbSize, rb_req, cand->bwp_start, cand->bwp_size, vrb_map, cand->alloc_slbitmap, &rbStart, &rbSize))
+      continue;
+    COMMIT_ALLOC(params, cand, rbStart, rbSize, cand->sched_pdsch.mcs, n_scheduled);
   }
 
   return n_scheduled;
