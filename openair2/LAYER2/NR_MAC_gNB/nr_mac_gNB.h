@@ -1413,6 +1413,7 @@ typedef struct gNB_MAC_INST_s {
   /// Pointer to IF module instance for PHY
   NR_IF_Module_t                  *if_inst;
   pthread_t                       stats_thread;
+  volatile bool stats_thread_exit;
 
   /// Per-cell scheduling contexts (one entry per configured cell, indexed by phy_id)
   seq_arr_t cells;

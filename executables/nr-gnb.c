@@ -102,13 +102,15 @@ static void tx_func(processingData_L1tx_t *info)
 
   clear_slot_beamid(gNB, slot_tx);
 
-  nfapi_nr_slot_indication_scf_t ind = {.header = {.phy_id = 0}, .sfn = frame_tx, .slot = slot_tx};
+  nfapi_nr_slot_indication_scf_t ind = {.header = {.phy_id = 0, .message_id = NFAPI_NR_PHY_MSG_TYPE_SLOT_INDICATION},
+                                        .sfn = frame_tx,
+                                        .slot = slot_tx};
   start_meas(&gNB->slot_indication_stats);
   // this variable is very big (multiple MB), so we put it into static storage
   // to not overflow the stack while still having it in local (function) scope
   // also, tx_func() is only executed by one thread, serially
   static NR_Sched_Rsp_t sched_response;
-  ifi->NR_slot_indication(&ind, &sched_response);
+  ifi->nr_slot_indication(&ind, &sched_response);
   stop_meas(&gNB->slot_indication_stats);
 
   info->gNB = gNB;
@@ -175,6 +177,11 @@ void *L1_tx_thread(void *arg) {
   return NULL;
 }
 
+static nfapi_nr_p7_message_header_t fapi_get_header(int phy_id, uint16_t message_id)
+{
+  return (nfapi_nr_p7_message_header_t){.phy_id = phy_id, .message_id = message_id};
+}
+
 static void rx_func(processingData_L1_t *info)
 {
   PHY_VARS_gNB *gNB = info->gNB;
@@ -190,14 +197,21 @@ static void rx_func(processingData_L1_t *info)
     LOG_D(NR_PHY, "%d.%d Starting RX processing\n", frame_rx, slot_rx);
 
     // UE-specific RX processing for subframe n
+    int phy_id = 0;
     // Intentionally not zero-initialized: each indication fills only its used PDUs.
     NR_UL_IND_t UL_INFO;
-    UL_INFO.frame = frame_rx;
-    UL_INFO.slot = slot_rx;
-    UL_INFO.module_id = gNB->Mod_id;
-    UL_INFO.phy_id = 0;
+    UL_INFO.uci_ind.header = fapi_get_header(phy_id, NFAPI_NR_PHY_MSG_TYPE_UCI_INDICATION);
+    UL_INFO.uci_ind.uci_list = UL_INFO.uci_pdu_list;
+    UL_INFO.crc_ind.header = fapi_get_header(phy_id, NFAPI_NR_PHY_MSG_TYPE_CRC_INDICATION);
+    UL_INFO.crc_ind.crc_list = UL_INFO.crc_pdu_list;
+    UL_INFO.rx_ind.header = fapi_get_header(phy_id, NFAPI_NR_PHY_MSG_TYPE_RX_DATA_INDICATION);
+    UL_INFO.rx_ind.pdu_list = UL_INFO.rx_pdu_list;
+    UL_INFO.srs_ind.header = fapi_get_header(phy_id, NFAPI_NR_PHY_MSG_TYPE_SRS_INDICATION);
+    UL_INFO.srs_ind.pdu_list = UL_INFO.srs_pdu_list;
+    UL_INFO.srs_toa_vendor_ext_ind.header = fapi_get_header(phy_id, NFAPI_NR_PHY_MSG_TYPE_SRS_TOA_VENDOR_EXTENSION_INDICATION);
+    UL_INFO.srs_toa_vendor_ext_ind.pdu_list = UL_INFO.srs_toa_vendor_ext_pdu_list;
     // Do PRACH RU processing
-    UL_INFO.rach_ind.header.transmit_timestamp = 0;
+    UL_INFO.rach_ind.header = fapi_get_header(phy_id, NFAPI_NR_PHY_MSG_TYPE_RACH_INDICATION);
     UL_INFO.rach_ind.pdu_list = UL_INFO.prach_pdu_indication_list;
     UL_INFO.rach_ind.number_of_pdus = 0;
     // even if processing is late, we might collect all PRACH
@@ -205,6 +219,9 @@ static void rx_func(processingData_L1_t *info)
     prach_item_t p;
     while (spsc_q_get(&gNB->prach_l1rx_queue, &p, sizeof(p)))
       L1_nr_prach_procedures(gNB, &p, &UL_INFO.rach_ind);
+
+    if (UL_INFO.rach_ind.number_of_pdus > 0)
+      gNB->if_inst->nr_rach_indication(&UL_INFO.rach_ind);
 
     // apply the rx signal rotation here
     if (gNB->phase_comp) {
@@ -226,12 +243,14 @@ static void rx_func(processingData_L1_t *info)
     }
 
     // Call PHY Rx signal procedures
-    phy_procedures_gNB_uespec_RX(gNB, frame_rx, slot_rx, &UL_INFO);
-
-    // Call the scheduler
-    START_MEAS_FULL_SLOT(&gNB->ul_indication_stats, rx_slot_type, NR_UPLINK_SLOT);
-    gNB->if_inst->NR_UL_indication(&UL_INFO);
-    STOP_MEAS_FULL_SLOT(&gNB->ul_indication_stats, rx_slot_type, NR_UPLINK_SLOT);
+    phy_procedures_gNB_uespec_RX(gNB,
+                                 frame_rx,
+                                 slot_rx,
+                                 &UL_INFO.uci_ind,
+                                 &UL_INFO.crc_ind,
+                                 &UL_INFO.rx_ind,
+                                 &UL_INFO.srs_ind,
+                                 &UL_INFO.srs_toa_vendor_ext_ind);
 
     // Signal the ru_thread on completion of using rxdataF in this slot
     notifiedFIFO_elt_t *res = newNotifiedFIFO_elt(sizeof(processingData_L1_t), 0, &gNB->L1_rx_out, NULL);
@@ -263,7 +282,6 @@ static void nrL1_stats_reset(PHY_VARS_gNB *gNB, RU_t *ru)
   reset_meas(&gNB->pucch23_proc_rx);
   reset_meas(&gNB->ulsch_decoding_stats);
   reset_meas(&gNB->ts_ldpc_decode);
-  reset_meas(&gNB->ul_indication_stats);
   reset_meas(&gNB->slot_indication_stats);
   reset_meas(&gNB->rx_pusch_stats);
   reset_meas(&gNB->rx_prach);
@@ -309,7 +327,6 @@ static size_t dump_L1_meas_stats(PHY_VARS_gNB *gNB, RU_t *ru, char *output, size
   output += print_meas_log(&gNB->pucch23_proc_rx, "PUCCH23 reception", NULL, NULL, output, end - output);
   output += print_meas_log(&gNB->ulsch_decoding_stats, "ULSCH decoding", NULL, NULL, output, end - output);
   output += print_meas_log(&gNB->ts_ldpc_decode, "UL segments decoding", NULL, NULL, output, end - output);
-  output += print_meas_log(&gNB->ul_indication_stats, "UL Indication", NULL, NULL, output, end - output);
   output += print_meas_log(&gNB->slot_indication_stats, "Slot Indication", NULL, NULL, output, end - output);
   output += print_meas_log(&gNB->rx_pusch_stats, "PUSCH inner-receiver", NULL, NULL, output, end - output);
   output += print_meas_log(&gNB->rx_prach, "PRACH RX", NULL, NULL, output, end - output);

@@ -52,7 +52,7 @@ void clear_nr_nfapi_information(nr_cell_sched_t *cell, frame_t frameP, slot_t sl
 
 void nr_mac_update_timers(gNB_MAC_INST *gNB, nr_cell_sched_t *cell);
 
-void gNB_dlsch_ulsch_scheduler(module_id_t module_idP, int cell_id, frame_t frame_rxP, slot_t slot_rxP, NR_Sched_Rsp_t *sched_info);
+void gNB_dlsch_ulsch_scheduler(gNB_MAC_INST *gNB, nr_cell_sched_t *cell, frame_t frame, slot_t slot, NR_Sched_Rsp_t *sched_info);
 
 /* \brief main DL scheduler function. Calls a preprocessor to decide on
  * resource allocation, then "post-processes" resource allocation (nFAPI
@@ -113,8 +113,8 @@ void nr_schedule_RA(gNB_MAC_INST *mac,
                     nfapi_nr_dl_tti_request_t *DL_req,
                     nfapi_nr_tx_data_request_t *TX_req);
 
-void nr_initiate_ra_proc(module_id_t module_idP,
-                         int phy_id,
+void nr_initiate_ra_proc(gNB_MAC_INST *nr_mac,
+                         nr_cell_sched_t *cell,
                          frame_t frameP,
                          int slotP,
                          uint16_t preamble_index,
@@ -138,13 +138,13 @@ void nr_preprocessor_phytest(gNB_MAC_INST *mac, nr_cell_sched_t *cell, post_proc
  * fixed set of resources */
 void nr_ul_preprocessor_phytest(gNB_MAC_INST *nr_mac, nr_cell_sched_t *cell, post_process_pusch_t *pp_pusch);
 
-void handle_nr_uci_pucch_0_1(module_id_t mod_id,
-                             int cell_id,
+void handle_nr_uci_pucch_0_1(gNB_MAC_INST *nrmac,
+                             nr_cell_sched_t *cell,
                              frame_t frame,
                              slot_t slot,
                              const nfapi_nr_uci_pucch_pdu_format_0_1_t *uci_01);
-void handle_nr_uci_pucch_2_3_4(module_id_t mod_id,
-                               int cell_id,
+void handle_nr_uci_pucch_2_3_4(gNB_MAC_INST *nrmac,
+                               nr_cell_sched_t *cell,
                                frame_t frame,
                                slot_t slot,
                                const nfapi_nr_uci_pucch_pdu_format_2_3_4_t *uci_234);
@@ -355,26 +355,34 @@ int nr_write_ce_dlsch_pdu(gNB_MAC_INST *gNB,
                           unsigned char drx_cmd,
                           unsigned char *ue_cont_res_id);
 
-/* \brief Function to indicate a received SDU on ULSCH.
-@param Mod_id Instance ID of gNB
-@param CC_id Component carrier index
-@param rnti RNTI of UE transmitting the SDU
-@param sdu Pointer to received SDU
-@param sdu_len Length of SDU
-@param timing_advance timing advance adjustment after this pdu
-@param ul_cqi Uplink CQI estimate after this pdu (SNR quantized to 8 bits, -64 ... 63.5 dB in .5dB steps)
-*/
-void nr_rx_sdu(const module_id_t gnb_mod_idP,
-               const int CC_idP,
-               const frame_t frameP,
-               const slot_t subframeP,
-               const rnti_t rntiP,
-               uint8_t * sduP,
-               const uint32_t sdu_lenP,
-               const int8_t harq_pid,
-               const uint16_t timing_advance,
-               const uint8_t ul_cqi,
-               const uint16_t rssi);
+/* \brief Handle a CRC.indication PDU (UL measurements, DTX/UL failure detection).
+   Must precede nr_rx_sdu_rx() of the same PUSCH: the RX part advances RA state
+   (Msg3 done/retx, CFRA completion), after which RA UE measurements (TA, SNR,
+   Msg3 TPC) would be dropped, and frees the UL HARQ process whose sched_pusch
+   is read here. In monolithic mode, NR_UL_indication() guarantees the order;
+   with (n)FAPI the indications are handled in order of arrival, which FAPI does
+   not guarantee, so an L1 sending RX_Data.indication first degrades RA and
+   PUSCH power control. */
+void nr_rx_sdu_crc(gNB_MAC_INST *gNB_mac,
+                   nr_cell_sched_t *cell,
+                   const frame_t frameP,
+                   const slot_t slotP,
+                   const nfapi_nr_crc_t *crc);
+
+/* Upper bound of RLC PDUs collected from one RX_DATA.indication */
+#define MAX_NUM_DATA_IND 1024
+struct nr_rlc_data_ind;
+
+/* \brief Handle an RX_DATA.indication PDU (MAC PDU decoding, UL HARQ, RA
+   progression).
+   \return the RNTI under which the appended RLC PDUs are to be delivered */
+rnti_t nr_rx_sdu_rx(gNB_MAC_INST *gNB_mac,
+                    nr_cell_sched_t *cell,
+                    const frame_t frameP,
+                    const slot_t slotP,
+                    const nfapi_nr_rx_data_pdu_t *rx,
+                    struct nr_rlc_data_ind *data_ind,
+                    int *num_data_ind);
 
 void reset_dl_harq_list(NR_UE_sched_ctrl_t *sched_ctrl);
 
@@ -383,13 +391,13 @@ void reset_ul_harq_list(NR_UE_sched_ctrl_t *sched_ctrl);
 uint8_t *allocate_transportBlock_buffer(byte_array_t *tb, uint32_t needed);
 void free_transportBlock_buffer(byte_array_t *tb);
 
-void handle_nr_srs_measurements(const module_id_t module_id,
-                                const int cell_id,
+void handle_nr_srs_measurements(gNB_MAC_INST *nrmac,
+                                nr_cell_sched_t *cell,
                                 const frame_t frame,
                                 const slot_t slot,
-                                nfapi_nr_srs_indication_pdu_t *srs_ind);
+                                const nfapi_nr_srs_indication_pdu_t *srs_ind);
 
-void handle_nr_srs_toa_vendor_ext_measurements(const module_id_t module_id,
+void handle_nr_srs_toa_vendor_ext_measurements(gNB_MAC_INST *nrmac,
                                                const frame_t frame,
                                                const slot_t slot,
                                                const uint8_t num_ta,

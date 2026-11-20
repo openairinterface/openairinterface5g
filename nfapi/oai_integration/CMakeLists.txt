@@ -37,8 +37,7 @@ target_link_libraries(nfapi_lte_user_lib PUBLIC nfapi_user_lib nfapi_lte_vnf_lib
 
 # NR VNF OAI integration
 add_library(nfapi_nr_user_lib
-        vnf/nfapi_nr_vnf.c
-        gnb_ind_vars.c)
+        vnf/nfapi_nr_vnf.c)
 if(OAI_WLS)
     target_compile_definitions(nfapi_nr_user_lib PRIVATE ENABLE_WLS)
 elseif(OAI_AERIAL)

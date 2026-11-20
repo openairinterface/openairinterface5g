@@ -647,9 +647,11 @@ static void pnf_nr_nfapi_p7_read_dispatch_message(pnf_p7_t *pnf_p7, uint32_t now
 
       // resize the buffer if we have a large segment
       if (header.message_length > pnf_p7->rx_message_buffer_size) {
-        NFAPI_TRACE(NFAPI_TRACE_NOTE, "reallocing rx buffer %d\n", header.message_length);
-        pnf_p7->rx_message_buffer = realloc(pnf_p7->rx_message_buffer, header.message_length);
-        pnf_p7->rx_message_buffer_size = header.message_length;
+        uint32_t newsize = pnf_p7->rx_message_buffer_size ? pnf_p7->rx_message_buffer_size * 2 : 65536;
+        NFAPI_TRACE(NFAPI_TRACE_NOTE, "reallocing rx buffer %d (msg %d)\n", newsize, header.message_length);
+        pnf_p7->rx_message_buffer = realloc(pnf_p7->rx_message_buffer, newsize);
+        DevAssert(pnf_p7->rx_message_buffer);
+        pnf_p7->rx_message_buffer_size = newsize;
       }
 
       // read the segment

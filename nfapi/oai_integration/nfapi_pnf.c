@@ -2315,7 +2315,7 @@ static void maybe_slow_down_pnf(int mu)
   last_execution = current_execution;
 }
 
-void handle_nr_slot_ind(uint16_t sfn, uint16_t slot, NR_Sched_Rsp_t *sched_resp)
+int handle_nr_slot_ind(const nfapi_nr_slot_indication_scf_t *ind, NR_Sched_Rsp_t *sched_resp)
 {
   nfapi_pnf_p7_config_t *config = p7_config_g;
   pnf_p7_t *_this = (pnf_p7_t *)(config);
@@ -2337,25 +2337,25 @@ void handle_nr_slot_ind(uint16_t sfn, uint16_t slot, NR_Sched_Rsp_t *sched_resp)
 #else
   int slot_ahead = 1 << mu;
 #endif
-  uint16_t sfn_tx = sfn;
-  uint16_t slot_tx = slot;
+  uint16_t sfn_tx = ind->sfn;
+  uint16_t slot_tx = ind->slot;
   sfnslot_add_slot(mu, &sfn_tx, &slot_tx, slot_ahead); // modify: do in place
 
   // printf("send slot indication for sfn/slot:%4d.%2d current:%4d.%2d\n", sfn_tx, slot_tx, sfn, slot);
-  nfapi_nr_slot_indication_scf_t ind = {.sfn = sfn_tx, .slot = slot_tx};
-  oai_nfapi_nr_slot_indication(&ind);
+  nfapi_nr_slot_indication_scf_t reind = {.header = ind->header, .sfn = sfn_tx, .slot = slot_tx};
+  int ret = oai_nfapi_nr_slot_indication(&reind);
 
   // copy data from appropriate p7 slot buffers into channel structures for PHY processing
   nfapi_pnf_p7_get_msgs(config,
                         config->phy_id,
-                        sfn,
-                        slot,
+                        ind->sfn,
+                        ind->slot,
                         &sched_resp->DL_req,
                         &sched_resp->UL_tti_req,
                         &sched_resp->UL_dci_req,
                         &sched_resp->TX_req);
 
-  return;
+  return ret;
 }
 
 int oai_nfapi_rach_ind(nfapi_rach_indication_t *rach_ind) {
@@ -2409,46 +2409,38 @@ int oai_nfapi_sr_indication(nfapi_sr_indication_t *ind) {
 
 //NR UPLINK INDICATION
 
-int oai_nfapi_nr_slot_indication(nfapi_nr_slot_indication_scf_t *ind) {
-  ind->header.phy_id = 0;
-  ind->header.message_id = NFAPI_NR_PHY_MSG_TYPE_SLOT_INDICATION;
+int oai_nfapi_nr_slot_indication(const nfapi_nr_slot_indication_scf_t *ind)
+{
   return nfapi_pnf_p7_nr_slot_ind(p7_config_g, ind);
 }
 
-int oai_nfapi_nr_rx_data_indication(nfapi_nr_rx_data_indication_t *ind) {
-  ind->header.phy_id = 0; // HACK TODO FIXME - need to pass this around!!!!
-  ind->header.message_id = NFAPI_NR_PHY_MSG_TYPE_RX_DATA_INDICATION;
+int oai_nfapi_nr_rx_data_indication(const nfapi_nr_rx_data_indication_t *ind)
+{
   return nfapi_pnf_p7_nr_rx_data_ind(p7_config_g, ind);
 }
 
-int oai_nfapi_nr_crc_indication(nfapi_nr_crc_indication_t *ind) {
-  ind->header.phy_id = 0; // HACK TODO FIXME - need to pass this around!!!!
-  ind->header.message_id = NFAPI_NR_PHY_MSG_TYPE_CRC_INDICATION;
+int oai_nfapi_nr_crc_indication(const nfapi_nr_crc_indication_t *ind)
+{
   return nfapi_pnf_p7_nr_crc_ind(p7_config_g, ind);
 }
 
-int oai_nfapi_nr_srs_indication(nfapi_nr_srs_indication_t *ind) {
-  ind->header.phy_id = 0; // HACK TODO FIXME - need to pass this around!!!!
-  ind->header.message_id = NFAPI_NR_PHY_MSG_TYPE_SRS_INDICATION;
+int oai_nfapi_nr_srs_indication(const nfapi_nr_srs_indication_t *ind)
+{
   return nfapi_pnf_p7_nr_srs_ind(p7_config_g, ind);
 }
 
-int oai_nfapi_nr_srs_toa_vendor_ext_indication(nfapi_nr_srs_toa_vendor_ext_indication_t *ind)
+int oai_nfapi_nr_srs_toa_vendor_ext_indication(const nfapi_nr_srs_toa_vendor_ext_indication_t *ind)
 {
-  ind->header.phy_id = 0; // HACK TODO FIXME - need to pass this around!!!!
-  ind->header.message_id = NFAPI_NR_PHY_MSG_TYPE_SRS_TOA_VENDOR_EXTENSION_INDICATION;
   return nfapi_pnf_p7_nr_srs_toa_vendor_ext_ind(p7_config_g, ind);
 }
 
-int oai_nfapi_nr_uci_indication(nfapi_nr_uci_indication_t *ind) {
-  ind->header.phy_id = 0; // HACK TODO FIXME - need to pass this around!!!!
-  ind->header.message_id = NFAPI_NR_PHY_MSG_TYPE_UCI_INDICATION;
+int oai_nfapi_nr_uci_indication(const nfapi_nr_uci_indication_t *ind)
+{
   return nfapi_pnf_p7_nr_uci_ind(p7_config_g, ind);
 }
 
-int oai_nfapi_nr_rach_indication(nfapi_nr_rach_indication_t *ind) {
-  ind->header.phy_id = 0; // HACK TODO FIXME - need to pass this around!!!!
-  ind->header.message_id = NFAPI_NR_PHY_MSG_TYPE_RACH_INDICATION;
+int oai_nfapi_nr_rach_indication(const nfapi_nr_rach_indication_t *ind)
+{
   return nfapi_pnf_p7_nr_rach_ind(p7_config_g, ind);
 }
 

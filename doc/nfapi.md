@@ -139,6 +139,23 @@ The change between transport mechanisms is done at compilation time:
 
 nFAPI is used by default. Compile and configure as indicated above.
 
+We recommend to use jumboframes, i.e., MTU 9000, if PNF/VNF are located on
+different hosts, as this reduces segmentation overhead when sending large UDP
+packets. OAI will send UDP packets of up to 60000 bytes by default. To make
+sure that this works, try pinging with large packets (`ping -s 60000`), which
+should work or you will have packet loss on the nFAPI link.
+
+You should also increase kernel UDP send/receive buffers. We made good
+experience with
+
+```
+$ sysctl net.core.rmem_default net.core.rmem_max net.core.wmem_default net.core.wmem_max
+net.core.rmem_default = 8388608
+net.core.rmem_max = 16777216
+net.core.wmem_default = 8388608
+net.core.wmem_max = 16777216
+```
+
 #### How to use Aerial
 
 Refer to [this document](./Aerial_FAPI_Split_Tutorial.md) for more information.

@@ -1256,6 +1256,7 @@ set (MAC_NR_SRC
   ${NR_GNB_MAC_DIR}/nr_radio_config.c
   ${NR_GNB_MAC_DIR}/nr_pos_ue_context.c
   ${NR_GNB_MAC_DIR}/nrdc_mac_rrc_dl_handler.c
+  ${NR_GNB_MAC_DIR}/nr_mac_fapi.c
  )
 
 

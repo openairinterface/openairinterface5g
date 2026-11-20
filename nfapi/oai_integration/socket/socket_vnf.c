@@ -695,9 +695,11 @@ int vnf_nr_p7_read_dispatch_message(vnf_p7_t *vnf_p7)
 
       // resize the buffer if we have a large segment
       if (header.message_length > vnf_p7->rx_message_buffer_size) {
-        NFAPI_TRACE(NFAPI_TRACE_NOTE, "reallocing rx buffer %d\n", header.message_length);
-        vnf_p7->rx_message_buffer = realloc(vnf_p7->rx_message_buffer, header.message_length);
-        vnf_p7->rx_message_buffer_size = header.message_length;
+        uint32_t newsize = vnf_p7->rx_message_buffer_size ? vnf_p7->rx_message_buffer_size * 2 : 65536;
+        NFAPI_TRACE(NFAPI_TRACE_NOTE, "reallocing rx buffer %d (msg %d)\n", newsize, header.message_length);
+        vnf_p7->rx_message_buffer = realloc(vnf_p7->rx_message_buffer, newsize);
+        DevAssert(vnf_p7->rx_message_buffer);
+        vnf_p7->rx_message_buffer_size = newsize;
       }
 
       // read the segment

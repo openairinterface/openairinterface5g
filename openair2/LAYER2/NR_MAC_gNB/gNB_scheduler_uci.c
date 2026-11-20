@@ -947,11 +947,12 @@ static void nr_mac_sr_received(NR_UE_info_t *UE, nr_cell_sched_t *cell)
     LOG_W(NR_MAC, "UE %04x: %d SR received, reached configured sr_TransMax %d before UL grant\n", UE->rnti, sched_ctrl->sr_cnt, trans_max);
 }
 
-void handle_nr_uci_pucch_0_1(module_id_t mod_id, int cell_id, frame_t frame, slot_t slot, const nfapi_nr_uci_pucch_pdu_format_0_1_t *uci_01)
+void handle_nr_uci_pucch_0_1(gNB_MAC_INST *nrmac,
+                             nr_cell_sched_t *cell,
+                             frame_t frame,
+                             slot_t slot,
+                             const nfapi_nr_uci_pucch_pdu_format_0_1_t *uci_01)
 {
-  gNB_MAC_INST *nrmac = RC.nrmac[mod_id];
-  NR_SCHED_LOCK(&nrmac->sched_lock);
-  nr_cell_sched_t *cell = nr_mac_get_cell_by_phy_id(nrmac, cell_id);
   NR_UE_info_t *UE = find_connected_nr_ue(&nrmac->UE_info, uci_01->rnti);
   bool is_ra = false;
   if (!UE) {
@@ -960,7 +961,6 @@ void handle_nr_uci_pucch_0_1(module_id_t mod_id, int cell_id, frame_t frame, slo
       is_ra = true;
     else {
       LOG_E(NR_MAC, "Unknown RNTI %04x in PUCCH UCI\n", uci_01->rnti);
-      NR_SCHED_UNLOCK(&nrmac->sched_lock);
       return;
     }
   }
@@ -992,7 +992,6 @@ void handle_nr_uci_pucch_0_1(module_id_t mod_id, int cell_id, frame_t frame, slo
       if (is_ra) {
         bool ue_rejected = nr_check_Msg4_MsgB_Ack(nrmac, cell, frame, slot, UE, success);
         if (ue_rejected) {
-          NR_SCHED_UNLOCK(&nrmac->sched_lock);
           return;
         }
         // Msg4 Ack: reset average with first measurement
@@ -1030,18 +1029,16 @@ void handle_nr_uci_pucch_0_1(module_id_t mod_id, int cell_id, frame_t frame, slo
     }
 
   }
-  NR_SCHED_UNLOCK(&nrmac->sched_lock);
 }
 
-void handle_nr_uci_pucch_2_3_4(module_id_t mod_id, int cell_id, frame_t frame, slot_t slot, const nfapi_nr_uci_pucch_pdu_format_2_3_4_t *uci_234)
+void handle_nr_uci_pucch_2_3_4(gNB_MAC_INST *nrmac,
+                               nr_cell_sched_t *cell,
+                               frame_t frame,
+                               slot_t slot,
+                               const nfapi_nr_uci_pucch_pdu_format_2_3_4_t *uci_234)
 {
-  gNB_MAC_INST *nrmac = RC.nrmac[mod_id];
-  NR_SCHED_LOCK(&nrmac->sched_lock);
-  nr_cell_sched_t *cell = nr_mac_get_cell_by_phy_id(nrmac, cell_id);
-
   NR_UE_info_t *UE = find_connected_nr_ue(&nrmac->UE_info, uci_234->rnti);
   if (!UE) {
-    NR_SCHED_UNLOCK(&nrmac->sched_lock);
     LOG_E(NR_MAC, "%s(): unknown RNTI %04x in PUCCH UCI\n", __func__, uci_234->rnti);
     return;
   }
@@ -1066,7 +1063,6 @@ void handle_nr_uci_pucch_2_3_4(module_id_t mod_id, int cell_id, frame_t frame, s
   if (uci_234->pduBitmap & 0x1) {
     if (uci_234->sr.sr_payload && uci_234->sr.sr_payload[0])
       nr_mac_sr_received(UE, cell);
-    free(uci_234->sr.sr_payload);
   }
 
   if ((uci_234->pduBitmap >> 1) & 0x01) {
@@ -1093,7 +1089,6 @@ void handle_nr_uci_pucch_2_3_4(module_id_t mod_id, int cell_id, frame_t frame, s
       }
       handle_dl_harq(cell, UE, pid, success, cell->dl_bler.harq_round_max);
     }
-    free(uci_234->harq.harq_payload);
   }
   if ((uci_234->pduBitmap >> 2) & 0x01) {
     LOG_D(NR_MAC, "CSI CRC %d\n", uci_234->csi_part1.csi_part1_crc);
@@ -1104,13 +1099,10 @@ void handle_nr_uci_pucch_2_3_4(module_id_t mod_id, int cell_id, frame_t frame, s
         extract_pucch_csi_report(csi_MeasConfig, uci_234, frame, slot, UE, nrmac, cell);
       }
     }
-    free(uci_234->csi_part1.csi_part1_payload);
   }
   if ((uci_234->pduBitmap >> 3) & 0x01) {
     //@TODO:Handle CSI Report 2
-    // nothing to free (yet)
   }
-  NR_SCHED_UNLOCK(&nrmac->sched_lock);
 }
 
 static void set_pucch_allocation(const NR_UE_UL_BWP_t *ul_bwp, const int r_pucch, const int bwp_size, NR_sched_pucch_t *pucch)

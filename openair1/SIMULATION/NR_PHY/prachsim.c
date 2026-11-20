@@ -390,6 +390,7 @@ int main(int argc, char **argv){
          frame_parms->frame_type == FDD ? "FDD" : "TDD",
          frame_parms->freq_range == FR1 ? "FR1" : "FR2");
 
+  ru->sl_ahead = 6;
   ru->nr_frame_parms = frame_parms;
   ru->if_south       = LOCAL_RF;
   ru->nb_tx          = n_tx;

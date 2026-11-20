@@ -54,7 +54,11 @@ void *nrmac_stats_thread(void *arg) {
     return NULL;
   }
 
-  while (oai_exit == 0) {
+  while (!gNB->stats_thread_exit) {
+    if (ftruncate(fileno(file), 0) != 0 || fseek(file, 0, SEEK_SET) != 0) {
+      LOG_E(NR_MAC, "error while writing nrMAC_stats.log: %d, %s\n", errno, strerror(errno));
+      break;
+    }
     char *p = output;
     NR_SCHED_LOCK(&gNB->sched_lock);
     FOR_EACH_SEQ_ARR(nr_cell_sched_t *, cell, &gNB->cells) {
@@ -80,10 +84,6 @@ void *nrmac_stats_thread(void *arg) {
       break;
     }
     sleep(1);
-    if (ftruncate(fileno(file), 0) != 0 || fseek(file, 0, SEEK_SET) != 0) {
-      LOG_E(NR_MAC, "error while writing nrMAC_stats.log: %d, %s\n", errno, strerror(errno));
-      break;
-    }
   }
   fclose(file);
   return NULL;
@@ -342,6 +342,8 @@ void ind_delete_nr_ue_data(void *p)
 
 void mac_top_destroy_gNB(gNB_MAC_INST *mac)
 {
+  mac->stats_thread_exit = true;
+  pthread_join(mac->stats_thread, NULL);
   NR_UEs_t *UE_info = &mac->UE_info;
   hashtable_destroy(&UE_info->connected_ues, delete_nr_ue_data);
   seq_arr_free(&UE_info->connected_ues_list, NULL);
